@@ -99,7 +99,9 @@
       "Bash(test/sim/test_fault_injection.exe)",
       "Bash(test/sim/test_example.exe)",
       "Bash(test/out/test_example.exe)",
-      "Bash(test/out/test_fault_injection.exe)"
+      "Bash(test/out/test_fault_injection.exe)",
+      "Bash(make rebuild *)",
+      "Bash(echo \"Exit: $?\")"
     ]
   }
 }
