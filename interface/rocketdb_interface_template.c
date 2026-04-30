@@ -42,7 +42,7 @@
  * caller must poll RDSR1 (0x05) until BUSY (bit 0) clears.
  *
  *   #define W25Q_CMD_WREN        0x06  // Write Enable
- *   #define W25Q_CMD_WRLR        0x04  // Write Disable
+ *   #define W25Q_CMD_WRDI        0x04  // Write Disable
  *   #define W25Q_CMD_RDSR1       0x05  // Read Status Register 1
  *   #define W25Q_CMD_READ        0x03  // Read Data
  *   #define W25Q_CMD_PAGE_PG     0x02  // Page Program (1–256 bytes)
