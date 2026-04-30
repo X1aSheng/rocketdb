@@ -33,6 +33,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fault injection tests**: Added missing `rdb_kvdb_format()` calls and proper
   `db.part`/`db.sectors` assignment in all 5 test cases. Added assertions for
   write failure detection.
+- **KVDB/TSDB `write_off` uint16_t overflow**: Changed `write_off` in
+  `rdb_kv_sector_meta_t`, `rdb_kvdb_t`, and `rdb_kv_iter_t.offset` from `uint16_t`
+  to `uint32_t`, and removed explicit truncation casts. Prevents silent offset
+  wraparound on sectors >64 KB (e.g. 128 KB W25Q128).
+- **TSDB init Phase 3 `twr_f`**: Now checks `twr_f()` return values when promoting
+  or demoting WRITING records during recovery, consistent with `ts_scan()`.
+- **TSDB init `tdc()` guard**: Added runtime validation that `sector_size > tds(db)`
+  to prevent unsigned wraparound in capacity computation.
+- **KVDB/TSDB `format` stack usage**: Changed `saved_ec[RDB_MAX_SECTORS]` from
+  stack (1020 bytes) to static allocation to avoid stack overflow on small MCUs.
+- **TSDB `get_latest`/`get_oldest`**: Now checks `trd()` return value when copying
+  data to caller buffer; returns `RDB_ERR_FLASH` on read failure instead of
+  returning uninitialized data.
+- **TSDB `ts_find_last_valid` const**: Removed incorrect `const` qualifier on `db`
+  parameter that was implicitly discarded when calling `trd()`.
+- **Test `sim_flash_read` usage**: Replaced direct `g_flash.mem[]` reads in
+  `test_kvdb_basic` and `test_tsdb_stress` with `sim_flash_read()` calls.
 
 ---
 

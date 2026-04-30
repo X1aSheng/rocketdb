@@ -47,7 +47,7 @@
  * Copyright (c) 2015 XiaSheng(info@zhis.net)
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
- * @version 1.1.0
+ * @version 1.1.2
  * 
  *****************************************************************************/
 #ifndef ROCKETDB_H
@@ -795,7 +795,7 @@ extern uint16_t rdb_hash16(const void* data, size_t len);
 /**
  * @brief Get the library version as a packed integer.
  * @return  Version in 0x00MMNNPP format (major.minor.patch).
- *          Example: v1.1.0 → 0x010100.
+ *          Example: v1.1.2 → 0x010102.
  */
 uint32_t rdb_version(void);
 

@@ -270,9 +270,9 @@ static inline int fl_erase(const rdb_kvdb_t* db, uint32_t a) {
  *  engine-independent.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** @brief Return the library version as a packed 24-bit integer (0x010100 = v1.1.0). */
+/** @brief Return the library version as a packed 24-bit integer (0x010102 = v1.1.2). */
 uint32_t rdb_version(void) {
-    return 0x010100u;
+    return 0x010102u;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
