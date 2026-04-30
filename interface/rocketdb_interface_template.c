@@ -36,6 +36,24 @@
 
 #include "rocketdb_interface.h"
 
+/* ── W25QXX SPI Flash Command Reference ────────────────────────────────────
+ * When implementing for W25QXX series SPI NOR Flash, use these command
+ * opcodes. Every erase/write must be preceded by WREN (0x06), and the
+ * caller must poll RDSR1 (0x05) until BUSY (bit 0) clears.
+ *
+ *   #define W25Q_CMD_WREN        0x06  // Write Enable
+ *   #define W25Q_CMD_WRLR        0x04  // Write Disable
+ *   #define W25Q_CMD_RDSR1       0x05  // Read Status Register 1
+ *   #define W25Q_CMD_READ        0x03  // Read Data
+ *   #define W25Q_CMD_PAGE_PG     0x02  // Page Program (1–256 bytes)
+ *   #define W25Q_CMD_SECT_ER     0x20  // Sector Erase (4 KB)
+ *   #define W25Q_CMD_BLK32_ER    0x52  // Block Erase (32 KB)
+ *   #define W25Q_CMD_BLK64_ER    0xD8  // Block Erase (64 KB)
+ *   #define W25Q_CMD_RDID        0x9F  // JEDEC ID
+ *
+ * Status Register 1 bits: BUSY(0), WEL(1), BP0(2), BP1(3), BP2(4)
+ * ───────────────────────────────────────────────────────────────────────── */
+
 /**
  * @brief     Flash read operation
  * @param[in] addr absolute flash address
