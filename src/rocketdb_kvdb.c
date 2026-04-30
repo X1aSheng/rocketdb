@@ -2773,13 +2773,13 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
         while ((uint32_t)it->offset + KV_REC_SZ <= ss) {
             rdb_kv_record_hdr_t rh;
             if (fl_read(db, base + it->offset, &rh, sizeof(rh)) != 0) {
-                it->offset = (uint16_t)ss;
+                it->offset = ss;
                 break;
             }
 
             /* End of record chain */
             if (rh.magic == 0xFFu && rh.state == 0xFFu) {
-                it->offset = (uint16_t)ss;
+                it->offset = ss;
                 break;
             }
 
