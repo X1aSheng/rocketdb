@@ -1021,11 +1021,15 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
     if (!db || !db->part)
         return RDB_ERR_PARAM;
+    if (!db->erase_cnts)
+        return RDB_ERR_PARAM;
 
     /* Validate sector count */
     {
         uint32_t scnt32 = db->part->total_size / db->part->sector_size;
         if (scnt32 < RDB_TS_MIN_SECTORS || scnt32 > RDB_MAX_SECTORS)
+            return RDB_ERR_PARAM;
+        if (db->sector_cnt != 0 && db->sector_cnt != (uint8_t)scnt32)
             return RDB_ERR_PARAM;
     }
 

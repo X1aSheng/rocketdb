@@ -99,7 +99,7 @@ Online API reference: [rocketdb.h](src/rocketdb.h) (Doxygen-formatted comments t
 
 Offline documents:
 
-- [`docs/design.md`](docs/design.md) — Full architecture and design manual
+- [`docs/rocketdb%20design.md`](docs/rocketdb%20design.md) — Full architecture and design manual
 - [`docs/EXAMPLES.md`](docs/EXAMPLES.md) — 8 complete code examples
 - [`docs/HAL_REFERENCE.md`](docs/HAL_REFERENCE.md) — STM32 MCU integration guide
 - [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — Common problems and solutions
