@@ -914,17 +914,20 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
                     calc == rh.data_crc) {
                     /* Data intact → promote to VALID */
                     uint8_t v = RDB_STATE_VALID;
-                    twr_f(db, base + off + 1, &v, 1);
-                    db->head_count++;
-                    if (db->head_time_base != RDB_TIME_INVALID) {
-                        uint32_t t = db->head_time_base + rh.time_delta;
-                        if (t > db->last_time)
-                            db->last_time = t;
+                    if (twr_f(db, base + off + 1, &v, 1) == 0) {
+                        db->head_count++;
+                        if (db->head_time_base != RDB_TIME_INVALID) {
+                            uint32_t t = db->head_time_base + rh.time_delta;
+                            if (t > db->last_time)
+                                db->last_time = t;
+                        }
                     }
+                    /* On write failure: leave as WRITING, will retry next init */
                 } else {
                     /* Data incomplete → demote to DEAD */
                     uint8_t d = RDB_STATE_DEAD;
                     twr_f(db, base + off + 1, &d, 1);
+                    /* On write failure: leave as WRITING, will retry next init */
                 }
             } else if (rh.state == RDB_STATE_VALID) {
                 db->head_count++;
