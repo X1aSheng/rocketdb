@@ -1021,8 +1021,6 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
     if (!db || !db->part)
         return RDB_ERR_PARAM;
-    if (!db->erase_cnts)
-        return RDB_ERR_PARAM;
 
     /* Validate sector count */
     {
