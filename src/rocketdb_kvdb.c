@@ -1968,6 +1968,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
         } else {
             db->active_sec = best;
             db->write_off = db->sectors[best].write_off;
+            db->sectors[best].status = RDB_SEC_ACTIVE;
 
             /* Seal all other ACTIVE sectors that have data */
             for (uint8_t s = 0; s < db->sector_cnt; s++) {
