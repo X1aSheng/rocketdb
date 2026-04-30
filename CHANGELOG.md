@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.1] — 2026-04-30
+
+### Fixed
+
+- **Version number**: `rdb_version()` now returns `0x010100` (v1.1.0), matching CHANGELOG.
+  `@version` tags in source headers also updated.
+- **KVDB init Phase 3**: Fallback sector selection now resets SEALED→ACTIVE status,
+  fixing inconsistent runtime state when a sealed sector is chosen as active.
+- **TSDB recount**: Periodic `total_count` reconciliation now uses read-only scan
+  (`RDB_FALSE`), avoiding unexpected flash writes during append operations.
+- **README broken link**: Fixed `docs/design.md` → `docs/rocketdb%20design.md`.
+
+### Added
+
+- **TSDB format validation**: `rdb_tsdb_format()` now validates `erase_cnts` is non-NULL
+  and `sector_cnt` consistency (matching KVDB format's validation pattern).
+- **W25QXX integration guide**: New comprehensive guide at `docs/W25QXX_GUIDE.md` covering
+  SPI command opcodes, HAL implementation examples for read/write/erase/lock/unlock/yield,
+  recommended configuration for W25Q32/Q64/Q128, timing characteristics, and multi-task
+  SPI bus sharing considerations.
+- **W25QXX HAL template comments**: Added SPI flash command opcode reference in
+  `interface/rocketdb_interface_template.c`.
+
+### Changed
+
+- Test suite: 38/38 cases pass, 57,816 assertions (was 37/38 — `kv_max_boundaries`
+  confirmed as stale binary, resolved by rebuild).
+
+---
+
 ## [1.1.0] — 2026-04-29
 
 ### Fixed
@@ -85,4 +115,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.1.1]: https://github.com/xiasheng/rocketdb/releases/tag/v1.1.1
 [1.1.0]: https://github.com/xiasheng/rocketdb/releases/tag/v1.1.0

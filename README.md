@@ -102,6 +102,7 @@ Offline documents:
 - [`docs/rocketdb%20design.md`](docs/rocketdb%20design.md) — Full architecture and design manual
 - [`docs/EXAMPLES.md`](docs/EXAMPLES.md) — 8 complete code examples
 - [`docs/HAL_REFERENCE.md`](docs/HAL_REFERENCE.md) — STM32 MCU integration guide
+- [`docs/W25QXX_GUIDE.md`](docs/W25QXX_GUIDE.md) — W25QXX SPI NOR Flash integration guide
 - [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — Common problems and solutions
 - [`docs/test_plan.md`](docs/test_plan.md) — Test plan and coverage assessment
 
