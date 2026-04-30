@@ -24,7 +24,7 @@ RocketDB 针对 W25QXX 系列 SPI NOR Flash 芯片的 HAL 集成完整指南。
 命令              操作码    描述
 ──────────────────────────────────────────────
 WREN              0x06      写使能（擦除/编程前必须发送）
-WRLR              0x01      写禁止
+WRDI              0x04      写禁止
 RDSR1             0x05      读状态寄存器 1（检查 WIP/BUSY 位）
 RDID              0x9F      JEDEC ID（识别芯片型号）
 SECTOR_ERASE_4K   0x20      4KB 扇区擦除
@@ -216,11 +216,12 @@ const rdb_flash_ops_t w25q_ops = {
 #define ROCKETDB_OFFSET      (W25Q32_TOTAL_SIZE - 128 * 1024)
 #define ROCKETDB_SIZE        (128 * 1024)        /* 128KB     */
 
-static uint32_t kv_ec[64];
-static uint32_t ts_ec[64];
+static rdb_kv_sector_meta_t kv_meta[16]; /* 16 × 4KB = 64KB 分区 */
+static uint32_t             ts_ec[16];
 
 static rdb_partition_t kv_part = {
-    .addr        = ROCKETDB_OFFSET,
+    .name        = "kvdb",
+    .base_addr   = ROCKETDB_OFFSET,
     .total_size  = 64 * 1024,    /* 64KB      */
     .sector_size = 4096u,        /* 4KB 扇区  */
     .write_gran  = 0,            /* 1 字节    */
@@ -228,7 +229,8 @@ static rdb_partition_t kv_part = {
 };
 
 static rdb_partition_t ts_part = {
-    .addr        = ROCKETDB_OFFSET + 64 * 1024,
+    .name        = "tsdb",
+    .base_addr   = ROCKETDB_OFFSET + 64 * 1024,
     .total_size  = 64 * 1024,
     .sector_size = 4096u,
     .write_gran  = 0,
@@ -240,15 +242,15 @@ rdb_tsdb_t tsdb;
 
 void rocketdb_w25q_init(void) {
     kvdb.part       = &kv_part;
-    kvdb.sectors    = kv_ec;
-    kvdb.sector_cnt = 16;  /* 16 × 4KB = 64KB, gc_reserve=2 */
+    kvdb.sectors    = kv_meta;  /* rdb_kv_sector_meta_t[] */
+    kvdb.sector_cnt = 16;       /* 16 × 4KB = 64KB, gc_reserve=2 */
 
     tsdb.part       = &ts_part;
-    tsdb.erase_cnts = ts_ec;
+    tsdb.erase_cnts = ts_ec;    /* uint32_t[] */
     tsdb.sector_cnt = 16;
 
     rdb_kvdb_format(&kvdb);
-    rdb_kvdb_init(&kvdb, &kv_part, kv_ec);
+    rdb_kvdb_init(&kvdb, &kv_part, kv_meta);
 
     rdb_tsdb_format(&tsdb);
     rdb_tsdb_init(&tsdb, &ts_part, ts_ec);

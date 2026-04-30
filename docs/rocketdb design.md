@@ -1269,8 +1269,7 @@ if (rc == RDB_ERR_FULL) {
 ## 第七章 工具函数
 
 ```c
-uint32_t    rdb_version(void);           /* 返回 0x000002 */
-const char *rdb_version_str(void);       /* 返回 "0.0.2"  */
+uint32_t    rdb_version(void);           /* 返回 0x010100 (v1.1.0) */
 size_t      rdb_kvdb_meta_size(uint8_t sector_cnt);  /* N × 16 */
 size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 ```

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.2] — 2026-04-30
+
+### Fixed
+
+- **KVDB `fixup_stale` int8_t overflow**: Changed loop index from `int8_t` to `int16_t`
+  to support sector counts >127 without silent dedup skipping.
+- **KVDB `gc_execute` iter_gen**: `iter_gen` is now incremented unconditionally on sector
+  erase, preventing active iterators from accessing erased sectors during zero-live GC.
+- **KVDB `gc_execute` dedup ordering**: Sectors are now sorted by descending `create_seq`
+  before post-GC duplicate marking, ensuring the newest record copy is preserved.
+- **KVDB `iter_next` flash error**: `fl_read` return value now checked when copying
+  value buffer; returns `RDB_ERR_FLASH` on failure instead of silently yielding garbage.
+- **TSDB `ts_rotate` error path**: On `ts_init_sec` failure, `head_off` is now set to
+  `sector_size` to force rotation on next append instead of writing to stale offset
+  in the already-sealed head sector.
+- **TSDB `ts_classify` read retry**: Transient flash read errors now trigger one retry
+  before classifying a sector as CORRUPT, preventing unnecessary data loss.
+- **TSDB `ts_scan` write checking**: Return values of `twr_f` during WRITING record
+  recovery are now checked; records remain WRITING on write failure for retry.
+- **TSDB `ts_data_crc` yield**: Added `tyield()` in the data CRC streaming loop to
+  prevent RTOS starvation on large payloads.
+- **Test framework `va_copy`**: Fixed undefined behavior from double `va_start` by
+  using `va_copy` for log file output.
+- **Fault injection tests**: Added missing `rdb_kvdb_format()` calls and proper
+  `db.part`/`db.sectors` assignment in all 5 test cases. Added assertions for
+  write failure detection.
+
+---
+
 ## [1.1.1] — 2026-04-30
 
 ### Fixed

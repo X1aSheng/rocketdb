@@ -395,7 +395,7 @@ find test/out -name "test_*_log_*.log" -mtime +7 -delete
 
 **症状**:
 ```c
-rdb_err_t err = rdb_kvdb_init(&db, &flash_ops);
+rdb_err_t err = rdb_kvdb_init(&db, &partition, meta_buf);
 // err == RDB_ERR_CORRUPT
 ```
 
@@ -412,7 +412,7 @@ rdb_err_t err = rdb_kvdb_init(&db, &flash_ops);
 rdb_kvdb_format(&db);
 
 // 再初始化
-rdb_err_t err = rdb_kvdb_init(&db, &flash_ops);
+rdb_err_t err = rdb_kvdb_init(&db, &partition, meta_buf);
 assert(err == RDB_OK);
 ```
 
