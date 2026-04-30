@@ -324,6 +324,8 @@ int test_run_parameterized(const char *name, param_test_fn_t func,
 
 const char *test_make_log_path(const char *name)
 {
+    /* Not thread-safe — returns pointer to static buffer.
+     * Callers must consume the result before the next call. */
     static char path[128];
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);

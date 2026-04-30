@@ -407,8 +407,9 @@ int fault_export_rules(fault_ctx_t *ctx, char *buf, size_t len)
 int fault_import_rules(fault_ctx_t *ctx, const char *str)
 {
     if (!ctx || !str) return 0;
-    
-    /* 简化实现，仅用于演示 */
+
+    /* TODO: Not yet implemented. Currently a stub that accepts any input.
+     * Future: parse rule strings to dynamically configure fault injection. */
     (void)str;
     return 0;
 }

@@ -238,7 +238,10 @@ static ts_cls_t ts_classify(const rdb_tsdb_t* db, uint8_t s,
     if (out)
         *out = h;
 
-    /* All-0xFF magic → verify with 3-point erase check */
+    /* All-0xFF magic → verify with 3-point erase check.
+     * NB: magic == 0xFFFFFFFFu at offset 0 implicitly covers the start-of-sector
+     * probe, so the explicit midpoint and end probes below complete a full
+     * 3-point check (start/mid/end), matching KVDB's is_erased() behavior. */
     if (h.magic == 0xFFFFFFFFu) {
         uint8_t b[4];
 
