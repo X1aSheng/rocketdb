@@ -1264,9 +1264,8 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
        Every full ring cycle (sector_rotations is a multiple of
        sector_cnt), re-derive total_count from actual sector data
        to eliminate accumulated drift from edge-case bookkeeping
-       errors.  Uses ts_scan() for accurate counting — recovers
-       WRITING records in-place before counting, matching the
-       ts_rotate() behaviour. */
+       errors.  Uses ts_scan() in read-only mode to avoid
+       unexpected flash writes during an append operation. */
     if (db->stats.sector_rotations > 0 &&
         (db->stats.sector_rotations % db->sector_cnt) == 0) {
         uint32_t recount = 0;
@@ -1280,7 +1279,7 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
             if (trd(db, tsa(db, s), &h, sizeof(h)) == 0) {
                 uint32_t max_off = (h.end_off != 0xFFFFu) ? h.end_off
                                                           : db->sector_size;
-                recount += ts_scan(db, s, h.time_base, max_off, NULL, NULL, RDB_TRUE);
+                recount += ts_scan(db, s, h.time_base, max_off, NULL, NULL, RDB_FALSE);
             }
             s = tnext(db, s);
         }
