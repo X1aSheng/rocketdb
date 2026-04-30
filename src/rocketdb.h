@@ -574,9 +574,9 @@ typedef struct {
     uint32_t create_seq;    /**< Sector creation sequence (from header)   */
     uint32_t erase_cnt;     /**< Cumulative erase count (from header)     */
     uint32_t garbage_bytes; /**< Total bytes occupied by DEAD records     */
-    uint16_t write_off;     /**< Next writable offset within the sector   */
+    uint32_t write_off;     /**< Next writable offset within the sector   */
     uint8_t  status;        /**< Sector status (rdb_sec_status_t)         */
-    uint8_t  _pad;          /**< Padding for alignment                    */
+    uint8_t  _pad[3];       /**< Padding for alignment                    */
 } rdb_kv_sector_meta_t;
 
 /**
@@ -617,8 +617,7 @@ typedef struct {
     uint8_t                initialized; /**< 1 after successful init, 0 otherwise      */
     uint32_t               write_seq;   /**< Global monotonic write sequence counter    */
     uint32_t               live_bytes;  /**< Total bytes occupied by VALID records      */
-    uint16_t               write_off;   /**< Current write offset in active sector      */
-    uint16_t               _pad;        /**< Padding for alignment                      */
+    uint32_t               write_off;   /**< Current write offset in active sector      */
     uint32_t               iter_gen;    /**< Iterator generation (detects modification) */
     rdb_kv_stats_t         stats;       /**< Runtime statistics                         */
 } rdb_kvdb_t;
@@ -646,8 +645,8 @@ typedef struct {
     rdb_kvdb_t* db;     /**< Parent database handle                       */
     uint32_t    gen;    /**< Snapshot of db->iter_gen at init time         */
     uint8_t     sector; /**< Current sector index being iterated           */
-    uint16_t    offset; /**< Current byte offset within the sector         */
-    uint8_t     _pad;   /**< Padding for alignment                         */
+    uint8_t     _pad[3];/**< Padding for alignment                         */
+    uint32_t    offset; /**< Current byte offset within the sector         */
 } rdb_kv_iter_t;
 
 /* ═══════════════════════════════════════════════════════════════════════════

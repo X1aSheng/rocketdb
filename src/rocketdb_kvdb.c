@@ -565,7 +565,7 @@ static void scan_sector(rdb_kvdb_t* db, uint8_t s,
         kv_rec_info_t ri;
         ri.addr = base + off;
         ri.seq = rh.seq;
-        ri.rsz = (uint16_t)rsz;
+        ri.rsz = rsz;
         ri.val_len = rh.val_len;
         ri.key_hash = rh.key_hash;
         ri.key_len = rh.key_len;
@@ -578,7 +578,7 @@ static void scan_sector(rdb_kvdb_t* db, uint8_t s,
     }
 
     if (update_woff)
-        db->sectors[s].write_off = (uint16_t)off;
+        db->sectors[s].write_off = off;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1042,7 +1042,7 @@ static int init_sector(rdb_kvdb_t* db, uint8_t s) {
     db->sectors[s].erase_cnt = ec;
     db->sectors[s].create_seq = db->write_seq;
     db->sectors[s].garbage_bytes = 0;
-    db->sectors[s].write_off = (uint16_t)data_start(db);
+    db->sectors[s].write_off = data_start(db);
     db->sectors[s].status = RDB_SEC_ACTIVE;
     return 0;
 }
@@ -1249,11 +1249,11 @@ static int migrate_one(rdb_kvdb_t* db, uint8_t src_sec,
     if (fl_write(db, dst + 1, &v, 1) != 0) {
         /* Advance write_off past the partially-written record to avoid
            NOR 1→0 violation on the next write to the same location. */
-        db->sectors[db->active_sec].write_off += (uint16_t)rsz;
+        db->sectors[db->active_sec].write_off += rsz;
         return -1;
     }
 
-    db->sectors[db->active_sec].write_off += (uint16_t)rsz;
+    db->sectors[db->active_sec].write_off += rsz;
     return 0;
 }
 
@@ -1393,7 +1393,7 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
     db->sectors[victim].erase_cnt = ec;
     db->sectors[victim].create_seq = 0;
     db->sectors[victim].garbage_bytes = 0;
-    db->sectors[victim].write_off = (uint16_t)data_start(db);
+    db->sectors[victim].write_off = data_start(db);
     db->sectors[victim].status = RDB_SEC_ERASED;
 
     db->stats.gc_reclaimed_bytes += data_cap(db);
@@ -1905,7 +1905,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
         /* All-0xFF magic → check if genuinely erased or corrupt */
         if (sh.magic == 0xFFFFFFFFu) {
             db->sectors[s].status = is_erased(db, s) ? RDB_SEC_ERASED : RDB_SEC_CORRUPT;
-            db->sectors[s].write_off = (uint16_t)data_start(db);
+            db->sectors[s].write_off = data_start(db);
             if (db->sectors[s].status == RDB_SEC_CORRUPT)
                 db->stats.corrupt_sectors++;
             continue;
@@ -2007,7 +2007,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
             if (fl_erase(db, sec_addr(db, s)) == 0) {
                 db->sectors[s].erase_cnt++;
                 db->sectors[s].status = RDB_SEC_ERASED;
-                db->sectors[s].write_off = (uint16_t)data_start(db);
+                db->sectors[s].write_off = data_start(db);
                 db->sectors[s].garbage_bytes = 0;
                 db->sectors[s].create_seq = 0;
             } else {
@@ -2093,7 +2093,7 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
         db->sectors[s].erase_cnt = saved_ec[s] + 1;
         db->sectors[s].create_seq = 0;
         db->sectors[s].garbage_bytes = 0;
-        db->sectors[s].write_off = (uint16_t)data_start(db);
+        db->sectors[s].write_off = data_start(db);
         db->sectors[s].status = RDB_SEC_ERASED;
     }
 
@@ -2107,7 +2107,7 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
     }
 
     db->active_sec = 0;
-    db->write_off = (uint16_t)data_start(db);
+    db->write_off = data_start(db);
     db->live_bytes = 0;
     db->iter_gen = 0;
     db->initialized = 1;
@@ -2332,7 +2332,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
     }
 
     /* Step 4: bookkeeping — update write offset and live bytes */
-    db->sectors[db->active_sec].write_off += (uint16_t)rsz;
+    db->sectors[db->active_sec].write_off += rsz;
     db->write_off = db->sectors[db->active_sec].write_off;
     db->live_bytes += rsz;
 
@@ -2740,7 +2740,7 @@ rdb_err_t rdb_kv_iter_init(rdb_kv_iter_t* it, rdb_kvdb_t* db) {
     it->db = db;
     it->gen = db->iter_gen;
     it->sector = 0;
-    it->offset = (uint16_t)data_start(db);
+    it->offset = data_start(db);
     return RDB_OK;
 }
 
@@ -2763,7 +2763,7 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
         /* Skip erased and corrupt sectors */
         if (sm->status == RDB_SEC_ERASED || sm->status == RDB_SEC_CORRUPT) {
             it->sector++;
-            it->offset = (uint16_t)data_start(db);
+            it->offset = data_start(db);
             continue;
         }
 
@@ -2798,7 +2798,7 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
             }
 
             uint16_t cur_off = it->offset;
-            it->offset += (uint16_t)rsz; /* Advance past this record */
+            it->offset += rsz; /* Advance past this record */
 
             /* Only consider VALID records */
             if (rh.state != RDB_STATE_VALID)
@@ -2846,7 +2846,7 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
 
         /* Move to next sector */
         it->sector++;
-        it->offset = (uint16_t)data_start(db);
+        it->offset = data_start(db);
     }
 
     fl_unlock(db);
