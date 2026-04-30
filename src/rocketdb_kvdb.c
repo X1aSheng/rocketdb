@@ -2039,7 +2039,7 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
     /* Validate sector count fits in uint8_t */
     {
         uint32_t scnt32 = db->part->total_size / db->part->sector_size;
-        if (scnt32 == 0 || scnt32 > RDB_MAX_SECTORS)
+        if (scnt32 < RDB_KV_MIN_SECTORS || scnt32 > RDB_MAX_SECTORS)
             return RDB_ERR_PARAM;
     }
 
