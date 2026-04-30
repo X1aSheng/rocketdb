@@ -183,6 +183,7 @@ static int ts_data_crc(const rdb_tsdb_t* db, uint32_t addr,
         crc = rdb_crc16_cont(crc, buf, ch);
         pos += ch;
         rem -= ch;
+        tyield(db);
     }
     *out = crc;
     return 0;
@@ -219,11 +220,20 @@ typedef enum {
     TS_CORRUPT = 3 /**< Sector header is unrecognisable              */
 } ts_cls_t;
 
+/* Retry a flash read once before giving up, to tolerate transient bus errors
+   that would otherwise permanently classify a sector as CORRUPT. */
+static int ts_read_retry(const rdb_tsdb_t* db, uint32_t addr,
+    void* buf, size_t len) {
+    if (trd(db, addr, buf, len) == 0)
+        return 0;
+    return trd(db, addr, buf, len);
+}
+
 static ts_cls_t ts_classify(const rdb_tsdb_t* db, uint8_t s,
     rdb_ts_sector_hdr_t* out) {
     uint32_t            addr = tsa(db, s);
     rdb_ts_sector_hdr_t h;
-    if (trd(db, addr, &h, sizeof(h)) != 0)
+    if (ts_read_retry(db, addr, &h, sizeof(h)) != 0)
         return TS_CORRUPT;
     if (out)
         *out = h;
@@ -233,13 +243,13 @@ static ts_cls_t ts_classify(const rdb_tsdb_t* db, uint8_t s,
         uint8_t b[4];
 
         /* Probe midpoint */
-        if (trd(db, addr + db->sector_size / 2, b, 4) != 0)
+        if (ts_read_retry(db, addr + db->sector_size / 2, b, 4) != 0)
             return TS_CORRUPT;
         if (b[0] != 0xFF || b[1] != 0xFF || b[2] != 0xFF || b[3] != 0xFF)
             return TS_CORRUPT;
 
         /* Probe last 4 bytes */
-        if (trd(db, addr + db->sector_size - 4, b, 4) != 0)
+        if (ts_read_retry(db, addr + db->sector_size - 4, b, 4) != 0)
             return TS_CORRUPT;
         if (b[0] != 0xFF || b[1] != 0xFF || b[2] != 0xFF || b[3] != 0xFF)
             return TS_CORRUPT;
@@ -549,13 +559,15 @@ static uint16_t ts_scan(rdb_tsdb_t* db, uint8_t s,
                 calc == rh.data_crc) {
                 /* Data intact → promote to VALID */
                 uint8_t v = RDB_STATE_VALID;
-                twr_f(db, base + off + 1, &v, 1);
-                eff_state = RDB_STATE_VALID;
+                if (twr_f(db, base + off + 1, &v, 1) == 0)
+                    eff_state = RDB_STATE_VALID;
+                /* On write failure: leave as WRITING, will retry next init */
             } else {
                 /* Data incomplete/corrupt → demote to DEAD */
                 uint8_t d = RDB_STATE_DEAD;
-                twr_f(db, base + off + 1, &d, 1);
-                eff_state = RDB_STATE_DEAD;
+                if (twr_f(db, base + off + 1, &d, 1) == 0)
+                    eff_state = RDB_STATE_DEAD;
+                /* On write failure: leave as WRITING, will retry next init */
             }
         }
 

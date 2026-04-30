@@ -2833,7 +2833,11 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
             if (val_buf && val_cap > 0 && rh.val_len > 0) {
                 uint32_t ka = RDB_ALIGN_UP(rh.key_len, g);
                 uint16_t vr = (uint16_t)RDB_MIN(val_cap, rh.val_len);
-                fl_read(db, base + cur_off + KV_REC_SZ + ka, val_buf, vr);
+                if (fl_read(db, base + cur_off + KV_REC_SZ + ka, val_buf, vr) != 0) {
+                    db->stats.flash_errors++;
+                    fl_unlock(db);
+                    return RDB_ERR_FLASH;
+                }
             }
 
             fl_unlock(db);

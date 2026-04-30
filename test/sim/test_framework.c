@@ -49,20 +49,22 @@ static uint32_t get_time_ms(void)
  */
 static void log_output(const char *fmt, ...)
 {
-    va_list ap;
-    
-    /* 输出到终端 */
+    va_list ap, ap_copy;
+
     va_start(ap, fmt);
+
+    /* 输出到终端 */
     vprintf(fmt, ap);
-    va_end(ap);
-    
+
     /* 输出到日志文件 */
     if (g_config.log_file) {
-        va_start(ap, fmt);
-        vfprintf(g_config.log_file, fmt, ap);
-        va_end(ap);
+        va_copy(ap_copy, ap);
+        vfprintf(g_config.log_file, fmt, ap_copy);
+        va_end(ap_copy);
         fflush(g_config.log_file);
     }
+
+    va_end(ap);
 }
 
 /**

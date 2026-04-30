@@ -72,7 +72,8 @@ TEST_CASE(fault_write_fail_nth, "Fault", "Write fails on Nth operation")
     
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
-    
+    db.part = &part;
+    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
     rdb_kvdb_format(&db);
     rdb_err_t ret = rdb_kvdb_init(&db, &part, meta_buf);
     TEST_ASSERT_RDB_OK(ret);
@@ -106,17 +107,17 @@ TEST_CASE(fault_write_fail_nth, "Fault", "Write fails on Nth operation")
 TEST_CASE(fault_write_fail_probability, "Fault", "Write fails with probability")
 {
     (void)ctx;
-    
+
     printf("\n[Fault Test 2] Write fails with 20%% probability\n");
-    
+
     /* 初始化 Flash */
     sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
-    
+
     /* 配置故障：20% 概率写入失败 */
     fault_init(&g_fault_ctx, 0x66666);
     fault_quick_write_fail_probability(&g_fault_ctx, 20);
     sim_flash_set_fault_ctx(&g_flash, &g_fault_ctx);
-    
+
     /* 初始化 KVDB */
     rdb_partition_t part = {
         .name = "test",
@@ -126,9 +127,11 @@ TEST_CASE(fault_write_fail_probability, "Fault", "Write fails with probability")
         .write_gran = 0,
         .ops = &g_ops
     };
-    
+
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
+    db.part = &part;
+    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
     rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
 
@@ -184,6 +187,8 @@ TEST_CASE(fault_erase_fail, "Fault", "Erase fails on Nth operation")
     
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
+    db.part = &part;
+    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
     rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
 
@@ -238,6 +243,8 @@ TEST_CASE(fault_power_loss, "Fault", "Power loss during write")
     
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
+    db.part = &part;
+    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
     rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
 
@@ -298,6 +305,8 @@ TEST_CASE(fault_data_corruption, "Fault", "Data corruption in specific range")
     
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
+    db.part = &part;
+    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
     rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
 
