@@ -73,28 +73,29 @@ TEST_CASE(fault_write_fail_nth, "Fault", "Write fails on Nth operation")
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
     
+    rdb_kvdb_format(&db);
     rdb_err_t ret = rdb_kvdb_init(&db, &part, meta_buf);
-    if (ret != RDB_OK) {
-        printf("  KVDB init failed (expected if fault triggered early)\n");
-        /* 这是预期的，因为初始化可能触发写入 */
-    }
-    
+    TEST_ASSERT_RDB_OK(ret);
+
     /* 尝试多次写入，观察第 5 次失败 */
+    int fail_count = 0;
     for (int i = 0; i < 10; i++) {
         char key[16];
         snprintf(key, sizeof(key), "key%d", i);
         ret = rdb_kvdb_set(&db, key, "value", 5);
-        
+
         if (ret != RDB_OK) {
             printf("  Set #%d failed (write_count=%u)\n", i + 1, g_fault_ctx.write_count);
+            fail_count++;
         } else {
             printf("  Set #%d success\n", i + 1);
         }
     }
-    
+    TEST_ASSERT(fail_count > 0); /* at least one write should fail */
+
     /* 打印故障报告 */
     fault_print_report(&g_fault_ctx);
-    
+
     return 0;
 }
 
@@ -128,8 +129,9 @@ TEST_CASE(fault_write_fail_probability, "Fault", "Write fails with probability")
     
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
+    rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
-    
+
     /* 尝试 50 次写入，统计失败率 */
     int success = 0, failed = 0;
     for (int i = 0; i < 50; i++) {
@@ -182,8 +184,9 @@ TEST_CASE(fault_erase_fail, "Fault", "Erase fails on Nth operation")
     
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
+    rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
-    
+
     /* 写入大量数据触发 GC（需要擦除） */
     printf("  Writing data to trigger GC...\n");
     for (int i = 0; i < 200; i++) {
@@ -235,8 +238,9 @@ TEST_CASE(fault_power_loss, "Fault", "Power loss during write")
     
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
+    rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
-    
+
     /* 写入数据，观察掉电 */
     for (int i = 0; i < 10; i++) {
         char key[16];
@@ -294,8 +298,9 @@ TEST_CASE(fault_data_corruption, "Fault", "Data corruption in specific range")
     
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
+    rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
-    
+
     /* 写入数据 */
     rdb_kvdb_set(&db, "test_key", "test_value", 10);
     

@@ -899,9 +899,9 @@ static void fixup_stale(rdb_kvdb_t* db) {
     rdb_dedup_init(&ds);
     fixup_ctx_t fx = { .ds = &ds, .dead_count = 0, .fallback = 0 };
 
-    int8_t i = (int8_t)(cnt - 1);
+    int16_t i = (int16_t)(cnt - 1);
     for (; i >= 0; i--) {
-        scan_sector(db, order[(uint8_t)i], fixup_cb, &fx, RDB_FALSE);
+        scan_sector(db, order[(uint16_t)i], fixup_cb, &fx, RDB_FALSE);
     }
 }
 
@@ -1400,21 +1400,42 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
 
     fl_yield(db);
 
+    /* Invalidate live iterators — victim sector has been erased */
+    db->iter_gen++;
+
     /* Post-migration cleanup: dedup stale duplicates + recalc garbage */
     if (gc.migrated > 0) {
-        /* Invalidate live iterators — records have moved to new sectors */
-        db->iter_gen++;
 
-        rdb_dedup_set_t ds;
-        rdb_dedup_init(&ds);
+        /* Collect active sectors and sort by descending create_seq
+           so the newest copy is the "first sighting" preserved by
+           dedup_mark_cb, matching fixup_stale's ordering invariant. */
+        uint8_t order[RDB_MAX_SECTORS];
+        uint8_t cnt = 0;
         for (uint8_t s = 0; s < db->sector_cnt; s++) {
             if (s == victim)
                 continue;
             if (db->sectors[s].status == RDB_SEC_ERASED ||
                 db->sectors[s].status == RDB_SEC_CORRUPT)
                 continue;
-            scan_sector(db, s, dedup_mark_cb, &ds, RDB_FALSE);
-            recalc_garbage(db, s);
+            order[cnt++] = s;
+        }
+        /* Sort descending by create_seq (newest first) */
+        for (int j = 1; j < cnt; j++) {
+            uint8_t key = order[j];
+            int k = j - 1;
+            while (k >= 0 && RDB_SEQ_GT(db->sectors[key].create_seq,
+                                        db->sectors[order[k]].create_seq)) {
+                order[k + 1] = order[k];
+                k--;
+            }
+            order[k + 1] = key;
+        }
+
+        rdb_dedup_set_t ds;
+        rdb_dedup_init(&ds);
+        for (uint8_t s = 0; s < cnt; s++) {
+            scan_sector(db, order[s], dedup_mark_cb, &ds, RDB_FALSE);
+            recalc_garbage(db, order[s]);
         }
         reconcile_live(db);
     }

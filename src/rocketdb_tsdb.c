@@ -626,8 +626,13 @@ static rdb_err_t ts_rotate(rdb_tsdb_t* db) {
 
     /* Step 3: Initialise the new head sector */
     db->head_seq++;
-    if (ts_init_sec(db, next, db->head_seq) != 0)
+    if (ts_init_sec(db, next, db->head_seq) != 0) {
+        /* Head is already sealed; set head_off to sector_size to force
+           a rotation on the next append rather than writing to a stale
+           offset in the now-sealed sector. */
+        db->head_off = db->sector_size;
         return RDB_ERR_FLASH;
+    }
 
     db->head_sec = next;
     db->head_off = tds(db);
