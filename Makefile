@@ -1,5 +1,5 @@
 # Makefile for RocketDB
-# Platform: Windows with Clang/GCC
+# Platform: Cross-platform (Linux, macOS, Windows with Clang/GCC)
 # Usage: make [all|test|clean|rebuild|help]
 #
 # Test files (7 total):
@@ -14,6 +14,12 @@
 CC      = clang
 CFLAGS  = -Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS
 INCLUDES = -Isrc -Itest/sim
+LDFLAGS =
+# Add -lm on platforms that need it (Linux, macOS; Windows UCRT doesn't)
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
+ifneq ($(UNAME_S),Windows)
+    LDFLAGS += -lm
+endif
 OUTPUT_DIR = test/out
 
 # Engine sources
@@ -54,7 +60,7 @@ all: $(OUTPUT_DIR) $(TEST_EXES)
 
 # Create output directory
 $(OUTPUT_DIR):
-	@if not exist "$(OUTPUT_DIR)" mkdir "$(OUTPUT_DIR)"
+	@mkdir -p "$(OUTPUT_DIR)"
 
 # ── Shared object compile rule ──────────────────────────────────────────
 
@@ -74,7 +80,7 @@ $(OUTPUT_DIR)/test_kvdb_basic.exe: \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o
 	@echo Linking $@...
-	@$(CC) -o $@ $^
+	@$(CC) $(LDFLAGS) -o $@ $^
 
 # KVDB stress: needs kvdb + fault
 $(OUTPUT_DIR)/test_kvdb_stress.exe: \
@@ -85,7 +91,7 @@ $(OUTPUT_DIR)/test_kvdb_stress.exe: \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o
 	@echo Linking $@...
-	@$(CC) -o $@ $^
+	@$(CC) $(LDFLAGS) -o $@ $^
 
 # TSDB basic: needs tsdb
 $(OUTPUT_DIR)/test_tsdb_basic.exe: \
@@ -96,7 +102,7 @@ $(OUTPUT_DIR)/test_tsdb_basic.exe: \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_tsdb.o
 	@echo Linking $@...
-	@$(CC) -o $@ $^
+	@$(CC) $(LDFLAGS) -o $@ $^
 
 # TSDB stress: needs tsdb + fault
 $(OUTPUT_DIR)/test_tsdb_stress.exe: \
@@ -107,7 +113,7 @@ $(OUTPUT_DIR)/test_tsdb_stress.exe: \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_tsdb.o
 	@echo Linking $@...
-	@$(CC) -o $@ $^
+	@$(CC) $(LDFLAGS) -o $@ $^
 
 # Integration: needs kvdb + tsdb + fault + dist
 $(OUTPUT_DIR)/test_integration.exe: \
@@ -120,7 +126,7 @@ $(OUTPUT_DIR)/test_integration.exe: \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o \
 	$(OUTPUT_DIR)/rocketdb_tsdb.o
 	@echo Linking $@...
-	@$(CC) -o $@ $^
+	@$(CC) $(LDFLAGS) -o $@ $^
 
 # Example: needs kvdb
 $(OUTPUT_DIR)/test_example.exe: \
@@ -131,7 +137,7 @@ $(OUTPUT_DIR)/test_example.exe: \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o
 	@echo Linking $@...
-	@$(CC) -o $@ $^
+	@$(CC) $(LDFLAGS) -o $@ $^
 
 # Fault injection demo: needs kvdb + fault
 $(OUTPUT_DIR)/test_fault_injection.exe: \
@@ -142,7 +148,7 @@ $(OUTPUT_DIR)/test_fault_injection.exe: \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o
 	@echo Linking $@...
-	@$(CC) -o $@ $^
+	@$(CC) $(LDFLAGS) -o $@ $^
 
 # ── Run all tests ───────────────────────────────────────────────────────
 
@@ -150,21 +156,22 @@ TEST_BINS = test_kvdb_basic test_kvdb_stress test_tsdb_basic \
             test_tsdb_stress test_integration test_example test_fault_injection
 
 test: $(TEST_EXES)
-	@echo.
+	@echo
 	@echo ========================================
 	@echo   Running RocketDB Test Suites
 	@echo ========================================
-	@echo.
-	@for %%t in ($(TEST_BINS)) do @( \
-		echo --- %%t --- && \
-		$(OUTPUT_DIR)\%%t.exe && \
-		echo. )
+	@echo
+	@for t in $(TEST_BINS); do \
+		echo "--- $$t ---"; \
+		$(OUTPUT_DIR)/$$t.exe; \
+		echo; \
+	done
 
 # ── Clean ───────────────────────────────────────────────────────────────
 
 clean:
 	@echo Cleaning output directory...
-	@if exist "$(OUTPUT_DIR)" rmdir /Q /S "$(OUTPUT_DIR)"
+	@rm -rf "$(OUTPUT_DIR)"
 	@echo Clean completed!
 
 # ── Rebuild ─────────────────────────────────────────────────────────────
