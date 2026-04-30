@@ -1630,7 +1630,7 @@ typedef struct {
  * @param[out] c     Result context — c->found indicates success.
  * @return           1 if found, 0 otherwise.
  */
-static int ts_find_last_valid(const rdb_tsdb_t* db, uint8_t s,
+static int ts_find_last_valid(rdb_tsdb_t* db, uint8_t s,
     uint32_t time_base, uint32_t end_off,
     ts_lt_ctx_t* c) {
     uint32_t base = tsa(db, s);
