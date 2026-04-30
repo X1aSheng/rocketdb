@@ -29,6 +29,7 @@ static fault_ctx_t        g_fault;
 static rdb_partition_t    g_part;
 static rdb_kvdb_t         g_db;
 static rdb_kv_sector_meta_t g_meta[KV_SECTOR_CNT];
+static trace_ctx_t          g_trace;
 
 static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
     return sim_flash_read(&g_flash, addr, buf, len);
@@ -62,9 +63,12 @@ static rdb_err_t kv_reset(void)
     g_db.part = &g_part;
     g_db.sectors = g_meta;
     g_db.sector_cnt = (uint8_t)KV_SECTOR_CNT;
+    trace_event(&g_trace, "KVDB format+init (stress)");
     rdb_err_t ret = rdb_kvdb_format(&g_db);
     if (ret != RDB_OK) return ret;
-    return rdb_kvdb_init(&g_db, &g_part, g_meta);
+    ret = rdb_kvdb_init(&g_db, &g_part, g_meta);
+    if (ret == RDB_OK) trace_kvdb_snapshot(&g_trace, &g_db);
+    return ret;
 }
 
 /* ── Helpers for key construction ──────────────────────────────────────── */
@@ -304,6 +308,10 @@ int main(void)
     };
     test_framework_init(&config);
 
+    trace_init(&g_trace, config.log_file, config.verbose);
+    sim_flash_set_trace(&g_flash, &g_trace);
+    trace_event(&g_trace, "=== KVDB Stress Test Suite Start ===");
+
     test_suite_t *s = test_get_default_suite();
     test_register_case(s, &test_case_kv_gc_stress_100);
     test_register_case(s, &test_case_kv_iter_after_gc);
@@ -312,6 +320,10 @@ int main(void)
     test_register_case(s, &test_case_kv_corrupt_sector_recovery);
 
     test_run_all(NULL);
+
+    trace_event(&g_trace, "=== KVDB Stress Test Suite End ===\n");
+    trace_kvdb_stats(&g_trace, &g_db);
+
     test_print_report();
     if (config.log_file) fclose(config.log_file);
 

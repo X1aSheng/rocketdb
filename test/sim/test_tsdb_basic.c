@@ -29,6 +29,7 @@ static sim_flash_t g_flash;
 static rdb_partition_t g_part;
 static rdb_tsdb_t  g_db;
 static uint32_t    g_ec[TS_SECTOR_CNT];
+static trace_ctx_t g_trace;
 
 static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
     return sim_flash_read(&g_flash, addr, buf, len);
@@ -60,9 +61,12 @@ static rdb_err_t ts_reset(void)
     g_db.part = &g_part;
     g_db.erase_cnts = g_ec;
     g_db.sector_cnt = (uint8_t)TS_SECTOR_CNT;
+    trace_event(&g_trace, "TSDB format+init (basic)");
     rdb_err_t ret = rdb_tsdb_format(&g_db);
     if (ret != RDB_OK) return ret;
-    return rdb_tsdb_init(&g_db, &g_part, g_ec);
+    ret = rdb_tsdb_init(&g_db, &g_part, g_ec);
+    if (ret == RDB_OK) trace_tsdb_snapshot(&g_trace, &g_db);
+    return ret;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -315,6 +319,10 @@ int main(void)
     };
     test_framework_init(&config);
 
+    trace_init(&g_trace, config.log_file, config.verbose);
+    sim_flash_set_trace(&g_flash, &g_trace);
+    trace_event(&g_trace, "=== TSDB Basic Test Suite Start ===");
+
     test_suite_t *s = test_get_default_suite();
     test_register_case(s, &test_case_ts_basic_append_query);
     test_register_case(s, &test_case_ts_epoch_query_integrity);
@@ -323,6 +331,10 @@ int main(void)
     test_register_case(s, &test_case_ts_max_boundaries);
 
     test_run_all(NULL);
+
+    trace_event(&g_trace, "=== TSDB Basic Test Suite End ===\n");
+    trace_tsdb_stats(&g_trace, &g_db);
+
     test_print_report();
     if (config.log_file) fclose(config.log_file);
 

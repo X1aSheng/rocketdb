@@ -38,17 +38,20 @@ int sim_flash_init(sim_flash_t *f, uint8_t *buf, uint32_t size,
 int sim_flash_read(sim_flash_t *f, uint32_t addr, uint8_t *buf, size_t len)
 {
     if (!f || !buf || addr + len > f->size) return -1;
-    
+
     /* 高级故障注入 */
     if (f->fault_ctx && fault_should_read_fail(f->fault_ctx, addr, len)) {
         return -1;
     }
-    
+
     /* 旧的简单故障系统 */
     if (fault_hit(&f->old_fault, &f->old_fault.read_count, f->old_fault.read_fail_at))
         return -1;
-    
+
     memcpy(buf, f->mem + addr, len);
+
+    if (f->trace) trace_flash_read(f->trace, addr, buf, len);
+
     return 0;
 }
 
@@ -65,10 +68,17 @@ int sim_flash_write(sim_flash_t *f, uint32_t addr, const uint8_t *buf, size_t le
     if (f->fault_ctx && fault_should_write_fail(f->fault_ctx, addr, len)) {
         return -1;
     }
-    
+
     /* 旧的简单故障系统 */
     if (fault_hit(&f->old_fault, &f->old_fault.write_count, f->old_fault.write_fail_at))
         return -1;
+
+    /* Save before-image for tracing */
+    uint8_t before[512];
+    size_t trace_len = len < sizeof(before) ? len : sizeof(before);
+    if (f->trace && f->trace->level >= 3) {
+        memcpy(before, f->mem + addr, trace_len);
+    }
 
     for (size_t i = 0; i < len; i++) {
         uint8_t old = f->mem[addr + i];
@@ -84,10 +94,13 @@ int sim_flash_write(sim_flash_t *f, uint32_t addr, const uint8_t *buf, size_t le
         f->mem[addr + i] &= nw;
 
         if (f->fault_ctx && fault_should_power_loss(f->fault_ctx, addr, (uint32_t)i)) {
+            if (f->trace) trace_flash_write(f->trace, addr, before, f->mem + addr, trace_len);
             return -1;
         }
     }
-    
+
+    if (f->trace) trace_flash_write(f->trace, addr, before, f->mem + addr, trace_len);
+
     /* 注入数据损坏 */
     if (f->fault_ctx) {
         fault_inject_corruption(f->fault_ctx, f->mem, addr, len);
@@ -105,12 +118,29 @@ int sim_flash_erase(sim_flash_t *f, uint32_t addr)
     if (f->fault_ctx && fault_should_erase_fail(f->fault_ctx, addr)) {
         return -1;
     }
-    
+
     /* 旧的简单故障系统 */
     if (fault_hit(&f->old_fault, &f->old_fault.erase_count, f->old_fault.erase_fail_at))
         return -1;
 
+    /* Trace: save a sample of pre-erase data */
+    if (f->trace && f->trace->level >= 3) {
+        /* Snapshot first 64 bytes of sector before erase for trace */
+        uint8_t sample[64];
+        memcpy(sample, f->mem + addr, sizeof(sample));
+        trace_flash_erase(f->trace, addr, f->sector_size);
+        /* Show the pre-erase sample */
+        if (f->trace->fp) {
+            fprintf(f->trace->fp, "  pre-erase sample (first 64B):\n");
+            trace_hex_dump(f->trace->fp, sample, sizeof(sample), addr);
+        }
+    }
+
     memset(f->mem + addr, 0xFF, f->sector_size);
+
+    if (f->trace && f->trace->level < 3)
+        trace_flash_erase(f->trace, addr, f->sector_size);
+
     return 0;
 }
 

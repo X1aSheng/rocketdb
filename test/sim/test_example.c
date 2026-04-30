@@ -26,6 +26,7 @@ static sim_flash_t        g_flash;
 static rdb_kv_sector_meta_t g_kv_meta[EX_SECTOR_CNT];
 static rdb_partition_t    g_part;
 static rdb_kvdb_t         g_kvdb;
+static trace_ctx_t        g_trace;
 
 static int ex_read(uint32_t addr, uint8_t *buf, size_t len) {
     return sim_flash_read(&g_flash, addr, buf, len);
@@ -187,6 +188,10 @@ int main(void)
 
     test_framework_init(&config);
 
+    trace_init(&g_trace, config.log_file, config.verbose);
+    sim_flash_set_trace(&g_flash, &g_trace);
+    trace_event(&g_trace, "=== Example Test Suite Start ===");
+
     /* 手动注册测试用例（如果不使用 REGISTER_TEST 宏） */
     test_suite_t *suite = test_get_default_suite();
     test_register_case(suite, &test_case_example_basic_assert);
@@ -195,6 +200,8 @@ int main(void)
     /* 运行所有测试 */
     printf("Running example tests...\n");
     test_run_all(&env);
+
+    trace_event(&g_trace, "=== Example Test Suite End ===\n");
     
     /* 运行参数化测试 */
     printf("\n\nRunning parameterized tests...\n");

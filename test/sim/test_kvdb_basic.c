@@ -27,11 +27,12 @@
 
 /* ── Shared flash environment ──────────────────────────────────────────── */
 
-static uint8_t            g_flash_buf[FLASH_SIZE];
-static sim_flash_t        g_flash;
-static rdb_partition_t    g_part;
-static rdb_kvdb_t         g_db;
+static uint8_t              g_flash_buf[FLASH_SIZE];
+static sim_flash_t          g_flash;
+static rdb_partition_t      g_part;
+static rdb_kvdb_t           g_db;
 static rdb_kv_sector_meta_t g_meta[KV_SECTOR_CNT];
+static trace_ctx_t          g_trace;
 
 static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
     return sim_flash_read(&g_flash, addr, buf, len);
@@ -63,9 +64,14 @@ static rdb_err_t kv_reset(uint8_t write_gran)
     g_db.part = &g_part;
     g_db.sectors = g_meta;
     g_db.sector_cnt = (uint8_t)KV_SECTOR_CNT;
+
+    trace_event(&g_trace, "KVDB format+init (wg=%u)", write_gran);
     rdb_err_t ret = rdb_kvdb_format(&g_db);
     if (ret != RDB_OK) return ret;
-    return rdb_kvdb_init(&g_db, &g_part, g_meta);
+    ret = rdb_kvdb_init(&g_db, &g_part, g_meta);
+    if (ret == RDB_OK)
+        trace_kvdb_snapshot(&g_trace, &g_db);
+    return ret;
 }
 
 static uint32_t kv_data_start(uint8_t wg) {
@@ -101,9 +107,11 @@ TEST_CASE(kv_set_get_basic, "KVDB", "Basic set/get operations")
     const char *key = "alpha";
     const uint8_t val[] = { 1, 2, 3, 4, 5 };
 
+    trace_kv_op(&g_trace, "SET", key, 5, (uint16_t)sizeof(val), g_db.write_seq, RDB_OK);
     TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, val, (uint16_t)sizeof(val)));
     uint8_t out[8] = { 0 }; uint16_t out_len = 0;
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, key, out, sizeof(out), &out_len));
+    trace_kv_op(&g_trace, "GET", key, 5, out_len, 0, RDB_OK);
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(val));
     TEST_ASSERT_MEM_EQ(out, val, sizeof(val));
     TEST_ASSERT_RDB_OK(rdb_kvdb_exists(&g_db, key));
@@ -519,6 +527,10 @@ int main(void)
     };
     test_framework_init(&config);
 
+    trace_init(&g_trace, config.log_file, config.verbose);
+    sim_flash_set_trace(&g_flash, &g_trace);
+    trace_event(&g_trace, "=== KVDB Basic Test Suite Start ===");
+
     test_suite_t *s = test_get_default_suite();
     test_register_case(s, &test_case_kv_set_get_basic);
     test_register_case(s, &test_case_kv_set_update);
@@ -533,6 +545,10 @@ int main(void)
     test_register_case(s, &test_case_kv_capacity_accounting);
 
     test_run_all(NULL);
+
+    trace_event(&g_trace, "=== KVDB Basic Test Suite End ===\n");
+    trace_kvdb_stats(&g_trace, &g_db);
+
     test_print_report();
     if (config.log_file) fclose(config.log_file);
 

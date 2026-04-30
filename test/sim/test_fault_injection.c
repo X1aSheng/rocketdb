@@ -18,6 +18,7 @@
 static uint8_t g_flash_buf[FLASH_SIZE];
 static sim_flash_t g_flash;
 static fault_ctx_t g_fault_ctx;
+static trace_ctx_t g_trace;
 
 /* Flash 回调函数 */
 static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
@@ -392,7 +393,11 @@ int main(void)
     };
     
     test_framework_init(&config);
-    
+
+    trace_init(&g_trace, config.log_file, config.verbose);
+    sim_flash_set_trace(&g_flash, &g_trace);
+    trace_event(&g_trace, "=== Fault Injection Test Suite Start ===");
+
     /* 注册测试用例 */
     test_suite_t *suite = test_get_default_suite();
     test_register_case(suite, &test_case_fault_write_fail_nth);
@@ -403,7 +408,9 @@ int main(void)
     
     /* 运行测试 */
     test_run_all(NULL);
-    
+
+    trace_event(&g_trace, "=== Fault Injection Test Suite End ===\n");
+
     /* 打印报告 */
     test_print_report();
     

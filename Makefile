@@ -30,7 +30,8 @@ SIM_SRCS = test/sim/test_framework.c \
            test/sim/sim_flash.c \
            test/sim/sim_fault.c \
            test/sim/sim_dist.c \
-           test/sim/sim_crypto.c
+           test/sim/sim_crypto.c \
+           test/sim/sim_trace.c
 
 # All test source files
 TEST_SRCS = test/sim/test_kvdb_basic.c \
@@ -77,6 +78,7 @@ $(OUTPUT_DIR)/test_kvdb_basic.exe: \
 	$(OUTPUT_DIR)/sim_flash.o \
 	$(OUTPUT_DIR)/sim_fault.o \
 	$(OUTPUT_DIR)/sim_dist.o \
+	$(OUTPUT_DIR)/sim_trace.o \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o
 	@echo Linking $@...
@@ -88,6 +90,7 @@ $(OUTPUT_DIR)/test_kvdb_stress.exe: \
 	$(OUTPUT_DIR)/test_framework.o \
 	$(OUTPUT_DIR)/sim_flash.o \
 	$(OUTPUT_DIR)/sim_fault.o \
+	$(OUTPUT_DIR)/sim_trace.o \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o
 	@echo Linking $@...
@@ -99,6 +102,7 @@ $(OUTPUT_DIR)/test_tsdb_basic.exe: \
 	$(OUTPUT_DIR)/test_framework.o \
 	$(OUTPUT_DIR)/sim_flash.o \
 	$(OUTPUT_DIR)/sim_fault.o \
+	$(OUTPUT_DIR)/sim_trace.o \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_tsdb.o
 	@echo Linking $@...
@@ -110,6 +114,7 @@ $(OUTPUT_DIR)/test_tsdb_stress.exe: \
 	$(OUTPUT_DIR)/test_framework.o \
 	$(OUTPUT_DIR)/sim_flash.o \
 	$(OUTPUT_DIR)/sim_fault.o \
+	$(OUTPUT_DIR)/sim_trace.o \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_tsdb.o
 	@echo Linking $@...
@@ -122,6 +127,7 @@ $(OUTPUT_DIR)/test_integration.exe: \
 	$(OUTPUT_DIR)/sim_flash.o \
 	$(OUTPUT_DIR)/sim_fault.o \
 	$(OUTPUT_DIR)/sim_dist.o \
+	$(OUTPUT_DIR)/sim_trace.o \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o \
 	$(OUTPUT_DIR)/rocketdb_tsdb.o
@@ -134,6 +140,7 @@ $(OUTPUT_DIR)/test_example.exe: \
 	$(OUTPUT_DIR)/test_framework.o \
 	$(OUTPUT_DIR)/sim_flash.o \
 	$(OUTPUT_DIR)/sim_fault.o \
+	$(OUTPUT_DIR)/sim_trace.o \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o
 	@echo Linking $@...
@@ -145,6 +152,7 @@ $(OUTPUT_DIR)/test_fault_injection.exe: \
 	$(OUTPUT_DIR)/test_framework.o \
 	$(OUTPUT_DIR)/sim_flash.o \
 	$(OUTPUT_DIR)/sim_fault.o \
+	$(OUTPUT_DIR)/sim_trace.o \
 	$(OUTPUT_DIR)/sim_crypto.o \
 	$(OUTPUT_DIR)/rocketdb_kvdb.o
 	@echo Linking $@...
