@@ -2069,7 +2069,7 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
     uint8_t scnt = (uint8_t)(db->part->total_size / db->part->sector_size);
 
     /* Pass 1: collect erase counts before erasing */
-    uint32_t saved_ec[RDB_MAX_SECTORS];
+    static uint32_t saved_ec[RDB_MAX_SECTORS];
     for (uint8_t s = 0; s < scnt; s++) {
         saved_ec[s] = db->sectors[s].erase_cnt;
 

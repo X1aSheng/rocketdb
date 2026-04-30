@@ -729,6 +729,10 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
     db->sector_size = part->sector_size;
     db->sector_cnt = (uint8_t)scnt;
 
+    /* Guard tdc() against underflow: sector must hold at least the header */
+    if (db->sector_size <= tds(db))
+        return RDB_ERR_PARAM;
+
     /* ── Compute max_data_len ──
        The maximum data payload that can fit in a single record within
        one sector.  Respects RDB_MAX_TS_DATA_LEN if configured. */
@@ -1056,7 +1060,7 @@ rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
     uint8_t scnt = (uint8_t)(db->part->total_size / db->part->sector_size);
 
     /* Pass 1: collect erase counts from flash */
-    uint32_t saved_ec[RDB_MAX_SECTORS];
+    static uint32_t saved_ec[RDB_MAX_SECTORS];
     for (uint8_t s = 0; s < scnt; s++) {
         saved_ec[s] = 0;
         if (db->erase_cnts)
@@ -1743,7 +1747,10 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
 
         /* Copy data to caller buffer */
         uint16_t rd = (uint16_t)RDB_MIN(buf_len, c.dlen);
-        trd(db, da, buf, rd);
+        if (trd(db, da, buf, rd) != 0) {
+            tunlock(db);
+            return RDB_ERR_FLASH;
+        }
     }
 
     tunlock(db);
@@ -1860,7 +1867,10 @@ rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time,
 
         /* Copy data to caller buffer */
         uint16_t rd = (uint16_t)RDB_MIN(buf_len, c.dlen);
-        trd(db, da, buf, rd);
+        if (trd(db, da, buf, rd) != 0) {
+            tunlock(db);
+            return RDB_ERR_FLASH;
+        }
     }
 
     tunlock(db);
