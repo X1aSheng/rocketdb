@@ -297,7 +297,7 @@ TEST_CASE(kv_corrupt_header_skip, "KVDB", "Corrupt header skip during iteration"
     uint32_t first_addr = RDB_ADDR_INVALID;
     while (off + sizeof(rdb_kv_record_hdr_t) <= ss) {
         rdb_kv_record_hdr_t rh;
-        memcpy(&rh, g_flash.mem + base + off, sizeof(rh));
+        sim_flash_read(&g_flash, base + off, (uint8_t*)&rh, sizeof(rh));
         if (rh.magic == 0xFFu && rh.state == 0xFFu) break;
         if (rh.magic == RDB_KV_RECORD_MAGIC && rh.key_len >= 1 &&
             rh.key_len <= RDB_MAX_KEY_LEN && rh.val_len <= RDB_MAX_VAL_LEN) {
@@ -306,7 +306,7 @@ TEST_CASE(kv_corrupt_header_skip, "KVDB", "Corrupt header skip during iteration"
         off += RDB_ALIGN_UP(sizeof(rdb_kv_record_hdr_t), 1u << DEFAULT_WG);
     }
     TEST_ASSERT_NE(first_addr, 0xFFFFFFFFu);
-    g_flash.mem[first_addr] = 0x00; /* Corrupt the magic byte */
+    { uint8_t z = 0x00; sim_flash_write(&g_flash, first_addr, &z, 1); }
 
     /* Write new data, force GC, then iterate and verify all keys present */
     for (int i = 0; i < CORRUPT_KEY_CNT; i++) {

@@ -138,7 +138,7 @@ static int find_last_record(uint32_t *out_addr, rdb_ts_record_hdr_t *out_hdr)
 
     while (off + sizeof(rdb_ts_record_hdr_t) <= end) {
         rdb_ts_record_hdr_t rh;
-        memcpy(&rh, g_flash.mem + base + off, sizeof(rh));
+        sim_flash_read(&g_flash, base + off, (uint8_t*)&rh, sizeof(rh));
         if (rh.magic == 0xFFu && rh.state == 0xFFu) break;
         if (rh.magic != RDB_TS_RECORD_MAGIC || rh.data_len == 0 ||
             rh.data_len > g_db.max_data_len) {
@@ -179,7 +179,7 @@ TEST_CASE(ts_crc_corruption, "TSDB", "CRC corruption reported in query/get_lates
 
     uint32_t addr = 0; rdb_ts_record_hdr_t rh;
     TEST_ASSERT_EQ(find_last_record(&addr, &rh), 0);
-    g_flash.mem[addr + (uint32_t)sizeof(rdb_ts_record_hdr_t)] ^= 0xFFu;
+    g_flash.mem[addr + (uint32_t)sizeof(rdb_ts_record_hdr_t)] ^= 0xFFu; /* intentional corruption: bypass NOR rules */
 
     uint8_t out[16]; uint16_t out_len = 0; uint32_t out_time = 0;
     TEST_ASSERT_RDB_ERR(rdb_tsdb_get_latest(&g_db, &out_time, out, sizeof(out), &out_len),
@@ -205,13 +205,13 @@ static int corrupt_sealed_header(void)
         if (s == g_db.head_sec) continue;
         uint32_t base = (uint32_t)s * g_part.sector_size;
         rdb_ts_sector_hdr_t h;
-        memcpy(&h, g_flash.mem + base, sizeof(h));
+        sim_flash_read(&g_flash, base, (uint8_t*)&h, sizeof(h));
         if (h.magic != RDB_TS_SECTOR_MAGIC) continue;
         if (h.count == 0xFFFFu || h.end_off == 0xFFFFu) continue;
         uint16_t calc = rdb_crc16(&h, 18);
         if (calc != h.hdr_crc) continue;
         uint16_t bad = (uint16_t)(h.hdr_crc ^ 0xFFFFu);
-        memcpy(g_flash.mem + base + 18, &bad, sizeof(bad));
+        memcpy(g_flash.mem + base + 18, &bad, sizeof(bad)); /* intentional corruption: bypass NOR rules */
         return 0;
     }
     return -1;
