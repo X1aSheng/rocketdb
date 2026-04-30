@@ -1,0 +1,78 @@
+设计的RocketKV，用于使用SPI NOR Flash芯片存储小型数据，主要具有分区化管理、磨损均衡、掉电保护等特性，双引擎: Key-Value (配置存储) + TSDB (时序日志)。我将提供现阶段的头文件和源文件供你参考，请你分析并实现
+
+
+我会先整体分析架构和接口设计，然后分模块给出完整的 .c 实现方案，包括：
+分区管理与初始化逻辑
+磨损均衡（擦写计数、块轮转或游标策略）
+掉电保护（写入顺序、元数据/日志机制）
+Key-Value 引擎实现（增删改查、GC 等）
+TSDB 引擎实现（追加写、查询、清理策略）
+如果你有特定约束（例如只允许使用的 C 标准、是否有 RTOS、SPI/Flash 驱动接口形式、对性能/寿命的侧重点），也一并说明，我会在实现时一并考虑。
+
+
+
+
+// 替换 rkv_rotate 中写扇区头部分
+rkv_sector_head_t shead = {
+    .magic = 0xFFFFFFFF,              // 先不写 magic
+    .erase_count = kv->meta_table[target].erase_count + 1,
+    .version = RKV_VERSION,
+    .seq_id = kv->global_seq_id
+};
+
+// 两阶段写入扇区头
+if (part->write(addr, (uint8_t*)&shead, sizeof(shead)) != 0 ||
+    part->write(addr, (uint8_t*)&RKV_SECTOR_MAGIC, 4) != 0) {  // 最后原子写 magic
+    return RKV_ERR_FLASH;
+}
+
+
+// 终极版 rts_get_latest（零 RAM 开销，从新到旧回调）
+int rts_get_latest(rocket_tsdb_t *ts, uint32_t count, rts_iter_cb_t cb, void *ctx)
+{
+    if (!ts || !cb || count == 0) return RKV_ERR_PARAM;
+    if (ts->part->lock) ts->part->lock();
+
+    uint8_t buf[RTS_MAX_RECORD_LEN];
+    uint32_t align = ts->part->write_align;
+    uint32_t header_size = align_up(sizeof(rts_sector_head_t), align);
+    uint32_t collected = 0;
+
+    // 从 head 扇区开始，向前遍历，最多 count 条
+    for (uint32_t sec = ts->head_sector; collected < count; sec = rts_prev(ts, sec)) {
+        uint32_t base = rts_phy(ts, sec, 0);
+        rts_sector_head_t shead;
+        if (ts->part->read(base, (uint8_t*)&shead, sizeof(shead)) != 0) continue;
+        if (shead.magic != RTS_SECTOR_MAGIC) continue;
+
+        uint32_t end_off = (sec == ts->head_sector) ? ts->head_offset : ts->sector_size;
+        uint32_t off = end_off;
+
+        while (off > header_size && collected < count) {
+            off -= sizeof(rts_data_head_t);
+            rts_data_head_t lhead;
+            if (ts->part->read(base + off, (uint8_t*)&lhead, sizeof(lhead)) != 0) break;
+            if (lhead.time == 0xFFFFFFFF) break;
+
+            uint32_t rec_size = sizeof(lhead) + align_up(lhead.len, align);
+            if (off < header_size + rec_size) break;
+            off -= (rec_size - sizeof(lhead));
+
+            if (ts->part->read(base + off + sizeof(lhead), buf, lhead.len) == 0) {
+                if (rkv_crc16(ts->part, buf, lhead.len) == lhead.crc) {
+                    if (!cb(lhead.time, buf, lhead.len, ctx)) {
+                        if (ts->part->unlock) ts->part->unlock();
+                        return RKV_OK;
+                    }
+                    collected++;
+                }
+            }
+        }
+
+        if (sec == ts->tail_sector) break;
+        if (sec == 0) sec = ts->sector_count; // wrap
+    }
+
+    if (ts->part->unlock) ts->part->unlock();
+    return RKV_OK;
+}
