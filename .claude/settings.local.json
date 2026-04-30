@@ -101,7 +101,20 @@
       "Bash(test/out/test_example.exe)",
       "Bash(test/out/test_fault_injection.exe)",
       "Bash(make rebuild *)",
-      "Bash(echo \"Exit: $?\")"
+      "Bash(echo \"Exit: $?\")",
+      "Bash(where clang *)",
+      "Bash(where gcc *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(test/out/test_all_suites.exe)",
+      "Bash(make test *)",
+      "Bash(test/out2/test_kvdb_basic.exe)",
+      "Bash(test/out2/test_kvdb_stress.exe)",
+      "Bash(test/out2/test_tsdb_basic.exe)",
+      "Bash(test/out2/test_tsdb_stress.exe)",
+      "Bash(test/out2/test_integration.exe)",
+      "Bash(test/out2/test_example.exe)",
+      "Bash(test/out2/test_fault_injection.exe)",
+      "Bash(/d/Programs/LLVM/bin/clang *)"
     ]
   }
 }
