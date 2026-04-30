@@ -25,8 +25,8 @@
  * Copyright (c) 2015 XiaSheng(info@zhis.net)
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
- * @version 1.0.0
- * 
+ * @version 1.1.0
+ *
  *****************************************************************************/
 
 #include "rocketdb.h"
@@ -270,7 +270,7 @@ static inline int fl_erase(const rdb_kvdb_t* db, uint32_t a) {
  *  engine-independent.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** @brief Return the library version as a packed 24-bit integer (0x010000 = v1.0.0). */
+/** @brief Return the library version as a packed 24-bit integer (0x010100 = v1.1.0). */
 uint32_t rdb_version(void) {
     return 0x010100u;
 }

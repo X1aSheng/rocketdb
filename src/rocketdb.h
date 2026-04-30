@@ -796,7 +796,7 @@ extern uint16_t rdb_hash16(const void* data, size_t len);
 /**
  * @brief Get the library version as a packed integer.
  * @return  Version in 0x00MMNNPP format (major.minor.patch).
- *          Example: v1.0.0 → 0x010000.
+ *          Example: v1.1.0 → 0x010100.
  */
 uint32_t rdb_version(void);
 
