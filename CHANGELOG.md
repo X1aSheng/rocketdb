@@ -50,6 +50,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameter that was implicitly discarded when calling `trd()`.
 - **Test `sim_flash_read` usage**: Replaced direct `g_flash.mem[]` reads in
   `test_kvdb_basic` and `test_tsdb_stress` with `sim_flash_read()` calls.
+- **KVDB `iter_next` truncation**: Removed leftover `(uint16_t)` cast on
+  `it->offset` assignment after struct field had already been widened to
+  `uint32_t`, preventing infinite loop on sectors >64 KB.
+- **Test framework `log_output` va_copy ordering**: Moved `va_copy` before
+  `vprintf` to avoid copying from consumed `va_list` (UB per C99 §7.15).
+- **Makefile portability**: Replaced Windows cmd.exe syntax (`if exist`,
+  `for %%t`, `rmdir /Q /S`, backslash paths) with POSIX shell equivalents
+  (`mkdir -p`, `for...done`, `rm -rf`, forward slashes). Added conditional
+  `-lm` for Linux/macOS link rules.
+- **TSDB `ts_classify` comment**: Documented that `magic == 0xFFFFFFFFu`
+  check serves as implicit start-of-sector erase probe.
+- **`test_make_log_path`**: Added documentation noting static buffer is not
+  thread-safe.
+- **`fault_import_rules`**: Added TODO comment marking it as unimplemented stub.
 
 ---
 

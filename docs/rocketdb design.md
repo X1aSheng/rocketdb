@@ -5,7 +5,7 @@
 
 | 项目 | 内容 |
 |------|------|
-| 版本 | 1.1.0 |
+| 版本 | 1.1.2 |
 | 状态 | 生产级基线 |
 | 适用硬件 | SPI NOR Flash（W25Q系列及兼容型号） |
 | 适用 MCU | Cortex-M0 / M3 / M4 / M7（已针对非对齐访问做结构体自然对齐） |
@@ -1269,7 +1269,7 @@ if (rc == RDB_ERR_FULL) {
 ## 第七章 工具函数
 
 ```c
-uint32_t    rdb_version(void);           /* 返回 0x010100 (v1.1.0) */
+uint32_t    rdb_version(void);           /* 返回 0x010102 (v1.1.2) */
 size_t      rdb_kvdb_meta_size(uint8_t sector_cnt);  /* N × 16 */
 size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 ```

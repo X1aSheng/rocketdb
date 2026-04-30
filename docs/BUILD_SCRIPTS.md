@@ -122,4 +122,4 @@ C99 模式下 clang 可能报告此警告。添加 `-Wno-unused-but-set-variable
 ---
 
 **最后更新**: 2026-04-29
-**版本**: RocketDB v1.1.0
+**版本**: RocketDB v1.1.2

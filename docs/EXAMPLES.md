@@ -841,4 +841,4 @@ void app_main(void) {
 ---
 
 **最后更新**：2026年4月29日  
-**版本**：RocketDB v1.1.0
+**版本**：RocketDB v1.1.2
