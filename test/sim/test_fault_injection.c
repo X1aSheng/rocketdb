@@ -94,9 +94,23 @@ TEST_CASE(fault_write_fail_nth, "Fault", "Write fails on Nth operation")
     }
     TEST_ASSERT(fail_count > 0); /* at least one write should fail */
 
-    /* 打印故障报告 */
-    fault_print_report(&g_fault_ctx);
+    /* Clear faults and verify DB is re-initializable and data is intact */
+    fault_clear_rules(&g_fault_ctx);
+    ret = rdb_kvdb_init(&db, &part, meta_buf);
+    TEST_ASSERT_RDB_OK(ret);
 
+    /* Data written before the fault should still be readable */
+    uint8_t buf[8]; uint16_t len;
+    int readable = 0;
+    for (int i = 0; i < 10; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "key%d", i);
+        if (rdb_kvdb_get(&db, key, buf, sizeof(buf), &len) == RDB_OK)
+            readable++;
+    }
+    TEST_ASSERT(readable > 0); /* at least some pre-fault data survives */
+
+    fault_print_report(&g_fault_ctx);
     return 0;
 }
 
@@ -141,19 +155,31 @@ TEST_CASE(fault_write_fail_probability, "Fault", "Write fails with probability")
         char key[16];
         snprintf(key, sizeof(key), "k%d", i);
         rdb_err_t ret = rdb_kvdb_set(&db, key, "v", 1);
-        
+
         if (ret == RDB_OK) {
             success++;
         } else {
             failed++;
         }
     }
-    
+
     printf("  Success: %d, Failed: %d (%.1f%% failure rate)\n",
            success, failed, (failed * 100.0f) / (success + failed));
-    
+
+    /* Clear faults and verify DB is re-initializable */
+    fault_clear_rules(&g_fault_ctx);
+    rdb_err_t ret = rdb_kvdb_init(&db, &part, meta_buf);
+    TEST_ASSERT_RDB_OK(ret);
+
+    /* Verify the DB is still usable: write a new key */
+    ret = rdb_kvdb_set(&db, "recovery_key", "ok", 2);
+    TEST_ASSERT_RDB_OK(ret);
+    uint8_t buf[4]; uint16_t len;
+    ret = rdb_kvdb_get(&db, "recovery_key", buf, sizeof(buf), &len);
+    TEST_ASSERT_RDB_OK(ret);
+    TEST_ASSERT(buf[0] == 'o' && buf[1] == 'k');
+
     fault_print_report(&g_fault_ctx);
-    
     return 0;
 }
 
@@ -164,17 +190,17 @@ TEST_CASE(fault_write_fail_probability, "Fault", "Write fails with probability")
 TEST_CASE(fault_erase_fail, "Fault", "Erase fails on Nth operation")
 {
     (void)ctx;
-    
+
     printf("\n[Fault Test 3] Erase fails on 2nd operation\n");
-    
+
     /* 初始化 Flash */
     sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
-    
+
     /* 配置故障：第 2 次擦除失败 */
     fault_init(&g_fault_ctx, 0x99999);
     fault_quick_erase_fail(&g_fault_ctx, 2);
     sim_flash_set_fault_ctx(&g_flash, &g_fault_ctx);
-    
+
     /* 初始化 KVDB */
     rdb_partition_t part = {
         .name = "test",
@@ -184,7 +210,7 @@ TEST_CASE(fault_erase_fail, "Fault", "Erase fails on Nth operation")
         .write_gran = 0,
         .ops = &g_ops
     };
-    
+
     uint8_t meta_buf[512];
     rdb_kvdb_t db;
     db.part = &part;
@@ -194,22 +220,34 @@ TEST_CASE(fault_erase_fail, "Fault", "Erase fails on Nth operation")
 
     /* 写入大量数据触发 GC（需要擦除） */
     printf("  Writing data to trigger GC...\n");
+    int last_ok = 0;
     for (int i = 0; i < 200; i++) {
         char key[16];
         uint8_t val[100];
         snprintf(key, sizeof(key), "key%d", i);
         memset(val, i, sizeof(val));
-        
+
         rdb_err_t ret = rdb_kvdb_set(&db, key, val, sizeof(val));
         if (ret != RDB_OK) {
-            printf("  Set failed at iteration %d (erase_count=%u)\n", 
+            printf("  Set failed at iteration %d (erase_count=%u)\n",
                    i, g_fault_ctx.erase_count);
             break;
         }
+        last_ok = i;
     }
-    
+    TEST_ASSERT(last_ok > 0); /* at least some writes succeeded before GC failure */
+
+    /* Clear faults and verify DB still works */
+    fault_clear_rules(&g_fault_ctx);
+    rdb_err_t ret = rdb_kvdb_init(&db, &part, meta_buf);
+    TEST_ASSERT_RDB_OK(ret);
+
+    /* Verify previously written data is still readable */
+    uint8_t buf[100]; uint16_t len;
+    ret = rdb_kvdb_get(&db, "key0", buf, sizeof(buf), &len);
+    TEST_ASSERT_RDB_OK(ret);
+
     fault_print_report(&g_fault_ctx);
-    
     return 0;
 }
 
@@ -310,22 +348,28 @@ TEST_CASE(fault_data_corruption, "Fault", "Data corruption in specific range")
     rdb_kvdb_format(&db);
     rdb_kvdb_init(&db, &part, meta_buf);
 
-    /* 写入数据 */
+    /* 写入 data */
     rdb_kvdb_set(&db, "test_key", "test_value", 10);
-    
-    /* 读取数据（可能检测到 CRC 错误） */
+
+    /* 读取数据（corruption range 0x1000-0x1100 may or may not overlap） */
     uint8_t buf[32];
     uint16_t len;
     rdb_err_t ret = rdb_kvdb_get(&db, "test_key", buf, sizeof(buf), &len);
-    
+
     if (ret == RDB_ERR_CRC) {
         printf("  CRC error detected (data corruption injected)\n");
+        TEST_ASSERT(1); /* CRC detection works */
     } else if (ret == RDB_OK) {
         printf("  Data read successfully (corruption may not affect this key)\n");
+        /* Still verify: clearing faults and reading should succeed */
     }
-    
+
+    /* Clear faults and verify DB is re-initializable */
+    fault_clear_rules(&g_fault_ctx);
+    ret = rdb_kvdb_init(&db, &part, meta_buf);
+    TEST_ASSERT_RDB_OK(ret);
+
     fault_print_report(&g_fault_ctx);
-    
     return 0;
 }
 
