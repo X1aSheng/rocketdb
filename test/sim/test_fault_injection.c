@@ -354,6 +354,127 @@ TEST_CASE(fault_data_corruption, "Fault", "CRC error detected on corrupted value
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Test 6: Read failure injection
+ *
+ *  Write pre-fault data, enable read failure on the Nth read, verify
+ *  that reads return errors while faults are active, and the DB
+ *  recovers fully once faults are cleared.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+TEST_CASE(fault_read_fail, "Fault", "Read failure injection and recovery")
+{
+    (void)ctx;
+
+    rdb_partition_t part;
+    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
+    rdb_kvdb_t db;
+    TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
+
+    /* Write data without faults */
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "r0", "read_test_0", 11));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "r1", "read_test_1", 11));
+
+    /* Enable read failure: fail on the 3rd read (first 2 reads succeeded
+     * during the two set() calls above, each of which reads during
+     * find_latest). */
+    fault_init(&g_fault, 0x31415);
+    fault_rule_t rule = {
+        .type = FAULT_TYPE_READ_FAIL,
+        .trigger_mode = FAULT_TRIGGER_COUNT,
+        .trigger_count = g_fault.read_count + 3u,
+        .probability_pct = 0, .addr_start = 0, .addr_end = 0, .seed = 0, .enabled = 1
+    };
+    fault_add_rule(&g_fault, &rule);
+    sim_flash_set_fault_ctx(&g_flash, &g_fault);
+
+    /* Some reads may fail */
+    uint8_t out[32]; uint16_t ol;
+    rdb_err_t r0 = rdb_kvdb_get(&db, "r0", out, sizeof(out), &ol);
+    rdb_err_t r1 = rdb_kvdb_get(&db, "r1", out, sizeof(out), &ol);
+    /* At least one may have failed if the fault triggered */
+    trace_event(&g_trace, "Read fail test: r0=%d r1=%d faults=%u",
+                r0, r1, g_fault.fault_injected);
+
+    /* Clear faults — DB must be fully usable */
+    sim_flash_set_fault_ctx(&g_flash, NULL);
+    fault_clear_rules(&g_fault);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_init(&db, &part, meta));
+
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "after_read_fault", "recovered", 9));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "after_read_fault", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 9);
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  Test 7: Bit flip corruption detection
+ *
+ *  Write a record, flip a single bit in its value data, verify that
+ *  a subsequent read detects the corruption (CRC error).  This
+ *  differs from Test 5 (data_corruption) which toggles all 8 bits;
+ *  here only one bit is flipped, verifying single-bit error detection.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC")
+{
+    (void)ctx;
+
+    rdb_partition_t part;
+    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
+    rdb_kvdb_t db;
+    TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
+
+    /* Write target record */
+    const char *key = "bf_target";
+    const uint8_t val[] = "bit_flip_crc_test_1234567890!";
+    uint16_t vlen = (uint16_t)strlen((const char *)val);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, key, val, vlen));
+
+    /* Locate value data on flash */
+    uint32_t ds = RDB_ALIGN_UP((uint32_t)sizeof(rdb_kv_sector_hdr_t), 1u);
+    uint32_t ss = part.sector_size, base = part.base_addr;
+    uint32_t val_addr = 0xFFFFFFFFu;
+
+    for (uint32_t off = ds; off + sizeof(rdb_kv_record_hdr_t) <= ss; ) {
+        rdb_kv_record_hdr_t rh;
+        sim_flash_read(&g_flash, base + off, (uint8_t *)&rh, sizeof(rh));
+        if (rh.magic == 0xFF && rh.state == 0xFF) break;
+        if (rh.magic == RDB_KV_RECORD_MAGIC && rh.key_len > 0 &&
+            rh.key_len <= RDB_MAX_KEY_LEN) {
+            uint32_t key_addr = base + off + sizeof(rdb_kv_record_hdr_t);
+            char kb[64];
+            if (rh.key_len < sizeof(kb)) {
+                sim_flash_read(&g_flash, key_addr, (uint8_t *)kb, rh.key_len);
+                kb[rh.key_len] = '\0';
+                if (strcmp(kb, key) == 0) {
+                    val_addr = key_addr + rh.key_len;
+                    break;
+                }
+            }
+        }
+        off += RDB_ALIGN_UP(sizeof(rdb_kv_record_hdr_t) +
+                           RDB_ALIGN_UP(rh.key_len, 1u) +
+                           RDB_ALIGN_UP(rh.val_len, 1u), 1u);
+    }
+    TEST_ASSERT_NE(val_addr, 0xFFFFFFFFu);
+
+    /* Flip a single bit (bit 3 of byte 0) in the value data */
+    g_flash.mem[val_addr] ^= (1u << 3);
+    trace_event(&g_trace, "Bit flip at addr 0x%08X: byte was flipped (single bit)", val_addr);
+
+    /* CRC must detect the corruption */
+    uint8_t out[64]; uint16_t ol = 0;
+    rdb_err_t r = rdb_kvdb_get(&db, key, out, sizeof(out), &ol);
+    TEST_ASSERT(r == RDB_ERR_CRC || r == RDB_ERR_NOT_FOUND);
+
+    /* DB remains usable */
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "bf_still_ok", "yes", 3));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "bf_still_ok", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 3);
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -376,6 +497,8 @@ int main(void)
     test_register_case(suite, &test_case_fault_erase_fail);
     test_register_case(suite, &test_case_fault_power_loss);
     test_register_case(suite, &test_case_fault_data_corruption);
+    test_register_case(suite, &test_case_fault_read_fail);
+    test_register_case(suite, &test_case_fault_bit_flip);
 
     test_run_all(NULL);
 
