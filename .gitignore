@@ -23,7 +23,8 @@ Thumbs.db
 *.log
 
 # Build artifacts
-build/
+build/*
+!build/*.bat
 dist/
 *.pyc
 __pycache__/
