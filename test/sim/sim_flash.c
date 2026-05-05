@@ -60,6 +60,8 @@ int sim_flash_write(sim_flash_t *f, uint32_t addr, const uint8_t *buf, size_t le
     if (!f || !buf || addr + len > f->size) return -1;
 
     uint32_t g = 1u << f->write_gran;
+    /* Single-byte writes (commit byte, state transitions) are always
+       permitted — real NOR flash supports byte-program within a word. */
     if (len != 1u) {
         if ((addr % g) != 0 || (len % g) != 0) return -1;
     }

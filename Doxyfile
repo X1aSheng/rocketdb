@@ -1,9 +1,9 @@
 # Doxyfile — RocketDB API Documentation Configuration
-# Generated for RocketDB v1.0.0
+# Generated for RocketDB v1.1.2
 
 # ── Project settings ──────────────────────────────────────
 PROJECT_NAME           = "RocketDB"
-PROJECT_NUMBER         = "1.0.0"
+PROJECT_NUMBER         = "1.1.2"
 PROJECT_BRIEF          = "Zero-allocation dual-mode Flash storage engine for embedded systems"
 PROJECT_LOGO           =
 OUTPUT_DIRECTORY       = doc/html

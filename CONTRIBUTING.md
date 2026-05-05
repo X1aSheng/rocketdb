@@ -16,7 +16,7 @@ Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
 
 ### Feature Requests
 
-1. Check the [design manual](docs/design.md) to understand existing architecture
+1. Check the [design manual](docs/rocketdb%20design.md) to understand existing architecture
 2. Open an issue with: use case, proposed API, impact on existing features
 
 ### Pull Requests
@@ -30,7 +30,7 @@ Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
    - Zero dynamic memory allocation
 4. Run the test suite before submitting:
    ```bash
-   cd test/sim && ./build_and_run.sh
+   cd build && run_all_tests.bat
    ```
 5. Submit a PR with a clear description
 
@@ -59,7 +59,7 @@ rocketdb/
 ## Getting Help
 
 - Read the [README](README.md) for quick start
-- Review [design.md](docs/design.md) for architecture details
+- Review [rocketdb design.md](docs/rocketdb%20design.md) for architecture details
 - See [docs/test_plan.md](docs/test_plan.md) for test coverage
 
 ## License

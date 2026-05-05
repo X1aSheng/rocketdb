@@ -170,7 +170,7 @@ make test         # 编译并运行
 **症状**:
 ```
 拒绝访问。
-无法创建 test\out\test_kv_basic.exe
+无法创建 test\out\test_kvdb_basic.exe
 ```
 
 **原因**: 
@@ -189,8 +189,8 @@ mkdir -p test/out       # Linux/Mac
 # 右键 CMD/PowerShell -> "以管理员身份运行"
 
 # 3. 关闭正在运行的测试程序
-taskkill /F /IM test_kv_basic.exe    # Windows
-killall test_kv_basic                # Linux/Mac
+taskkill /F /IM test_kvdb_basic.exe    # Windows
+killall test_kvdb_basic                # Linux/Mac
 
 # 4. 检查目录权限
 icacls test\out         # Windows
@@ -212,8 +212,8 @@ ls -la test/out         # Linux/Mac
 #### 步骤1: 确认测试已编译
 ```bash
 # 检查可执行文件
-dir test\out\test_kv_basic.exe       # Windows
-ls -l test/out/test_kv_basic         # Linux
+dir test\out\test_kvdb_basic.exe       # Windows
+ls -l test/out/test_kvdb_basic         # Linux
 
 # 如果不存在，先编译
 build.bat kvdb build
@@ -223,8 +223,8 @@ build.bat kvdb build
 ```bash
 # 直接运行可执行文件
 cd test\out
-.\test_kv_basic.exe          # Windows
-./test_kv_basic              # Linux
+.\test_kvdb_basic.exe          # Windows
+./test_kvdb_basic              # Linux
 
 # 应该看到测试输出
 ```
@@ -232,11 +232,11 @@ cd test\out
 #### 步骤3: 检查日志文件
 ```bash
 # 日志命名格式: test_<name>_log_YYYYMMDD_HHMMSS.log
-dir test\out\test_kv_basic_log_*.log
+dir test\out\test_kvdb_basic_log_*.log
 
 # 查看最新日志
-type test\out\test_kv_basic_log_*.log | more     # Windows
-cat test/out/test_kv_basic_log_*.log             # Linux
+type test\out\test_kvdb_basic_log_*.log | more     # Windows
+cat test/out/test_kvdb_basic_log_*.log             # Linux
 
 # 预期末尾显示
 ✓ ALL TESTS PASSED
@@ -272,7 +272,7 @@ build_kvdb_all.bat test basic          # KVDB basic
 build_tsdb_all.bat test epoch          # TSDB epoch
 
 # 查看详细日志
-type test\out\test_kv_basic_log_*.log
+type test\out\test_kvdb_basic_log_*.log
 ```
 
 #### 方法2: 启用详细日志
@@ -344,7 +344,7 @@ htop        # 更友好的版本
 ```
 
 **预期性能** (参考):
-- test_kv_basic: < 1 秒
+- test_kvdb_basic: < 1 秒
 - test_kv_gc_stress (200 GC): 10-30 秒
 - test_ts_rotation_stress (200 次): 10-30 秒
 - test_mixed_workload (10K ops): 5-15 秒
@@ -360,22 +360,22 @@ htop        # 更友好的版本
 #### 按时间排序查找最新日志
 ```bash
 # Windows PowerShell
-Get-ChildItem test\out\test_kv_basic_log_*.log | 
+Get-ChildItem test\out\test_kvdb_basic_log_*.log | 
     Sort-Object LastWriteTime -Descending | 
     Select-Object -First 1
 
 # Linux
-ls -lt test/out/test_kv_basic_log_*.log | head -1
+ls -lt test/out/test_kvdb_basic_log_*.log | head -1
 ```
 
 #### 使用符号链接（推荐）
 ```bash
 # Linux/Mac: 创建符号链接指向最新日志
-ln -sf test/out/test_kv_basic_log_$(date +%Y%m%d_%H%M%S).log \
-       test/out/latest_kv_basic.log
+ln -sf test/out/test_kvdb_basic_log_$(date +%Y%m%d_%H%M%S).log \
+       test/out/latest_kvdb_basic.log
 
 # 查看最新日志
-cat test/out/latest_kv_basic.log
+cat test/out/latest_kvdb_basic.log
 ```
 
 #### 定期清理旧日志
@@ -1000,8 +1000,8 @@ assert(memcmp(buf, "value", 5) == 0);
 ### 技巧3: 分析磨损热力图
 
 ```bash
-# 运行磨损测试
-build_wear_heatmap.bat
+# 运行磨损测试 (集成测试中包含 wear_heatmap)
+build\run_all_tests.bat test
 
 # 分析 CSV 文件
 Import-Csv test\out\kv_wear_heatmap.csv | Format-Table
@@ -1035,11 +1035,11 @@ git bisect good   # 或 git bisect bad
 
 ```bash
 # Linux: 使用 Valgrind 检测内存泄漏
-valgrind --leak-check=full ./test/out/test_kv_basic
+valgrind --leak-check=full ./test/out/test_kvdb_basic
 
 # 或使用 AddressSanitizer (编译时)
-clang -fsanitize=address test_kv_basic.c ... -o test_kv_basic
-./test_kv_basic
+clang -fsanitize=address test_kvdb_basic.c ... -o test_kvdb_basic
+./test_kvdb_basic
 ```
 
 ---
@@ -1055,7 +1055,7 @@ clang -fsanitize=address test_kv_basic.c ... -o test_kv_basic
 
 2. **检查日志**:
    - 测试日志: `test/out/test_*_log_*.log`
-   - 回归报告: `SpecKit/ARCHIVE/REGRESSION_REPORT_2026-02-25.md`
+   - 最近审查报告: `docs/CODE_REVIEW_260505_130821.md`
 
 3. **报告问题**:
    - 提供详细的错误信息

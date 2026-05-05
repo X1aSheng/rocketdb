@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains comprehensive performance benchmarking scenarios for RocketDB v0.0.2. The benchmark suite measures key operations across both KVDB (Key-Value Database) and TSDB (Time-Series Database) modules.
+This directory contains comprehensive performance benchmarking scenarios for RocketDB v1.1.2. The benchmark suite measures key operations across both KVDB (Key-Value Database) and TSDB (Time-Series Database) modules.
 
 ## Scenarios
 
