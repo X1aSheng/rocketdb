@@ -403,8 +403,35 @@ int fault_import_rules(fault_ctx_t *ctx, const char *str)
 {
     if (!ctx || !str) return 0;
 
-    /* TODO: Not yet implemented. Currently a stub that accepts any input.
-     * Future: parse rule strings to dynamically configure fault injection. */
-    (void)str;
-    return 0;
+    int imported = 0;
+    const char *p = str;
+
+    while (*p) {
+        /* Skip leading whitespace and blank lines */
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+        if (!*p) break;
+
+        /* Skip comment lines */
+        if (*p == '#') {
+            while (*p && *p != '\n') p++;
+            continue;
+        }
+
+        /* Parse: type,mode,trigger_count,probability_pct,addr_start,addr_end,seed,enabled */
+        fault_rule_t rule;
+        int n = 0;
+        int fields = sscanf(p, "%d,%d,%u,%u,%u,%u,%u,%d%n",
+                            (int *)&rule.type, (int *)&rule.trigger_mode,
+                            &rule.trigger_count, &rule.probability_pct,
+                            &rule.addr_start, &rule.addr_end,
+                            &rule.seed, &rule.enabled, &n);
+        if (fields < 8) break; /* malformed line, stop */
+
+        if (fault_add_rule(ctx, &rule) == 0)
+            imported++;
+
+        p += n;
+    }
+
+    return imported;
 }
