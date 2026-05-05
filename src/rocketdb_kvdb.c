@@ -2326,6 +2326,11 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
         uint8_t v = RDB_STATE_VALID;
         if (fl_write(db, wa + 1, &v, 1) != 0) {
             db->stats.flash_errors++;
+            /* Advance write_off past the abandoned record so the next
+               set() starts in clean erased space.  The WRITING record
+               will be skipped by scan_sector() on next init. */
+            db->sectors[db->active_sec].write_off += rsz;
+            db->sectors[db->active_sec].garbage_bytes += rsz;
             fl_unlock(db);
             return RDB_ERR_FLASH;
         }
