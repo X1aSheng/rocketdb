@@ -99,6 +99,8 @@ TEST_CASE(ts_rotation_stress, "TSDB", "Rotation stress >=100")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
+    trace_event(&g_trace, "  [ROT-STRESS] start: target=%u seed=0x%08X",
+                ROT_TARGET, g_ts_sz_prng);
 
     uint8_t data[512];
     memset(data, 0x5A, sizeof(data));
@@ -359,6 +361,7 @@ TEST_CASE(ts_mixed_payload_stress, "TSDB", "Random mixed-length payload rotation
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
+    trace_event(&g_trace, "  [MIXED-PL] start: seed=0x%08X", MIX_TS_SEED);
     trace_tsdb_geometry(&g_trace, &g_db);
 
     uint16_t max_dl = g_db.max_data_len;

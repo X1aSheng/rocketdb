@@ -149,6 +149,8 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(kv_reset());
+    trace_event(&g_trace, "  [INT-KV-GC] start: target=%u seed=0x%08X",
+                CYCLE_GC_TARGET, g_int_sz_prng);
 
     char key[4] = { 'K', '0', '0', 0 };
     uint8_t val[512];
@@ -177,6 +179,8 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles >=200")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
+    trace_event(&g_trace, "  [INT-TS-ROT] start: target=%u seed=0x%08X",
+                CYCLE_ROT_TARGET, g_int_sz_prng);
 
     uint8_t data[512];
     memset(data, 0x5A, sizeof(data));
@@ -237,6 +241,7 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
     (void)ctx;
     TEST_ASSERT_RDB_OK(mix_reset());
     memset(g_mix_kv_present, 0, sizeof(g_mix_kv_present));
+    trace_event(&g_trace, "  [MIXED-WL] start: seed=0x%08X", g_mix_prng);
 
     sim_dist_t kv_len_dist, ts_len_dist;
     sim_dist_init_uniform(&kv_len_dist, 0x11111111u, 1, MIX_MAX_VAL);

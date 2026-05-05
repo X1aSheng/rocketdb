@@ -113,8 +113,8 @@ TEST_CASE(kv_gc_stress_100, "KVDB", "GC stress with >=100 cycles")
     uint8_t val[512];
     memset(val, 0xA5, sizeof(val));
 
-    trace_event(&g_trace, "  [GC-STRESS] start: keys=K00..K%02d target_gc=%u",
-                GC_STRESS_KEYS - 1, GC_STRESS_TARGET);
+    trace_event(&g_trace, "  [GC-STRESS] start: keys=K00..K%02d target_gc=%u seed=0x%08X",
+                GC_STRESS_KEYS - 1, GC_STRESS_TARGET, g_kv_sz_prng);
     uint32_t loops = 0, prev_gc = g_db.stats.gc_runs;
     while (g_db.stats.gc_runs < GC_STRESS_TARGET && loops < GC_STRESS_MAX_LOOPS) {
         for (int i = 0; i < GC_STRESS_KEYS; i++) {
@@ -405,6 +405,7 @@ TEST_CASE(kv_mixed_value_stress, "KVDB", "Random mixed-length value GC stress (c
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(kv_reset());
+    trace_event(&g_trace, "  [MIXED-VAL] start: seed=0x%08X", MIX_KV_SEED);
     trace_kvdb_geometry(&g_trace, &g_db);
 
     /* Generate random-but-unique key names (deterministic from seed) */
