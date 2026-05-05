@@ -2787,17 +2787,17 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
             if (rh.magic != RDB_KV_RECORD_MAGIC ||
                 rh.key_len < 1 || rh.key_len > RDB_MAX_KEY_LEN ||
                 rh.val_len > RDB_MAX_VAL_LEN) {
-                it->offset += (uint16_t)corrupt_skip(db); /* [K-3 fix] */
+                it->offset += corrupt_skip(db);
                 continue;
             }
 
             uint32_t rsz = rec_size(db, rh.key_len, rh.val_len);
             if ((uint32_t)it->offset + rsz > ss) {
-                it->offset = (uint16_t)ss;
+                it->offset = ss;
                 break;
             }
 
-            uint16_t cur_off = it->offset;
+            uint32_t cur_off = it->offset;
             it->offset += rsz; /* Advance past this record */
 
             /* Only consider VALID records */
