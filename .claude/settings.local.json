@@ -146,7 +146,13 @@
       "Bash(cmd.exe /d /c test_cmd.bat)",
       "Bash(rm test_cmd.bat)",
       "Bash(powershell.exe -Command \"& { cmd.exe /c 'project\\\\build\\\\run_all_tests.bat build' 2>&1 }\")",
-      "Bash(xxd)"
+      "Bash(xxd)",
+      "Bash(ls -la g:\\\\\\\\rocketdb\\\\\\\\)",
+      "Bash(ls -la \"g:\\\\\\\\rocketdb\\\\\\\\examples\\\\\\\\\")",
+      "Bash(ls -la \"g:\\\\\\\\rocketdb\\\\\\\\test\\\\\\\\perf\\\\\\\\\")",
+      "Bash(rmdir project/build)",
+      "Bash(rmdir project *)",
+      "Bash(rm project/build/*.bat)"
     ],
     "additionalDirectories": [
       "g:\\rocketdb\\test\\out",
