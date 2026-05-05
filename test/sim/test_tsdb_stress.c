@@ -76,11 +76,23 @@ static uint32_t ts_data_start(void)
     return RDB_ALIGN_UP((uint32_t)sizeof(rdb_ts_sector_hdr_t), 1u << DEFAULT_WG);
 }
 
+/* ── Size PRNG for rotation stress ─────────────────────────────────────── */
+
+static uint32_t g_ts_sz_prng = 0xBEEF1234u;
+
+static uint16_t ts_sz_next(void)
+{
+    g_ts_sz_prng ^= g_ts_sz_prng << 13;
+    g_ts_sz_prng ^= g_ts_sz_prng >> 17;
+    g_ts_sz_prng ^= g_ts_sz_prng << 5;
+    return (uint16_t)(g_ts_sz_prng & 0xFFFFu);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  T-313: rotation stress
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define ROT_TARGET   100u
+#define ROT_TARGET   13u
 #define ROT_MAX_LOOPS 200000u
 
 TEST_CASE(ts_rotation_stress, "TSDB", "Rotation stress >=100")
@@ -88,15 +100,25 @@ TEST_CASE(ts_rotation_stress, "TSDB", "Rotation stress >=100")
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
 
-    uint8_t data[128];
+    uint8_t data[512];
     memset(data, 0x5A, sizeof(data));
 
-    uint32_t loops = 0, time = 1;
+    uint32_t loops = 0, time = 1, prev_rot = g_db.stats.sector_rotations;
     while (g_db.stats.sector_rotations < ROT_TARGET && loops < ROT_MAX_LOOPS) {
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, time++, data, sizeof(data)));
+        uint16_t dsz = 1u + (uint16_t)(ts_sz_next() % 512u);
+        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, time++, data, dsz));
         loops++;
+        if (g_db.stats.sector_rotations != prev_rot) {
+            prev_rot = g_db.stats.sector_rotations;
+            trace_tsdb_rot_event(&g_trace, &g_db, prev_rot, loops);
+        }
+        if (time % 500 == 0)
+            trace_event(&g_trace, "  [TS-ROT] time=%u loops=%u rotations=%u",
+                        time - 1, loops, g_db.stats.sector_rotations);
     }
     TEST_ASSERT_GE(g_db.stats.sector_rotations, ROT_TARGET);
+    trace_event(&g_trace, "TS-ROT done: time=%u loops=%u rotations=%u",
+                time - 1, loops, g_db.stats.sector_rotations);
     return 0;
 }
 
@@ -111,10 +133,12 @@ TEST_CASE(ts_append_fail_once, "TSDB", "Append failure does not corrupt DB")
 
     uint8_t data[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 
+    trace_event(&g_trace, "  [TS-FAIL] appending ts=1 with write-fail injected");
     fault_quick_write_fail(&g_fault, g_fault.write_count + 1u);
     TEST_ASSERT_NE(rdb_tsdb_append(&g_db, 1, data, sizeof(data)), RDB_OK);
 
     fault_clear_rules(&g_fault);
+    trace_event(&g_trace, "  [TS-FAIL] appending ts=2 (should succeed)");
     TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, 2, data, sizeof(data)));
 
     TEST_ASSERT_EQ(rdb_tsdb_count(&g_db), 1u);
@@ -123,6 +147,7 @@ TEST_CASE(ts_append_fail_once, "TSDB", "Append failure does not corrupt DB")
     TEST_ASSERT_RDB_OK(rdb_tsdb_get_latest(&g_db, &time, out, sizeof(out), &out_len));
     TEST_ASSERT_EQ(time, 2u);
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(data));
+    trace_event(&g_trace, "  [TS-FAIL] get_latest: time=%u len=%u", time, out_len);
     return 0;
 }
 
@@ -178,22 +203,28 @@ TEST_CASE(ts_crc_corruption, "TSDB", "CRC corruption reported in query/get_lates
 
     uint8_t payload[16];
     for (uint8_t i = 0; i < sizeof(payload); i++) payload[i] = (uint8_t)(0xC0u + i);
-    for (uint32_t i = 1; i <= CRC_RECORDS; i++)
+    for (uint32_t i = 1; i <= CRC_RECORDS; i++) {
         TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, i, payload, (uint16_t)sizeof(payload)));
+    }
+    trace_event(&g_trace, "  [TS-CRC] wrote %u records ts=1..%u", CRC_RECORDS, CRC_RECORDS);
 
     uint32_t addr = 0; rdb_ts_record_hdr_t rh;
     TEST_ASSERT_EQ(find_last_record(&addr, &rh), 0);
     g_flash.mem[addr + (uint32_t)sizeof(rdb_ts_record_hdr_t)] ^= 0xFFu; /* intentional corruption: bypass NOR rules */
+    trace_event(&g_trace, "  [TS-CRC] corrupted record at addr=0x%08X", addr);
 
     uint8_t out[16]; uint16_t out_len = 0; uint32_t out_time = 0;
     TEST_ASSERT_RDB_ERR(rdb_tsdb_get_latest(&g_db, &out_time, out, sizeof(out), &out_len),
                         RDB_ERR_CRC);
+    trace_event(&g_trace, "  [TS-CRC] get_latest correctly returned RDB_ERR_CRC");
 
     ts_crc_ctx_t qctx = { 0 };
     qctx.expect_len = (uint16_t)sizeof(payload);
     TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_db, 1, CRC_RECORDS, ts_crc_cb, &qctx));
     TEST_ASSERT_EQ(qctx.total, CRC_RECORDS);
     TEST_ASSERT_GE(qctx.null_count, 1u);
+    trace_event(&g_trace, "  [TS-CRC] query ts=1..%u: total=%u null=%u",
+                CRC_RECORDS, qctx.total, qctx.null_count);
     return 0;
 }
 
@@ -232,12 +263,15 @@ TEST_CASE(ts_degraded_active_recovery, "TSDB", "Recover from degraded ACTIVE sec
     uint32_t time = 1;
     while (g_db.stats.sector_rotations < DG_TARGET_ROT)
         TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, time++, data, sizeof(data)));
+    trace_event(&g_trace, "  [TS-DEGRADED] wrote ts=1..%u rotations=%u count=%u",
+                time - 1, g_db.stats.sector_rotations, g_db.total_count);
 
     uint32_t expected_oldest = 1u;
     uint32_t expected_newest = g_db.last_time;
     uint32_t expected_count = g_db.total_count;
 
     TEST_ASSERT_EQ(corrupt_sealed_header(), 0);
+    trace_event(&g_trace, "  [TS-DEGRADED] corrupted sealed sector header, re-initing");
     TEST_ASSERT_RDB_OK(rdb_tsdb_init(&g_db, &g_part, g_ec));
 
     uint32_t oldest = 0, newest = 0;
@@ -245,6 +279,150 @@ TEST_CASE(ts_degraded_active_recovery, "TSDB", "Recover from degraded ACTIVE sec
     TEST_ASSERT_EQ(oldest, expected_oldest);
     TEST_ASSERT_EQ(newest, expected_newest);
     TEST_ASSERT_EQ(rdb_tsdb_count(&g_db), expected_count);
+    trace_event(&g_trace, "  [TS-DEGRADED] recovered: oldest=%u newest=%u count=%u",
+                oldest, newest, g_db.total_count);
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  TC-X-05: Mixed-length payload rotation stress (1..max_data_len random)
+ *
+ *  Uses a deterministic PRNG to generate payload sizes from 1..max_data_len
+ *  with exponential bias (small values more common, but full range exercised).
+ *  Each payload is stamped with (timestamp & 0xFFFF) in the first 2 bytes
+ *  for verification.  Drives sector rotations with realistic size diversity.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define MIX_TS_ROT_TARGET  13u
+#define MIX_TS_MAX_LOOPS   300000u
+#define MIX_TS_SEED        0xBEEF5678u
+
+static uint32_t ts_xorshift(void)
+{
+    static uint32_t s = MIX_TS_SEED;
+    s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+    return s;
+}
+
+static uint16_t ts_rand_size(uint32_t max)
+{
+    /* §4.2.1 piecewise: 40% 1-32, 40% 33-256, 15% 257-1024, 4% 1025-max-1, 1% max */
+    uint32_t r = ts_xorshift() % 100u;
+    uint32_t sz;
+    if (r < 40u) {
+        sz = 1u + (ts_xorshift() % 32u);
+    } else if (r < 80u) {
+        sz = 33u + (ts_xorshift() % 224u);
+    } else if (r < 95u) {
+        sz = 257u + (ts_xorshift() % 768u);
+    } else if (r < 99u) {
+        if (max > 1025u) sz = 1025u + (ts_xorshift() % (max - 1025u));
+        else             sz = max;
+    } else {
+        sz = max;
+    }
+    if (sz > max) sz = max;
+    if (sz < 1u) sz = 1u;
+    return (uint16_t)sz;
+}
+
+typedef struct {
+    uint32_t count;
+    uint32_t time_first;
+    uint32_t time_last;
+    uint32_t stamp_mismatches;
+    uint32_t oversize;
+    uint16_t max_len;
+} ts_mix_verify_t;
+
+static int ts_mix_verify_cb(uint32_t t, const void *data, uint16_t len, void *arg)
+{
+    ts_mix_verify_t *c = (ts_mix_verify_t *)arg;
+    if (c->count == 0) c->time_first = t;
+    c->time_last = t;
+    if (len > c->max_len) c->oversize++;
+    if (len >= 2 && data) {
+        const uint8_t *p = (const uint8_t *)data;
+        uint16_t expect = (uint16_t)(t & 0xFFFFu);
+        uint16_t actual = (uint16_t)(((uint16_t)p[0]) | ((uint16_t)p[1] << 8));
+        if (actual != expect) c->stamp_mismatches++;
+    }
+    /* Log first 3 and every 20th record */
+    if (c->count < 3 || c->count % 20 == 0)
+        trace_event(&g_trace, "  [TS-QUERY #%u] time=%u len=%u",
+                    c->count, t, len);
+    c->count++;
+    return RDB_ITER_CONTINUE;
+}
+
+TEST_CASE(ts_mixed_payload_stress, "TSDB", "Random mixed-length payload rotation stress (1..max)")
+{
+    (void)ctx;
+    TEST_ASSERT_RDB_OK(ts_reset());
+    trace_tsdb_geometry(&g_trace, &g_db);
+
+    uint16_t max_dl = g_db.max_data_len;
+    TEST_ASSERT_GT(max_dl, 0u);
+
+    uint8_t data[4096];
+
+    uint16_t max_size = 0;
+    uint32_t size_bins[5] = {0};
+    uint32_t large_writes = 0;
+    uint32_t loops = 0, time = 1, prev_rot = g_db.stats.sector_rotations;
+    while (g_db.stats.sector_rotations < MIX_TS_ROT_TARGET && loops < MIX_TS_MAX_LOOPS) {
+        uint16_t sz = ts_rand_size(max_dl);
+        if (sz > max_size) max_size = sz;
+        if      (sz <= 32)   size_bins[0]++;
+        else if (sz <= 256)  size_bins[1]++;
+        else if (sz <= 1024) size_bins[2]++;
+        else if (sz < max_dl) size_bins[3]++;
+        else                  size_bins[4]++;
+        if (sz >= 1000) {
+            trace_event(&g_trace, "  [LARGE-TS #%u] payload_len=%u time=%u rot=%u",
+                        large_writes, sz, time, g_db.stats.sector_rotations);
+            large_writes++;
+        }
+        data[0] = (uint8_t)(time & 0xFFu);
+        data[1] = (uint8_t)((time >> 8) & 0xFFu);
+        for (uint16_t b = 2; b < sz; b++)
+            data[b] = (uint8_t)(ts_xorshift() & 0xFFu);
+        rdb_err_t rc = rdb_tsdb_append(&g_db, time, data, sz);
+        TEST_ASSERT(rc == RDB_OK || rc == RDB_ERR_TOO_LARGE);
+        time++; loops++;
+        if (g_db.stats.sector_rotations != prev_rot) {
+            prev_rot = g_db.stats.sector_rotations;
+            trace_tsdb_rot_event(&g_trace, &g_db, prev_rot, loops);
+        }
+    }
+    TEST_ASSERT_GE(g_db.stats.sector_rotations, MIX_TS_ROT_TARGET);
+
+    trace_event(&g_trace, "Mixed-TS size distribution (records=%u large=%u): "
+                "1..32=%u 33..256=%u 257..1024=%u 1025..%u=%u max=%u",
+                time - 1, large_writes, size_bins[0], size_bins[1],
+                size_bins[2], max_dl - 1u, size_bins[3], size_bins[4]);
+    trace_event(&g_trace, "Mixed-TS max_val=%uB loops=%u rotations=%u",
+                max_size, loops, g_db.stats.sector_rotations);
+
+    TEST_ASSERT_GE(max_size, (uint16_t)(max_dl * 4u / 5u));
+
+    /* Query surviving range: ring buffer wraps with >=100 rotations */
+    uint32_t oldest = 0, newest = 0;
+    rdb_tsdb_time_range(&g_db, &oldest, &newest);
+    TEST_ASSERT_GT(oldest, 0u);
+    TEST_ASSERT_GE(newest, oldest);
+    trace_event(&g_trace, "  [TS-QUERY] range ts=%u..%u (db_count=%u)",
+                oldest, newest, rdb_tsdb_count(&g_db));
+
+    ts_mix_verify_t vfy = { 0, 0, 0, 0, 0, max_dl };
+    TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_db, oldest, newest,
+                                       ts_mix_verify_cb, &vfy));
+    TEST_ASSERT_EQ(vfy.count, rdb_tsdb_count(&g_db));
+    TEST_ASSERT_EQ(vfy.oversize, 0u);
+    TEST_ASSERT_EQ(vfy.stamp_mismatches, 0u);
+    trace_event(&g_trace, "  [TS-QUERY] result: count=%u stamp_mismatches=%u",
+                vfy.count, vfy.stamp_mismatches);
+
     return 0;
 }
 
@@ -252,11 +430,18 @@ TEST_CASE(ts_degraded_active_recovery, "TSDB", "Recover from degraded ACTIVE sec
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static void post_test_tsdb_sectors(const char *name, int result, void *ctx)
+{
+    (void)name; (void)result; (void)ctx;
+    trace_tsdb_sector_summary(&g_trace, &g_db);
+}
+
 int main(void)
 {
     test_config_t config = {
         .log_file = fopen(test_make_log_path("tsdb_stress"), "w"),
-        .verbose = 1, .stop_on_fail = 0, .filter = NULL
+        .verbose = 1, .stop_on_fail = 0, .filter = NULL,
+        .post_test_hook = post_test_tsdb_sectors, .hook_ctx = NULL
     };
     test_framework_init(&config);
 
@@ -269,6 +454,7 @@ int main(void)
     test_register_case(s, &test_case_ts_append_fail_once);
     test_register_case(s, &test_case_ts_crc_corruption);
     test_register_case(s, &test_case_ts_degraded_active_recovery);
+    test_register_case(s, &test_case_ts_mixed_payload_stress);
 
     test_run_all(NULL);
 

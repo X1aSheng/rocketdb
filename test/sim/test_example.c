@@ -158,6 +158,12 @@ static int example_param_write_gran_test(void *ctx, const test_params_t *params)
  *  主测试入口
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static void post_test_example_sectors(const char *name, int result, void *ctx)
+{
+    (void)name; (void)result; (void)ctx;
+    trace_kvdb_sector_summary(&g_trace, &g_kvdb);
+}
+
 int main(void)
 {
     /* 初始化模拟 Flash */
@@ -183,7 +189,8 @@ int main(void)
         .log_file = fopen(test_make_log_path("example"), "w"),
         .verbose = 1,
         .stop_on_fail = 0,
-        .filter = NULL  /* NULL = 运行所有测试 */
+        .filter = NULL,  /* NULL = 运行所有测试 */
+        .post_test_hook = post_test_example_sectors, .hook_ctx = NULL
     };
 
     test_framework_init(&config);

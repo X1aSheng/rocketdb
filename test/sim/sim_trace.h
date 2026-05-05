@@ -64,6 +64,12 @@ void trace_kvdb_sectors(trace_ctx_t *t,
                         const rdb_kv_sector_meta_t *sectors,
                         uint8_t cnt);
 void trace_kvdb_stats(trace_ctx_t *t, const rdb_kvdb_t *db);
+void trace_kvdb_sector_summary(trace_ctx_t *t, const rdb_kvdb_t *db);
+
+/* ── KVDB GC event (compact per-GC sector view) ─────────────────────────── */
+
+void trace_kvdb_gc_event(trace_ctx_t *t, const rdb_kvdb_t *db,
+                          uint32_t gc_run, uint32_t loop);
 
 /* ── TSDB parameter snapshots ───────────────────────────────────────────── */
 
@@ -72,6 +78,17 @@ void trace_tsdb_erase_counts(trace_ctx_t *t,
                              const uint32_t *ec, const uint8_t *status,
                              uint8_t cnt);
 void trace_tsdb_stats(trace_ctx_t *t, const rdb_tsdb_t *db);
+void trace_tsdb_sector_summary(trace_ctx_t *t, const rdb_tsdb_t *db);
+
+/* ── TSDB rotation event (compact per-rotation sector view) ──────────────── */
+
+void trace_tsdb_rot_event(trace_ctx_t *t, const rdb_tsdb_t *db,
+                           uint32_t rotation, uint32_t loop);
+
+/* ── Sector geometry (max data length per configuration) ─────────────────── */
+
+void trace_kvdb_geometry(trace_ctx_t *t, const rdb_kvdb_t *db);
+void trace_tsdb_geometry(trace_ctx_t *t, const rdb_tsdb_t *db);
 
 /* ── Hex dump utility ───────────────────────────────────────────────────── */
 

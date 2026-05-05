@@ -273,6 +273,8 @@ TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test")
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
 
+    trace_tsdb_geometry(&g_trace, &g_db);
+
     uint32_t max_dl = g_db.max_data_len;
     TEST_ASSERT_GT(max_dl, 0u);
 
@@ -311,11 +313,18 @@ TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test")
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static void post_test_tsdb_sectors(const char *name, int result, void *ctx)
+{
+    (void)name; (void)result; (void)ctx;
+    trace_tsdb_sector_summary(&g_trace, &g_db);
+}
+
 int main(void)
 {
     test_config_t config = {
         .log_file = fopen(test_make_log_path("tsdb_basic"), "w"),
-        .verbose = 1, .stop_on_fail = 0, .filter = NULL
+        .verbose = 1, .stop_on_fail = 0, .filter = NULL,
+        .post_test_hook = post_test_tsdb_sectors, .hook_ctx = NULL
     };
     test_framework_init(&config);
 

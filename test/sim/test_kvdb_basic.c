@@ -404,14 +404,27 @@ TEST_CASE(kv_init_format_verify, "KVDB", "Empty init and format verification")
 /* ═══════════════════════════════════════════════════════════════════════════
  *  TC-X-02 (KV part): Maximum key/value boundary test
  *
- *  Verify RDB_MAX_KEY_LEN (63) and RDB_MAX_VAL_LEN (4095) work correctly,
- *  and that exceeding them returns RDB_ERR_TOO_LARGE.
+ *  Computes actual max value length from sector geometry (sector_size,
+ *  write_gran, key length), then tests precise boundary: max_val succeeds,
+ *  max_val+1 returns TOO_LARGE.  Also verifies max key length and zero-length.
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+static uint32_t kv_max_val_for_key(const rdb_kvdb_t *db, uint16_t key_len)
+{
+    uint32_t gran = 1u << db->part->write_gran;
+    uint32_t ds   = RDB_ALIGN_UP((uint32_t)sizeof(rdb_kv_sector_hdr_t), gran);
+    uint32_t cap  = db->part->sector_size - ds;
+    uint32_t ka   = RDB_ALIGN_UP(key_len, gran);
+    uint32_t va_max = cap - (uint32_t)sizeof(rdb_kv_record_hdr_t) - ka;
+    return va_max - (va_max % gran);
+}
 
 TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(kv_reset(DEFAULT_WG));
+
+    trace_kvdb_geometry(&g_trace, &g_db);
 
     /* ── Max key length (63) ── */
     {
@@ -433,27 +446,41 @@ TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
         TEST_ASSERT_RDB_ERR(rdb_kvdb_set(&g_db, ok, "v", 1), RDB_ERR_TOO_LARGE);
     }
 
-    /* ── Max value length (4095) ── */
+    /* ── Max value length (computed from geometry) ── */
     {
-        uint8_t* mv = (uint8_t*)malloc(RDB_MAX_VAL_LEN);
+        uint32_t max_val = kv_max_val_for_key(&g_db, 2); /* key="MK" = 2 bytes */
+        TEST_ASSERT_GT(max_val, 0u);
+
+        trace_event(&g_trace, "  [KV-MAX] computed max_val=%uB for key_len=2", max_val);
+
+        /* Exact max_val — must succeed */
+        uint8_t* mv = (uint8_t*)malloc(max_val);
         TEST_ASSERT(mv != NULL);
-        memset(mv, 0xCC, RDB_MAX_VAL_LEN);
-        rdb_err_t r = rdb_kvdb_set(&g_db, "MK", mv, RDB_MAX_VAL_LEN);
-        /* May return OK or TOO_LARGE depending on sector capacity */
-        if (r == RDB_OK) {
-            uint16_t out_len = 0;
-            TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "MK", NULL, 0, &out_len));
-            TEST_ASSERT_EQ(out_len, (uint16_t)RDB_MAX_VAL_LEN);
-        } else {
-            TEST_ASSERT_EQ(r, RDB_ERR_TOO_LARGE);
-        }
+        memset(mv, 0xCC, max_val);
+        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "MK", mv, (uint16_t)max_val));
+        uint8_t* out = (uint8_t*)malloc(max_val);
+        TEST_ASSERT(out != NULL);
+        uint16_t out_len = 0;
+        TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "MK", out, max_val, &out_len));
+        TEST_ASSERT_EQ(out_len, (uint16_t)max_val);
+        TEST_ASSERT_MEM_EQ(out, mv, max_val);
+        free(out);
+        free(mv);
+
+        /* max_val + 1 — must be TOO_LARGE */
+        mv = (uint8_t*)malloc(max_val + 1u);
+        TEST_ASSERT(mv != NULL);
+        memset(mv, 0xDD, max_val + 1u);
+        TEST_ASSERT_RDB_ERR(rdb_kvdb_set(&g_db, "OV", mv, (uint16_t)(max_val + 1u)),
+                            RDB_ERR_TOO_LARGE);
         free(mv);
     }
-    /* Value too large (4096) → TOO_LARGE */
+
+    /* Value far too large (4096) → TOO_LARGE for any configuration */
     {
         uint8_t* ov = (uint8_t*)malloc(RDB_MAX_VAL_LEN + 1u);
         TEST_ASSERT(ov != NULL);
-        TEST_ASSERT_RDB_ERR(rdb_kvdb_set(&g_db, "OV", ov,
+        TEST_ASSERT_RDB_ERR(rdb_kvdb_set(&g_db, "FV", ov,
             RDB_MAX_VAL_LEN + 1u), RDB_ERR_TOO_LARGE);
         free(ov);
     }
@@ -519,11 +546,18 @@ TEST_CASE(kv_capacity_accounting, "KVDB", "Capacity accounting cross-check")
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static void post_test_kvdb_sectors(const char *name, int result, void *ctx)
+{
+    (void)name; (void)result; (void)ctx;
+    trace_kvdb_sector_summary(&g_trace, &g_db);
+}
+
 int main(void)
 {
     test_config_t config = {
         .log_file = fopen(test_make_log_path("kvdb_basic"), "w"),
-        .verbose = 1, .stop_on_fail = 0, .filter = NULL
+        .verbose = 1, .stop_on_fail = 0, .filter = NULL,
+        .post_test_hook = post_test_kvdb_sectors, .hook_ctx = NULL
     };
     test_framework_init(&config);
 

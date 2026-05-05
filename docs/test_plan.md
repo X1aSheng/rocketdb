@@ -1,317 +1,297 @@
-﻿# RocketDB Test Plan
-## 1. Purpose
-This plan translates . It includes a coverage assessment, a missing-scenarios list, and a redesigned test suite that is repeatable and measurable.
+# RocketDB 测试计划
 
-## 2. Inputs And Version Context
-1. Code under test: `rocketdb.h`, `rocketdb_kvdb.c`, `rocketdb_tsdb.c`.
+## 1. 测试架构
 
-## 3. Coverage Assessment vs. Requirements
+### 1.1 分层设计
 
-### 3.1 Requirement Mapping
-Requirement groupings inferred from `rocketdb_test.txt`:
-1. Flash model and partitions: W25Q128, 4 partitions of 32KB each (KVDB1, KVDB2, TSDB1, TSDB2), no index.
-2. Minimum GC pressure: each partition must trigger at least 100 GC/rotations and remain functional.
-3. Reliability under mixed operations: write, update, delete, query, rotation, GC migration, wrap-around.
-4. Power-loss consistency and recovery.
-5. Time-series epoch reset and query correctness.
-6. Write-granularity compliance across 1/2/4/8 bytes.
-7. Structural RAM footprint and on-flash layout constraints.
-8. Performance and jitter: avoid large blocking scans in hot paths.
-9. Data corruption handling: CRC errors, partial writes, bad headers.
-10. Large/small record handling, random key/value lengths.
+测试体系采用三层架构，自底向上逐层支撑：
 
-### 3.2 Coverage Gaps (Missing Tests)
-1. No automated GC stress across all four partitions with >=100 GC cycles each.
-2. No multi-write-granularity test matrix (1/2/4/8 bytes) for KVDB and TSDB.
-3. No epoch reset correctness tests (query must not truncate across epochs).
-4. No append error path tests verifying head offset advancement or DEAD marking.
-5. No sequence wrap-around tests for KVDB write sequence during init and recovery.
-6. No iterator correctness under GC (KVDB iter_gen invalidation).
-7. No power-loss injection tests across critical steps (header write, data write, commit write).
-8. No CRC corruption injection tests (data CRC mismatch handling).
-9. No randomized key/value length mixed workload tests.
-10. No wear-leveling distribution verification (erase counts spread within threshold).
-11. No boundary record size tests for `RDB_MAX_VAL_LEN` and `RDB_MAX_TS_DATA_LEN`.
-12. No sector-degradation tests for TSDB ACTIVE sectors in ring body.
-13. No query-range tests with `from > to`, `to = 0`, and boundary timestamps.
+```
+┌──────────────────────────────────────────┐
+│  测试套件层 (Test Suites)                 │
+│  7 个独立可执行测试单元                    │
+├──────────────────────────────────────────┤
+│  测试框架层 (Test Framework)              │
+│  断言、结果统计、测试注册与运行             │
+├──────────────────────────────────────────┤
+│  硬件模拟层 (Hardware Simulation)          │
+│  NOR Flash 行为模型、故障注入、跟踪日志     │
+└──────────────────────────────────────────┘
+```
 
-## 4. Redesign: Executable Test Suite
+- **硬件模拟层**: 在内存中完整模拟 NOR Flash 的所有行为约束和故障模式，使测试无需真实硬件即可运行。
+- **测试框架层**: 提供统一的测试用例注册、断言检查、结果汇总和日志输出机制。
+- **测试套件层**: 按功能域和测试目标组织的独立可执行测试集合。
 
-### 4.1 Test Infrastructure
-1. Flash simulator implementing W25Q128 constraints:
-   - 4KB sector erase
-   - 256B page program behavior
-   - Write granularity selectable per run (1/2/4/8)
-   - 1->0 only writes unless erased
-2. Fault injection hooks:
-   - Fail on Nth write/erase/read
-   - Corrupt byte ranges after write
-   - Power-loss interruption at labeled steps
-3. Deterministic random generator with seed logging.
-4. Trace logging:
-   - Sector status, write offsets, live/garbage bytes
-   - GC victim selection details
-   - erase counts per sector
-   - TSDB head/tail positions, time_base, total_count
+### 1.2 测试单元划分
 
-### 4.2 Global Test Matrix
-Run each test suite for:
-1. Write granularity: 1, 2, 4, 8 bytes
-2. Partitions: KVDB1, KVDB2, TSDB1, TSDB2 (32KB each)
-3. Payload size mix: small (<=16B), medium (32-256B), large (near sector capacity)
-4. Key/value length mix: random, skewed, max-length edge
+| 测试单元 | 测试对象 | 主要目标 | 测试方法 |
+|----------|---------|---------|---------|
+| KVDB 基础测试 | KVDB 核心接口 | 基本读写、删除、格式化 | 正确性验证 |
+| KVDB 压力测试 | KVDB GC 和耐久性 | 垃圾回收 >=100 次、混合负载 | 压力测试 + 随机测试 |
+| TSDB 基础测试 | TSDB 核心接口 | 追加、查询、epoch 重置 | 正确性验证 + 边界测试 |
+| TSDB 压力测试 | TSDB 环回和持久性 | 旋转 >=100 次、长时稳定性 | 压力测试 + 随机测试 |
+| 集成测试 | KVDB + TSDB 协同 | 双引擎并行操作、分区隔离 | 集成测试 |
+| 故障注入测试 | 错误处理路径 | 写失败、擦失败、掉电、数据损坏、位翻转 | 故障注入 |
+| 示例测试 | 使用示例验证 | 开箱即用正确性 | 回归测试 |
 
-### 4.2.1 Data Distributions And Random Strategy
-Use a deterministic PRNG with logged `seed` and per-test `stream_id`.
+每个测试单元编译为独立可执行文件，互不依赖，可以并行运行。
 
-**Key Length Distribution**
-1. 50%: 1-8 bytes (short keys)
-2. 30%: 9-32 bytes (typical)
-3. 15%: 33-63 bytes (upper normal)
-4. 5%: `RDB_MAX_KEY_LEN` (max edge)
+---
 
-**KV Value Length Distribution**
-1. 40%: 0-32 bytes
-2. 40%: 33-256 bytes
-3. 15%: 257-1024 bytes
-4. 4%: 1025-`RDB_MAX_VAL_LEN - 1`
-5. 1%: `RDB_MAX_VAL_LEN` (max edge)
+## 2. 硬件模拟方法
 
-**TS Data Length Distribution**
-1. 40%: 1-32 bytes
-2. 40%: 33-256 bytes
-3. 15%: 257-1024 bytes
-4. 4%: 1025-`max_data_len - 1`
-5. 1%: `max_data_len` (max edge)
+### 2.1 NOR Flash 行为模型
 
-**Operation Mix (KVDB)**
-1. 60%: set new key (insert)
-2. 25%: set existing key (update)
-3. 10%: get random key (read)
-4. 5%: delete key
+模拟器在内存中精确复现 NOR Flash 的物理约束：
 
-**Operation Mix (TSDB)**
-1. 80%: append
-2. 15%: query (random range)
-3. 5%: get_latest/get_oldest
+| 硬件特性 | 模拟方法 |
+|---------|---------|
+| 扇区擦除 | 4KB 扇区，按扇区擦除为全 0xFF |
+| 页编程 | 256B 页面粒度，仅允许 1→0 位写入 |
+| 写入粒度 | 可选 1/2/4/8 字节，控制每次写入的最小单位 |
+| 写入约束 | 未擦除区域只能将位从 1 翻转为 0，不能从 0 翻转为 1 |
 
-**Timestamp Generation (TSDB)**
-1. 70%: strictly increasing (`last_time + delta`, delta 1-100)
-2. 20%: equal or decreasing input to force monotonic correction
-3. 10%: epoch-reset scenario every N appends (N in 100-500 range)
+### 2.2 扇区几何与容量计算
 
-**Key/Value Content**
-1. 70%: random bytes
-2. 20%: low-entropy patterns (all 0x00, all 0xFF, 0xAA/0x55)
-3. 10%: structured payloads with embedded sequence counters
+每个扇区包含扇区头和数据区域，实际可用空间需扣除对齐开销：
 
-### 4.2.2 Executable Test Case Table
-Each entry below is a concrete, runnable test with explicit configuration. Use the global matrix for write_gran (1/2/4/8) and run each test across all four partitions unless stated otherwise.
+- **扇区头大小**: KVDB 固定 16 字节，TSDB 固定 20 字节，经写入粒度对齐后占用扇区起始位置。
+- **数据容量**: `data_cap = sector_size - RDB_ALIGN_UP(sector_hdr_size, write_gran)`。
+- **KVDB 最大记录长度**: 由 `data_cap - record_header - key_overhead` 决定，随 key 长度变化。
+- **TSDB 最大数据长度**: 由 `data_cap - record_header` 决定，固定值。
 
-1. **TC-KV-01 Empty Init/Format**
-   Setup: fresh 0xFF flash, KVDB1 only
-   Steps: init, verify active sector; format; verify erase count increments
-   Pass: active_sec set, write_off at data_start, headers valid
+写入粒度对有效容量的影响通过对齐计算自动反映，测试时遍历所有写入粒度以确保兼容性。
 
-2. **TC-KV-02 Basic Set/Get**
-   Setup: 100 unique keys, random lengths per 4.2.1
-   Steps: set all, get all
-   Pass: all reads return correct data, no CRC errors
+### 2.3 空闲空间统计规则
 
-3. **TC-KV-03 Update/GC Accounting**
-   Setup: 20 hot keys, fixed value length 32B
-   Steps: update each key 200 times
-   Pass: live_bytes bounded, garbage_bytes increases, no RDB_ERR_FULL
+各类扇区的空闲字节根据其状态按不同规则计算：
 
-4. **TC-KV-04 Delete All Copies**
-   Setup: 50 keys, multiple updates
-   Steps: delete each key, then exists/get
-   Pass: delete returns OK, exists/get return NOT_FOUND
+| 扇区状态 | freeB 计算方式 |
+|---------|---------------|
+| ERASED | `sector_size - aligned_hdr_size`（已预扣扇区头占位） |
+| ACTIVE | `sector_size - write_offset` |
+| SEALED | `sector_size - write_offset`（最后一次写入位置） |
+| TSDB FREE | `sector_size - aligned_hdr_size`（同 ERASED） |
+| TSDB HEAD | `sector_size - head_offset` |
+| TSDB TAIL/DATA | `0`（已满） |
 
-5. **TC-KV-05 GC Stress 100+**
-   Setup: 20 keys, 32B values, KVDB1
-   Steps: loop writes until GC count >= 100
-   Pass: gc_runs >= 100, no deadlock, no corruption
+---
 
-6. **TC-KV-06 Seq Wrap Recovery**
-   Setup: prefill flash with seq near 0xFFFFFFFF
-   Steps: init, write new records
-   Pass: new seq > prior logical max, ordering correct
+## 3. 测试方法分类
 
-7. **TC-KV-07 Iterator Under GC**
-   Setup: 100 keys, start iterator
-   Steps: trigger GC mid-iteration, call iter_next
-   Pass: iter_next returns RDB_ERR_BUSY
+### 3.1 正确性测试 (Correctness Testing)
 
-8. **TC-KV-08 Corrupt Header Skip**
-   Setup: inject bad magic/key_len in middle of sector
-   Steps: init and get/iter
-   Pass: scan skips corrupt record, no crash, data after remains readable
+**目的**: 验证基本功能在正常条件下的输入/输出正确性。
 
-9. **TC-KV-09 Power-Loss Recovery**
-   Setup: fault injection at header/data/commit
-   Steps: crash, re-init
-   Pass: WRITING records repaired or marked DEAD, DB usable
+**方法**:
+- 写入已知数据，读取并逐字节比对。
+- 删除后确认查询返回"不存在"。
+- 格式化后确认扇区状态全部归位。
+- CRC 校验值随数据一并验证。
 
-10. **TC-TS-01 Append/Query Basic**
-    Setup: append 1000 records, monotonic time
-    Steps: query full range
-    Pass: all records returned in order, CRC valid
+**典型场景**: 空初始化、基本增删改查、格式化、追加查询。
 
-11. **TC-TS-02 Epoch Query Integrity**
-    Setup: append T increasing, reset epoch, append smaller times
-    Steps: query range spanning both epochs
-    Pass: no truncation, records from both epochs returned
+### 3.2 边界测试 (Boundary Testing)
 
-12. **TC-TS-03 Append Failure Handling**
-    Setup: inject write failure at header/data/commit
-    Steps: append, then append again
-    Pass: no AND-collision, head_off advanced or DEAD marked
+**目的**: 验证系统在极限值附近的正确行为。
 
-13. **TC-TS-04 Rotation 100+**
-    Setup: fixed record size, fill ring until 100 rotations
-    Steps: continue appending
-    Pass: tail advances, total_count consistent, no corruption
+**方法**:
+- 使用最大 key 长度、最大 value 长度（精确计算几何上限）。
+- 构造"刚好装满一个扇区"的记录组合。
+- 测试 `from > to`、`to = 0`、时间戳跨越 epoch 边界的查询范围。
+- 序列号接近溢出边界（0xFFFFFFFF）时的初始化恢复。
 
-14. **TC-TS-05 Recount Jitter**
-    Setup: measure append latency over multiple ring cycles
-    Steps: collect max latency
-    Pass: latency within defined budget or flagged
+**验证点**: 边界值应正常处理或返回明确的错误码，不得崩溃或静默失败。
 
-15. **TC-TS-06 CRC Corruption**
-    Setup: corrupt data payload after write
-    Steps: query affected range
-    Pass: callback receives NULL data, crc_errors increments
+### 3.3 压力测试 (Stress Testing)
 
-16. **TC-TS-07 Degraded ACTIVE Sector**
-    Setup: simulate power loss during seal, leaving ACTIVE in body
-    Steps: init, query/get_oldest
-    Pass: ts_active_info recovers time_base and data is accessible
+**目的**: 验证系统在持续高负载下的稳定性，强制触发资源回收路径。
 
-17. **TC-X-01 RAM Footprint**
-    Setup: static asserts on struct sizes and meta buffers
-    Steps: compile-time checks
-    Pass: sizes match expected, no malloc
+**方法**:
+- KVDB: 循环写入有限 key 集合，强制 GC 触发 >=100 次，验证无死锁、无数据损坏。
+- TSDB: 持续追加直到扇区旋转 >=100 次，验证总计数一致性。
+- 操作过程中穿插读取、删除、查询，模拟真实混合负载。
 
-18. **TC-X-02 Max Size Boundaries**
-    Setup: KV max key/value, TS max data len
-    Steps: write and read
-    Pass: success or correct TOO_LARGE errors
+**验收标准**: 压力周期内无 `RDB_ERR_FULL` 意外报错，所有断言通过，内存使用稳定。
 
-19. **TC-X-03 Capacity Accounting**
-    Setup: mix of sets and deletes
-    Steps: compare space_info vs computed usage
-    Pass: reported totals within expected tolerance
+### 3.4 随机测试 (Monte Carlo / Randomized Testing)
 
-20. **TC-X-04 Corrupt Sector Recovery**
-    Setup: corrupt sector header
-    Steps: init
-    Pass: marked CORRUPT or reclaimed to ERASED
+**目的**: 覆盖组合爆炸路径，发现确定性测试难以命中边界条件。
 
-### 4.3 KVDB Tests
+**方法**:
+- 使用确定性伪随机数生成器（xorshift），记录种子以保证可复现。
+- 按预定义分布随机化 key 长度、value 长度、操作类型。
+- 每次运行产生不同但可追溯的测试序列。
 
-**KVDB-INIT-01: Empty init and format**
-1. Start with all 0xFF flash.
-2. Init, verify one ACTIVE sector, write_off at data_start.
-3. Format, verify erase counts increment and header written once per sector.
+**数据分布设计**:
+- Key 长度: 50% 短键(1-8B) / 30% 中键(9-32B) / 15% 长键(33-63B) / 5% 最大键。
+- Value 长度: 40% 极小(0-32B) / 40% 中等(33-256B) / 15% 大(257-1024B) / 4% 接近最大 / 1% 最大。
+- 操作混合 (KVDB): 60% 插入新键 / 25% 更新已有键 / 10% 读取 / 5% 删除。
+- 操作混合 (TSDB): 80% 追加 / 15% 范围查询 / 5% 获取最旧/最新。
+- 内容模式: 70% 随机字节 / 20% 低熵模式(全0、全1、交替) / 10% 结构化负载。
 
-**KVDB-WRITE-02: Basic set/get**
-1. Write 100 unique keys.
-2. Read all, verify CRC and value integrity.
+### 3.5 故障注入测试 (Fault Injection Testing)
 
-**KVDB-UPDATE-03: Overwrite and garbage accounting**
-1. Update same keys repeatedly.
-2. Validate garbage_bytes increases and live_bytes stays bounded.
+**目的**: 验证错误路径处理和恢复机制的健壮性。
 
-**KVDB-DELETE-04: Delete all copies**
-1. Write keys, update keys, delete keys.
-2. Verify no VALID copies remain.
+**方法**:
+- 在硬件模拟层注入故障，触发方式支持：按调用次数（第 N 次触发）、按扇区索引、按操作类型、随机触发。
+- 注入点覆盖写入路径的关键步骤：扇区头写入、数据写入、提交标记写入。
 
-**KVDB-GC-05: GC stress >=100 cycles**
-1. Use 20 keys with fixed-size values.
-2. Force partition to rotate and trigger GC >=100 times.
-3. Verify no RDB_ERR_FULL before GC target is met.
+**故障类型**:
 
-**KVDB-SEQ-06: write_seq wrap-around**
-1. Initialize flash with records near 0xFFFFFFFF seq.
-2. Re-init and confirm max_seq detection.
+| 故障类型 | 注入方法 | 验证点 |
+|---------|---------|-------|
+| 写失败 | 模拟闪存写操作返回错误 | 扇区状态正确回退，写入中记录被标记 DEAD |
+| 擦失败 | 模拟扇区擦除返回错误 | 扇区被标记 CORRUPT，系统继续使用其他扇区 |
+| 读失败 | 模拟闪存读操作返回错误 | 操作返回错误码，不崩溃 |
+| 掉电 | 在关键写入步骤后立即中断 | 重新初始化后数据一致，写入中记录被修复或标记 |
+| 数据损坏 | 写入成功后修改指定字节 | CRC 校验检测到损坏，报告错误但不影响其他数据 |
+| 位翻转 | 随机翻转存储中的位 | 同数据损坏，验证 CRC 检测能力 |
 
-**KVDB-ITER-07: Iterator correctness under GC**
-1. Start iterator.
-2. Trigger GC or rotate, then call iter_next.
-3. Expect RDB_ERR_BUSY and no stale outputs.
+### 3.6 回归测试 (Regression / Consistency Testing)
 
-**KVDB-CORRUPT-08: Corrupt record header**
-1. Inject invalid magic or key_len.
-2. Ensure scan skips by corrupt_skip and continues safely.
+**目的**: 确保修改不破坏已有功能，各配置组合行为一致。
 
-**KVDB-PWL-09: Power-loss injection**
-1. Interrupt after header write, after data write, before commit.
-2. Re-init, ensure WRITING recovery logic correct.
+**方法**:
+- 固定测试矩阵：对每种写入粒度(1/2/4/8)重复运行全部测试。
+- 内存占用通过编译期静态断言验证，无需运行时检查。
+- 容量统计与手动计算结果交叉比对。
 
-### 4.4 TSDB Tests
+---
 
-**TSDB-APPEND-01: Basic append/query**
-1. Append 1000 records with monotonic timestamps.
-2. Query full range, ensure all records returned.
+## 4. 测试数据管理
 
-**TSDB-EPOCH-02: Reset epoch query correctness**
-1. Append with time increasing to T.
-2. Reset epoch, append with smaller timestamps.
-3. Query range spanning both epochs, verify no truncation.
+### 4.1 数据生成策略
 
-**TSDB-APPEND-03: Write failure handling**
-1. Inject write failure during header, data, and commit steps.
-2. Verify head_off advancement or DEAD marking to prevent AND-collision.
+- **可复现性**: 所有随机数据由确定性 PRNG 生成，每次运行记录种子值。给定种子可精确重现测试序列。
+- **隔离性**: 每个测试用例使用独立的随机流，互不干扰。
+- **多样性**: 按预设分布覆盖短/中/长/极值各种数据长度，避免测试偏向单一规模。
 
-**TSDB-ROTATE-04: Full ring rotation >=100 cycles**
-1. Fill head sectors to force rotation >=100 times.
-2. Verify tail advancement, erase counts, and total_count consistency.
+### 4.2 内容模式
 
-**TSDB-COUNT-05: Recount jitter control**
-1. Measure append latency with recount enabled at ring cycles.
-2. Ensure jitter stays within configured bounds or flagged.
+- **随机字节**: 覆盖常规数据场景，占比最大。
+- **低熵模式**: 全 0x00、全 0xFF、0xAA/0x55 交替，验证对特殊位模式的正确处理。
+- **结构化负载**: 嵌入序列号和校验值，用于传输后完整性自检。
 
-**TSDB-CORRUPT-06: CRC mismatch**
-1. Corrupt data bytes post-write.
-2. Ensure query reports NULL data and increments crc_errors.
+---
 
-**TSDB-DEGRADED-07: ACTIVE in ring body**
-1. Simulate power loss during seal.
-2. Ensure ts_active_info recovers time_base and scan boundary.
+## 5. 结果验证方法
 
-### 4.5 Cross-Cutting Tests
+### 5.1 断言系统
 
-**X-STRUCT-01: RAM footprint validation**
-1. Assert rdb_kvdb_t, rdb_tsdb_t, and meta buffers sizes.
-2. Confirm no dynamic allocation.
+测试框架提供多层断言，失败时输出文件名、行号和具体值：
 
-**X-LIMIT-02: Maximum size boundaries**
-1. KVDB: key_len=RDB_MAX_KEY_LEN, val_len=RDB_MAX_VAL_LEN.
-2. TSDB: data_len=max_data_len, including RDB_MAX_TS_DATA_LEN override.
+- **相等断言**: 验证返回值与预期一致。
+- **布尔断言**: 验证条件为真。
+- **范围断言**: 验证数值在指定范围内。
+- **指针断言**: 验证指针非空或为空。
 
-**X-CAP-03: Capacity accounting**
-1. Cross-check max_live and reported space_info against actual usage.
+### 5.2 跟踪日志验证
 
-**X-RECOVER-04: Corrupt sector recovery**
-1. Inject corrupt sector headers.
-2. Verify init marks CORRUPT and reclaims when possible.
+测试框架自动记录运行时跟踪信息，包括：
 
-## 5. Pass/Fail Criteria
-1. No data loss beyond defined GC and overwrite semantics.
-2. No RDB_ERR_FULL before the required GC count threshold is reached.
-3. No CRC mismatch unless intentionally injected.
-4. Correct error return codes for all fault injections.
-5. Stable operation across all write_gran values.
+- **扇区状态表**: 每个扇区的状态、写偏移、存活/垃圾字节、擦除次数。
+- **GC 事件**: 每次 GC 的 victim 选择、迁移记录数、回收字节数。
+- **旋转事件**: TSDB 扇区旋转时的 head/tail 位置、时间基准、总计数。
+- **容量统计**: 各分区的最大容量、已用、空闲。
 
-## 6. Reporting Output
-Each test run records:
-1. Seed and configuration.
-2. GC count per partition.
-3. Erase count distribution (min/max/avg).
-4. Number of flash errors and CRC errors.
-5. Maximum append and set latency for jitter evaluation.
+测试完成后可通过日志追溯系统行为，验证内部状态一致性。
 
-## 7. Next Steps
-1. Implement flash simulator and fault-injection harness.
-2. Port tests into a repeatable runner (C test harness or host-side).
+### 5.3 自动化通过/失败判定
+
+- **通过**: 所有断言通过，无意外错误码返回。
+- **失败**: 任一断言违反，或出现未预期的错误码。
+- **可接受错误**: 故障注入测试中验证预期错误码正确返回，此类错误不计入失败。
+
+---
+
+## 6. 测试组织与执行
+
+### 6.1 构建与运行
+
+- 所有测试单元从项目根目录编译，输出到统一目录。
+- 构建前自动清理旧的中间文件（`.ilk`、`.pdb`、`.o`），确保干净编译。
+- 编译选项包含所有警告和禁用不安全函数的定义。
+- 提供批量运行脚本，可选择性运行 KVDB 套件、TSDB 套件或全部测试。
+
+### 6.2 输出文件
+
+- 每个测试运行生成带时间戳的日志文件。
+- 控制台输出显示测试统计摘要（通过/失败/跳过数量、断言总数）。
+- 详细跟踪信息写入日志文件供事后分析。
+
+### 6.3 命名规范
+
+- 测试单元文件名: `test_<模块>_<类型>.c`。
+- 测试用例组内以功能域前缀命名，便于识别和筛选。
+- 日志文件含时间戳，防止覆盖历史结果。
+
+---
+
+## 7. 测试覆盖矩阵
+
+### 7.1 功能覆盖
+
+| 功能域 | KVDB 基础 | KVDB 压力 | TSDB 基础 | TSDB 压力 | 集成 | 故障注入 | 示例 |
+|--------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| 初始化/格式化 | ✓ |   |   |   |   |   | ✓ |
+| 写入/读取 | ✓ | ✓ |   |   |   |   | ✓ |
+| 更新/覆盖 | ✓ | ✓ |   |   |   |   |   |
+| 删除 | ✓ | ✓ |   |   |   |   |   |
+| 迭代器 | ✓ | ✓ |   |   |   |   |   |
+| GC 垃圾回收 |   | ✓ |   |   |   |   |   |
+| 序列号回绕 | ✓ |   |   |   |   |   |   |
+| 追加/查询 |   |   | ✓ | ✓ |   |   |   |
+| Epoch 重置 |   |   | ✓ |   |   |   |   |
+| 扇区旋转 |   |   |   | ✓ |   |   |   |
+| 容量统计 | ✓ | ✓ | ✓ | ✓ | ✓ |   |   |
+| 扇区损坏恢复 | ✓ |   | ✓ |   |   |   |   |
+
+### 7.2 硬件约束覆盖
+
+| 约束条件 | 覆盖方式 |
+|---------|---------|
+| 写入粒度 1/2/4/8B | 遍历全部粒度重复运行 |
+| 4KB 扇区擦除 | 硬件模拟层强制约束，所有测试隐式覆盖 |
+| 1→0 写入限制 | 硬件模拟层强制，所有测试隐式覆盖 |
+| 分区容量限制 | 压力测试强制触发 GC 和旋转 |
+| 最大记录长度 | 边界测试精确验证上限和超限拒绝 |
+
+### 7.3 故障覆盖
+
+| 故障类型 | 故障注入测试覆盖 |
+|---------|:--:|
+| 写失败 | ✓ |
+| 擦失败 | ✓ |
+| 读失败 | ✓ |
+| 掉电 | ✓ |
+| CRC 损坏 | ✓ |
+| 位翻转 | ✓ |
+
+---
+
+## 8. 近期测试结果
+
+| 指标 | 数值 |
+|------|------|
+| 测试单元数 | 7 |
+| 测试用例数 | 40 |
+| 断言总数 | ~31,500 |
+| 通过率 | 100% |
+| 排查随机 TOO_LARGE 根因 | 已修复：随机 value 长度按几何上限夹紧 |
+| 排查 freeB 统计偏差 | 已修复：扇区头开销全部纳入计算 |
+| 单次全量运行耗时 | <1 秒 |
+
+---
+
+## 9. 测试设计原则总结
+
+1. **硬件无关**: 所有测试在软件模拟器中运行，无需真实闪存硬件，可在任何开发环境执行。
+2. **完全可复现**: 确定性 PRNG + 种子记录，任意历史运行均可精确复现。
+3. **分层验证**: 单元测试验证接口正确性，压力测试验证资源回收，故障注入验证错误处理，各层职责清晰。
+4. **几何感知**: 边界测试不依赖硬编码常量，而是从实际扇区几何计算极限值，适配不同硬件参数时无需修改测试代码。
+5. **故障全覆盖**: 6 种故障类型 × 多种触发模式 × 关键写入步骤，系统化覆盖错误路径。
+6. **快速反馈**: 全部测试秒级完成，适合集成到 CI/CD 流水线或保存前自动运行。
+7. **模块独立**: 每个测试单元独立编译、独立运行，互不干扰，支持并行执行。

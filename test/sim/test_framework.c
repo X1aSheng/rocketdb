@@ -195,7 +195,7 @@ int test_run_suite(test_suite_t *suite, void *ctx)
         }
         
         int result = tc->func(ctx);
-        
+
         if (result != 0 || g_ctx.test_failed) {
             g_stats.failed_cases++;
             if (!g_config.verbose) {
@@ -204,11 +204,16 @@ int test_run_suite(test_suite_t *suite, void *ctx)
         } else {
             g_stats.passed_cases++;
             if (g_config.verbose) {
-                log_output("[OK] %s (%u assertions)\n", 
+                log_output("[OK] %s (%u assertions)\n",
                           tc->name, g_ctx.current_case_asserts);
             }
         }
-        
+
+        /* Post-test hook for tracing */
+        if (g_config.post_test_hook) {
+            g_config.post_test_hook(tc->name, result, g_config.hook_ctx);
+        }
+
         tc = tc->next;
     }
     

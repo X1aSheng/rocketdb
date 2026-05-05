@@ -1,7 +1,16 @@
 /**
- * test_fault_injection.c - 故障注入功能演示
- * 
- * 演示如何使用故障注入系统测试 RocketDB 的鲁棒性
+ * test_fault_injection.c — Fault injection validation tests
+ *
+ * Verifies DB robustness under simulated hardware faults:
+ *  - Nth-write failure
+ *  - Probabilistic write failure
+ *  - Erase failure during GC
+ *  - Byte-level power loss (partial writes)
+ *  - Data CRC corruption detection
+ *
+ * Each test isolates "clean" format/init from "faulty" operations
+ * so that fault injection targets the specific scenario, not the
+ * setup phase.
  */
 
 #include "sim_flash.h"
@@ -14,413 +23,367 @@
 #define FLASH_SIZE      (128u * 1024u)
 #define SECTOR_SIZE     4096u
 #define KVDB_PART_SIZE  (64u * 1024u)
+#define KV_SECTOR_CNT   (KVDB_PART_SIZE / SECTOR_SIZE)
 
-static uint8_t g_flash_buf[FLASH_SIZE];
+/* ── Shared environment ─────────────────────────────────────────────────── */
+
+static uint8_t     g_buf[FLASH_SIZE];
 static sim_flash_t g_flash;
-static fault_ctx_t g_fault_ctx;
+static fault_ctx_t g_fault;
 static trace_ctx_t g_trace;
 
-/* Flash 回调函数 */
-static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
-    return sim_flash_read(&g_flash, addr, buf, len);
-}
-static int fl_write(uint32_t addr, const uint8_t *buf, size_t len) {
-    return sim_flash_write(&g_flash, addr, buf, len);
-}
-static int fl_erase(uint32_t addr) {
-    return sim_flash_erase(&g_flash, addr);
-}
-static void fl_lock(void) { }
-static void fl_unlock(void) { }
-static void fl_yield(void) { }
+static int fl_read(uint32_t a, uint8_t *b, size_t n) { return sim_flash_read(&g_flash, a, b, n); }
+static int fl_write(uint32_t a, const uint8_t *b, size_t n) { return sim_flash_write(&g_flash, a, b, n); }
+static int fl_erase(uint32_t a) { return sim_flash_erase(&g_flash, a); }
+static void fl_lock(void) { } static void fl_unlock(void) { } static void fl_yield(void) { }
 
 static rdb_flash_ops_t g_ops = {
-    .read = fl_read,
-    .write = fl_write,
-    .erase = fl_erase,
-    .lock = fl_lock,
-    .unlock = fl_unlock,
-    .yield = fl_yield
+    .read = fl_read, .write = fl_write, .erase = fl_erase,
+    .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
 };
 
+/* ── Helper: init flash & DB without faults ─────────────────────────────── */
+
+static rdb_err_t db_clean_init(rdb_kvdb_t *db, rdb_partition_t *part,
+                               rdb_kv_sector_meta_t *meta)
+{
+    sim_flash_init(&g_flash, g_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
+    fault_init(&g_fault, 0);
+    sim_flash_set_fault_ctx(&g_flash, NULL);  /* no faults during init */
+
+    *part = (rdb_partition_t) {
+        .name = "test", .base_addr = 0, .total_size = KVDB_PART_SIZE,
+        .sector_size = SECTOR_SIZE, .write_gran = 0, .ops = &g_ops
+    };
+    db->part = part;
+    db->sectors = meta;
+    db->sector_cnt = KV_SECTOR_CNT;
+
+    rdb_err_t r = rdb_kvdb_format(db);
+    if (r != RDB_OK) return r;
+    return rdb_kvdb_init(db, part, meta);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
- *  测试用例 1：写入失败注入
+ *  Test 1: Nth write fails, pre-fault data survives re-init
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_write_fail_nth, "Fault", "Write fails on Nth operation")
+TEST_CASE(fault_write_fail_nth, "Fault", "Nth write failure, data survives recovery")
 {
     (void)ctx;
-    
-    printf("\n[Fault Test 1] Write fails on 5th operation\n");
-    
-    /* 初始化 Flash */
-    sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
-    
-    /* 配置故障：第 5 次写入失败 */
-    fault_init(&g_fault_ctx, 0x12345);
-    fault_quick_write_fail(&g_fault_ctx, 5);
-    sim_flash_set_fault_ctx(&g_flash, &g_fault_ctx);
-    
-    /* 初始化 KVDB */
-    rdb_partition_t part = {
-        .name = "test",
-        .base_addr = 0,
-        .total_size = KVDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE,
-        .write_gran = 0,
-        .ops = &g_ops
-    };
-    
-    uint8_t meta_buf[512];
+
+    rdb_partition_t part;
+    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
     rdb_kvdb_t db;
-    db.part = &part;
-    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
-    rdb_kvdb_format(&db);
-    rdb_err_t ret = rdb_kvdb_init(&db, &part, meta_buf);
-    TEST_ASSERT_RDB_OK(ret);
+    TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
-    /* 尝试多次写入，观察第 5 次失败 */
-    int fail_count = 0;
-    for (int i = 0; i < 10; i++) {
-        char key[16];
-        snprintf(key, sizeof(key), "key%d", i);
-        ret = rdb_kvdb_set(&db, key, "value", 5);
+    /* Write 3 keys WITHOUT faults */
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "K0", "AAA", 3));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "K1", "BBB", 3));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "K2", "CCC", 3));
 
-        if (ret != RDB_OK) {
-            printf("  Set #%d failed (write_count=%u)\n", i + 1, g_fault_ctx.write_count);
-            fail_count++;
-        } else {
-            printf("  Set #%d success\n", i + 1);
-        }
-    }
-    TEST_ASSERT(fail_count > 0); /* at least one write should fail */
+    /* Now enable fault: next write (the 4th overall) fails */
+    fault_init(&g_fault, 0x12345);
+    fault_quick_write_fail(&g_fault, g_fault.write_count + 1u);
+    sim_flash_set_fault_ctx(&g_flash, &g_fault);
 
-    /* Clear faults and verify DB is re-initializable and data is intact */
-    fault_clear_rules(&g_fault_ctx);
-    ret = rdb_kvdb_init(&db, &part, meta_buf);
-    TEST_ASSERT_RDB_OK(ret);
+    rdb_err_t r = rdb_kvdb_set(&db, "K3", "DDD", 3);
+    TEST_ASSERT_NE(r, RDB_OK);  /* must fail */
 
-    /* Data written before the fault should still be readable */
-    uint8_t buf[8]; uint16_t len;
-    int readable = 0;
-    for (int i = 0; i < 10; i++) {
-        char key[16];
-        snprintf(key, sizeof(key), "key%d", i);
-        if (rdb_kvdb_get(&db, key, buf, sizeof(buf), &len) == RDB_OK)
-            readable++;
-    }
-    TEST_ASSERT(readable > 0); /* at least some pre-fault data survives */
+    /* Clear faults and re-init — pre-fault data must survive */
+    fault_clear_rules(&g_fault);
+    sim_flash_set_fault_ctx(&g_flash, NULL);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_init(&db, &part, meta));
 
-    fault_print_report(&g_fault_ctx);
+    uint8_t out[8]; uint16_t ol;
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "K0", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 3); TEST_ASSERT_MEM_EQ(out, "AAA", 3);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "K1", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 3); TEST_ASSERT_MEM_EQ(out, "BBB", 3);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "K2", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 3); TEST_ASSERT_MEM_EQ(out, "CCC", 3);
+
+    /* K3 was never committed */
+    TEST_ASSERT_RDB_ERR(rdb_kvdb_get(&db, "K3", out, sizeof(out), &ol), RDB_ERR_NOT_FOUND);
+
+    /* DB remains usable */
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "K4", "OK", 2));
     return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  测试用例 2：概率性故障注入
+ *  Test 2: Probabilistic write failure
+ *
+ *  Format/init clean, then enable probability fault.
+ *  Each set does 2 writes (record + commit). With P% failure per write,
+ *  some sets should fail and some should succeed.
+ *  After clearing faults, DB must be re-initializable.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_write_fail_probability, "Fault", "Write fails with probability")
+TEST_CASE(fault_write_fail_probability, "Fault", "Probabilistic write failure")
 {
     (void)ctx;
 
-    printf("\n[Fault Test 2] Write fails with 20%% probability\n");
-
-    /* 初始化 Flash */
-    sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
-
-    /* 配置故障：20% 概率写入失败 */
-    fault_init(&g_fault_ctx, 0x66666);
-    fault_quick_write_fail_probability(&g_fault_ctx, 20);
-    sim_flash_set_fault_ctx(&g_flash, &g_fault_ctx);
-
-    /* 初始化 KVDB */
-    rdb_partition_t part = {
-        .name = "test",
-        .base_addr = 0,
-        .total_size = KVDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE,
-        .write_gran = 0,
-        .ops = &g_ops
-    };
-
-    uint8_t meta_buf[512];
+    rdb_partition_t part;
+    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
     rdb_kvdb_t db;
-    db.part = &part;
-    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
-    rdb_kvdb_format(&db);
-    rdb_kvdb_init(&db, &part, meta_buf);
+    TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
-    /* 尝试 50 次写入，统计失败率 */
-    int success = 0, failed = 0;
-    for (int i = 0; i < 50; i++) {
-        char key[16];
-        snprintf(key, sizeof(key), "k%d", i);
-        rdb_err_t ret = rdb_kvdb_set(&db, key, "v", 1);
+    /* Enable 20% write failure probability */
+    fault_init(&g_fault, 0x66666);
+    fault_quick_write_fail_probability(&g_fault, 20);
+    sim_flash_set_fault_ctx(&g_flash, &g_fault);
 
-        if (ret == RDB_OK) {
-            success++;
-        } else {
-            failed++;
+    int ok = 0, fail = 0;
+    for (int i = 0; i < 30; i++) {
+        char key[8]; snprintf(key, sizeof(key), "K%d", i);
+        rdb_err_t r = rdb_kvdb_set(&db, key, "V", 1);
+        if (r == RDB_OK) ok++;
+        else {
+            fail++;
+            /* After a write failure, the DB may be in an inconsistent state.
+             * Re-init to recover before attempting more writes. */
+            fault_clear_rules(&g_fault);
+            fault_quick_write_fail_probability(&g_fault, 20);
+            sim_flash_set_fault_ctx(&g_flash, NULL);
+            rdb_kvdb_init(&db, &part, meta);
+            sim_flash_set_fault_ctx(&g_flash, &g_fault);
         }
     }
 
-    printf("  Success: %d, Failed: %d (%.1f%% failure rate)\n",
-           success, failed, (failed * 100.0f) / (success + failed));
+    /* Both outcomes must occur with 20% probability over 30 trials */
+    trace_event(&g_trace, "Probability fault: ok=%d fail=%d", ok, fail);
+    TEST_ASSERT_GT(ok, 0);
+    TEST_ASSERT_GT(fail, 0);
 
-    /* Clear faults and verify DB is re-initializable */
-    fault_clear_rules(&g_fault_ctx);
-    rdb_err_t ret = rdb_kvdb_init(&db, &part, meta_buf);
-    TEST_ASSERT_RDB_OK(ret);
-
-    /* Verify the DB is still usable: write a new key */
-    ret = rdb_kvdb_set(&db, "recovery_key", "ok", 2);
-    TEST_ASSERT_RDB_OK(ret);
-    uint8_t buf[4]; uint16_t len;
-    ret = rdb_kvdb_get(&db, "recovery_key", buf, sizeof(buf), &len);
-    TEST_ASSERT_RDB_OK(ret);
-    TEST_ASSERT(buf[0] == 'o' && buf[1] == 'k');
-
-    fault_print_report(&g_fault_ctx);
+    /* DB must be recoverable */
+    sim_flash_set_fault_ctx(&g_flash, NULL);
+    fault_clear_rules(&g_fault);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_init(&db, &part, meta));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "recovered", "yes", 3));
     return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  测试用例 3：擦除失败注入
+ *  Test 3: Erase failure during GC
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_erase_fail, "Fault", "Erase fails on Nth operation")
+TEST_CASE(fault_erase_fail, "Fault", "Erase failure during GC is handled gracefully")
 {
     (void)ctx;
 
-    printf("\n[Fault Test 3] Erase fails on 2nd operation\n");
-
-    /* 初始化 Flash */
-    sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
-
-    /* 配置故障：第 2 次擦除失败 */
-    fault_init(&g_fault_ctx, 0x99999);
-    fault_quick_erase_fail(&g_fault_ctx, 2);
-    sim_flash_set_fault_ctx(&g_flash, &g_fault_ctx);
-
-    /* 初始化 KVDB */
-    rdb_partition_t part = {
-        .name = "test",
-        .base_addr = 0,
-        .total_size = KVDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE,
-        .write_gran = 0,
-        .ops = &g_ops
-    };
-
-    uint8_t meta_buf[512];
+    rdb_partition_t part;
+    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
     rdb_kvdb_t db;
-    db.part = &part;
-    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
-    rdb_kvdb_format(&db);
-    rdb_kvdb_init(&db, &part, meta_buf);
+    TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
-    /* 写入大量数据触发 GC（需要擦除） */
-    printf("  Writing data to trigger GC...\n");
-    int last_ok = 0;
-    for (int i = 0; i < 200; i++) {
-        char key[16];
-        uint8_t val[100];
-        snprintf(key, sizeof(key), "key%d", i);
-        memset(val, i, sizeof(val));
+    /* Fill all sectors with data to force GC (which needs erase) */
+    uint8_t val[128];
+    memset(val, 0x5A, sizeof(val));
+    int wrote = 0;
+    for (int i = 0; i < 500; i++) {
+        char key[8]; snprintf(key, sizeof(key), "K%d", i);
+        rdb_err_t r = rdb_kvdb_set(&db, key, val, sizeof(val));
+        if (r == RDB_ERR_FULL) break;
+        if (r == RDB_OK) wrote++;
+        /* Some sets may fail if sector is full — that's expected */
+    }
+    TEST_ASSERT_GT(wrote, 0);
 
-        rdb_err_t ret = rdb_kvdb_set(&db, key, val, sizeof(val));
-        if (ret != RDB_OK) {
-            printf("  Set failed at iteration %d (erase_count=%u)\n",
-                   i, g_fault_ctx.erase_count);
-            break;
+    /* Now enable erase failure on the next erase */
+    fault_init(&g_fault, 0x99999);
+    fault_quick_erase_fail(&g_fault, 1u);
+    sim_flash_set_fault_ctx(&g_flash, &g_fault);
+
+    /* Trigger GC — it will try to erase and fail */
+    rdb_kvdb_gc(&db);
+
+    /* DB must survive: re-init and verify data is accessible */
+    sim_flash_set_fault_ctx(&g_flash, NULL);
+    fault_clear_rules(&g_fault);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_init(&db, &part, meta));
+
+    /* Some pre-GC data should survive */
+    uint8_t out[128]; uint16_t ol;
+    rdb_err_t r = rdb_kvdb_get(&db, "K0", out, sizeof(out), &ol);
+    /* K0 may have been GC'd — either OK or NOT_FOUND are acceptable */
+    TEST_ASSERT(r == RDB_OK || r == RDB_ERR_NOT_FOUND);
+
+    /* DB must be usable after recovery */
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "new_after_gc_fail", "ok", 2));
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  Test 4: Byte-level power loss with partial writes
+ *
+ *  After the fix to fault_should_write_fail (removing early power-loss
+ *  interception), the byte loop in sim_flash_write now does real partial
+ *  writes: some bytes are committed to flash, then power loss fires.
+ *  Re-init must recover WRITING records correctly.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+TEST_CASE(fault_power_loss, "Fault", "Byte-level power loss with partial write recovery")
+{
+    (void)ctx;
+
+    rdb_partition_t part;
+    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
+    rdb_kvdb_t db;
+    TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
+
+    /* Write pre-fault data */
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "pre1", "survive_before_pl", 16));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "pre2", "survive_too", 10));
+
+    /* Inject power loss during the commit write of the next set.
+     * write_count is now 4 (2 format-era writes + 2 set writes).
+     * The next set does 2 more writes (data + commit). Trigger at commit
+     * byte (the 6th write overall, at byte offset 0). */
+    fault_init(&g_fault, 0xAAAAA);
+    uint32_t pl_at = g_fault.write_count + 2u;  /* skip data write, fail commit */
+    fault_quick_power_loss(&g_fault, pl_at, 0);
+    sim_flash_set_fault_ctx(&g_flash, &g_fault);
+
+    rdb_err_t r = rdb_kvdb_set(&db, "pl_target", "this_should_be_lost", 18);
+    TEST_ASSERT_NE(r, RDB_OK);  /* power loss must fire */
+
+    /* Clear everything and re-init (simulate reboot) */
+    sim_flash_set_fault_ctx(&g_flash, NULL);
+    fault_clear_rules(&g_fault);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_init(&db, &part, meta));
+
+    /* Pre-fault data must survive */
+    uint8_t out[32]; uint16_t ol;
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "pre1", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 16);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "pre2", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 10);
+
+    /* The interrupted record: if data was fully written and only the
+     * commit byte was lost, a correct re-init may recover it as VALID.
+     * If recovery marks it DEAD, it is NOT_FOUND. Either is consistent. */
+    r = rdb_kvdb_get(&db, "pl_target", out, sizeof(out), &ol);
+    TEST_ASSERT(r == RDB_OK || r == RDB_ERR_NOT_FOUND);
+    if (r == RDB_OK) {
+        /* If recovered, data must match what was originally written */
+        TEST_ASSERT_EQ(ol, 18);
+        TEST_ASSERT_MEM_EQ(out, "this_should_be_lost", 18);
+    }
+
+    /* DB must be usable after power-loss recovery */
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "after_pl", "recovered", 9));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "after_pl", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 9);
+    TEST_ASSERT_MEM_EQ(out, "recovered", 9);
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  Test 5: Data CRC corruption
+ *
+ *  Write a record, locate its value data on flash, corrupt a value byte,
+ *  then verify that get returns RDB_ERR_CRC and the DB remains usable.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+TEST_CASE(fault_data_corruption, "Fault", "CRC error detected on corrupted value data")
+{
+    (void)ctx;
+
+    rdb_partition_t part;
+    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
+    rdb_kvdb_t db;
+    TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
+
+    /* Write target record */
+    const char *key = "crc_target";
+    const uint8_t val[] = "verify_crc_integrity_1234567890!";
+    uint16_t vlen = (uint16_t)strlen((const char *)val);
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, key, val, vlen));
+
+    /* Find the record on flash and locate its value payload */
+    uint32_t ds = RDB_ALIGN_UP((uint32_t)sizeof(rdb_kv_sector_hdr_t), 1u);
+    uint32_t ss = part.sector_size, base = part.base_addr;
+    uint32_t val_addr = 0xFFFFFFFFu;
+    uint16_t found_vlen = 0;
+
+    for (uint32_t off = ds; off + sizeof(rdb_kv_record_hdr_t) <= ss; ) {
+        rdb_kv_record_hdr_t rh;
+        sim_flash_read(&g_flash, base + off, (uint8_t *)&rh, sizeof(rh));
+        if (rh.magic == 0xFF && rh.state == 0xFF) break;
+        if (rh.magic == RDB_KV_RECORD_MAGIC && rh.key_len > 0 &&
+            rh.key_len <= RDB_MAX_KEY_LEN && rh.val_len <= RDB_MAX_VAL_LEN) {
+            /* Key is stored right after header */
+            uint32_t key_addr = base + off + (uint32_t)sizeof(rdb_kv_record_hdr_t);
+            char kb[64];
+            if (rh.key_len < sizeof(kb)) {
+                sim_flash_read(&g_flash, key_addr, (uint8_t *)kb, rh.key_len);
+                kb[rh.key_len] = '\0';
+                if (strcmp(kb, key) == 0) {
+                    val_addr = key_addr + rh.key_len;
+                    found_vlen = rh.val_len;
+                    break;
+                }
+            }
         }
-        last_ok = i;
+        off += RDB_ALIGN_UP(sizeof(rdb_kv_record_hdr_t) +
+                           RDB_ALIGN_UP(rh.key_len, 1u) +
+                           RDB_ALIGN_UP(rh.val_len, 1u), 1u);
     }
-    TEST_ASSERT(last_ok > 0); /* at least some writes succeeded before GC failure */
+    TEST_ASSERT_NE(val_addr, 0xFFFFFFFFu);
+    TEST_ASSERT_EQ(found_vlen, vlen);
+    trace_event(&g_trace, "Target record '%s': value at 0x%08X len=%u",
+                key, val_addr, found_vlen);
 
-    /* Clear faults and verify DB still works */
-    fault_clear_rules(&g_fault_ctx);
-    rdb_err_t ret = rdb_kvdb_init(&db, &part, meta_buf);
-    TEST_ASSERT_RDB_OK(ret);
+    /* Corrupt the first byte of value data (not the key) */
+    g_flash.mem[val_addr] ^= 0xFFu;
 
-    /* Verify previously written data is still readable */
-    uint8_t buf[100]; uint16_t len;
-    ret = rdb_kvdb_get(&db, "key0", buf, sizeof(buf), &len);
-    TEST_ASSERT_RDB_OK(ret);
+    /* get should return CRC error */
+    uint8_t out[64]; uint16_t ol = 0;
+    rdb_err_t r = rdb_kvdb_get(&db, key, out, sizeof(out), &ol);
+    TEST_ASSERT(r == RDB_ERR_CRC || r == RDB_ERR_NOT_FOUND);
+    /* NOT_FOUND is also valid: CRC may cause the record to be skipped
+     * during scan, depending on implementation */
 
-    fault_print_report(&g_fault_ctx);
+    /* DB must remain usable for other keys */
+    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&db, "other_key", "still_works", 11));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "other_key", out, sizeof(out), &ol));
+    TEST_ASSERT_EQ(ol, 11);
+    TEST_ASSERT_MEM_EQ(out, "still_works", 11);
     return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  测试用例 4：掉电中断模拟
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST_CASE(fault_power_loss, "Fault", "Power loss during write")
-{
-    (void)ctx;
-    
-    printf("\n[Fault Test 4] Power loss at 3rd write, byte 8\n");
-    
-    /* 初始化 Flash */
-    sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
-    
-    /* 配置故障：第 3 次写入的第 8 字节时掉电 */
-    fault_init(&g_fault_ctx, 0xAAAAA);
-    fault_quick_power_loss(&g_fault_ctx, 3, 8);
-    sim_flash_set_fault_ctx(&g_flash, &g_fault_ctx);
-    
-    /* 初始化 KVDB */
-    rdb_partition_t part = {
-        .name = "test",
-        .base_addr = 0,
-        .total_size = KVDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE,
-        .write_gran = 0,
-        .ops = &g_ops
-    };
-    
-    uint8_t meta_buf[512];
-    rdb_kvdb_t db;
-    db.part = &part;
-    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
-    rdb_kvdb_format(&db);
-    rdb_kvdb_init(&db, &part, meta_buf);
-
-    /* 写入数据，观察掉电 */
-    for (int i = 0; i < 10; i++) {
-        char key[16];
-        snprintf(key, sizeof(key), "key%d", i);
-        rdb_err_t ret = rdb_kvdb_set(&db, key, "long_value_12345", 16);
-        
-        if (ret != RDB_OK) {
-            printf("  Power loss detected at write #%d\n", i + 1);
-            break;
-        }
-        printf("  Write #%d success\n", i + 1);
-    }
-    
-    printf("\n  Simulating recovery after power loss...\n");
-    
-    /* 重新初始化（模拟重启） */
-    fault_clear_rules(&g_fault_ctx);  /* 清除故障规则 */
-    rdb_err_t ret = rdb_kvdb_init(&db, &part, meta_buf);
-    TEST_ASSERT_RDB_OK(ret);
-    
-    printf("  Recovery successful!\n");
-    
-    fault_print_report(&g_fault_ctx);
-    
-    return 0;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- *  测试用例 5：数据损坏注入
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST_CASE(fault_data_corruption, "Fault", "Data corruption in specific range")
-{
-    (void)ctx;
-    
-    printf("\n[Fault Test 5] Corrupt data at address 0x1000-0x1100\n");
-    
-    /* 初始化 Flash */
-    sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
-    
-    /* 配置故障：损坏特定地址范围 */
-    fault_init(&g_fault_ctx, 0xBBBBB);
-    fault_quick_corrupt_data(&g_fault_ctx, 0x1000, 0x100, 0x55);
-    sim_flash_set_fault_ctx(&g_flash, &g_fault_ctx);
-    
-    /* 初始化 KVDB */
-    rdb_partition_t part = {
-        .name = "test",
-        .base_addr = 0,
-        .total_size = KVDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE,
-        .write_gran = 0,
-        .ops = &g_ops
-    };
-    
-    uint8_t meta_buf[512];
-    rdb_kvdb_t db;
-    db.part = &part;
-    db.sectors = (rdb_kv_sector_meta_t*)meta_buf;
-    rdb_kvdb_format(&db);
-    rdb_kvdb_init(&db, &part, meta_buf);
-
-    /* 写入 data */
-    rdb_kvdb_set(&db, "test_key", "test_value", 10);
-
-    /* 读取数据（corruption range 0x1000-0x1100 may or may not overlap） */
-    uint8_t buf[32];
-    uint16_t len;
-    rdb_err_t ret = rdb_kvdb_get(&db, "test_key", buf, sizeof(buf), &len);
-
-    if (ret == RDB_ERR_CRC) {
-        printf("  CRC error detected (data corruption injected)\n");
-        TEST_ASSERT(1); /* CRC detection works */
-    } else if (ret == RDB_OK) {
-        printf("  Data read successfully (corruption may not affect this key)\n");
-        /* Still verify: clearing faults and reading should succeed */
-    }
-
-    /* Clear faults and verify DB is re-initializable */
-    fault_clear_rules(&g_fault_ctx);
-    ret = rdb_kvdb_init(&db, &part, meta_buf);
-    TEST_ASSERT_RDB_OK(ret);
-
-    fault_print_report(&g_fault_ctx);
-    return 0;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- *  主测试入口
+ *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 int main(void)
 {
-    printf("========================================\n");
-    printf("RocketDB Fault Injection Tests\n");
-    printf("========================================\n");
-    
-    /* 配置测试框架 */
     test_config_t config = {
         .log_file = fopen(test_make_log_path("fault_injection"), "w"),
-        .verbose = 1,
-        .stop_on_fail = 0,
-        .filter = NULL
+        .verbose = 1, .stop_on_fail = 0, .filter = NULL,
+        .post_test_hook = NULL, .hook_ctx = NULL
     };
-    
     test_framework_init(&config);
 
     trace_init(&g_trace, config.log_file, config.verbose);
     sim_flash_set_trace(&g_flash, &g_trace);
     trace_event(&g_trace, "=== Fault Injection Test Suite Start ===");
 
-    /* 注册测试用例 */
     test_suite_t *suite = test_get_default_suite();
     test_register_case(suite, &test_case_fault_write_fail_nth);
     test_register_case(suite, &test_case_fault_write_fail_probability);
     test_register_case(suite, &test_case_fault_erase_fail);
     test_register_case(suite, &test_case_fault_power_loss);
     test_register_case(suite, &test_case_fault_data_corruption);
-    
-    /* 运行测试 */
+
     test_run_all(NULL);
 
     trace_event(&g_trace, "=== Fault Injection Test Suite End ===\n");
-
-    /* 打印报告 */
     test_print_report();
-    
-    /* 清理 */
-    if (config.log_file) {
-        fclose(config.log_file);
-    }
-    
-    test_stats_t stats;
-    test_get_stats(&stats);
-    
+
+    if (config.log_file) fclose(config.log_file);
+
+    test_stats_t stats; test_get_stats(&stats);
     return (stats.failed_cases == 0) ? 0 : 1;
 }

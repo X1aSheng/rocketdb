@@ -59,12 +59,24 @@ typedef struct test_suite {
 /**
  * @brief 测试运行器配置
  */
-typedef struct {
-    FILE          *log_file;       /**< 日志输出文件（NULL=不输出文件日志） */
-    int            verbose;        /**< 详细模式（1=详细，0=简洁） */
-    int            stop_on_fail;   /**< 遇到失败即停止（1=停止，0=继续） */
-    const char    *filter;         /**< 测试过滤器（NULL=运行所有，否则匹配名称） */
-} test_config_t;
+typedef struct test_config test_config_t;
+
+/**
+ * @brief 测试后回调函数类型
+ * @param name   测试用例名称
+ * @param result 测试结果（0=通过，非0=失败）
+ * @param ctx    用户上下文指针
+ */
+typedef void (*test_post_hook_fn)(const char *name, int result, void *ctx);
+
+struct test_config {
+    FILE             *log_file;       /**< 日志输出文件（NULL=不输出文件日志） */
+    int               verbose;        /**< 详细模式（1=详细，0=简洁） */
+    int               stop_on_fail;   /**< 遇到失败即停止（1=停止，0=继续） */
+    const char       *filter;         /**< 测试过滤器（NULL=运行所有，否则匹配名称） */
+    test_post_hook_fn post_test_hook; /**< 每个测试用例后调用（NULL=不调用） */
+    void             *hook_ctx;       /**< 传递给 post_test_hook 的上下文 */
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  §2  测试统计

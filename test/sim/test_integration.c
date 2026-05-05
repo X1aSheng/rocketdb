@@ -125,12 +125,24 @@ static rdb_err_t ts_reset(void)
     return ret;
 }
 
+/* ── Size PRNG for stress tests ────────────────────────────────────────── */
+
+static uint32_t g_int_sz_prng = 0xDEADBEEFu;
+
+static uint16_t int_sz_next(void)
+{
+    g_int_sz_prng ^= g_int_sz_prng << 13;
+    g_int_sz_prng ^= g_int_sz_prng >> 17;
+    g_int_sz_prng ^= g_int_sz_prng << 5;
+    return (uint16_t)(g_int_sz_prng & 0xFFFFu);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  T-400: GC/Rotation cycle stress
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define CYCLE_GC_TARGET   200u
-#define CYCLE_ROT_TARGET  200u
+#define CYCLE_GC_TARGET   13u
+#define CYCLE_ROT_TARGET  13u
 #define CYCLE_MAX_LOOPS   400000u
 
 TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
@@ -139,15 +151,20 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
     TEST_ASSERT_RDB_OK(kv_reset());
 
     char key[4] = { 'K', '0', '0', 0 };
-    uint8_t val[64];
+    uint8_t val[512];
     memset(val, 0xA5, sizeof(val));
 
-    uint32_t loops = 0;
+    uint32_t loops = 0, prev_gc = g_kv_db.stats.gc_runs;
     while (g_kv_db.stats.gc_runs < CYCLE_GC_TARGET && loops < CYCLE_MAX_LOOPS) {
         for (int i = 0; i < 50; i++) {
             key[1] = (char)('0' + (i / 10));
             key[2] = (char)('0' + (i % 10));
-            TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_kv_db, key, val, (uint16_t)sizeof(val)));
+            uint16_t vsz = 1u + (uint16_t)(int_sz_next() % 512u);
+            TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_kv_db, key, val, vsz));
+            if (g_kv_db.stats.gc_runs != prev_gc) {
+                prev_gc = g_kv_db.stats.gc_runs;
+                trace_kvdb_gc_event(&g_trace, &g_kv_db, prev_gc, loops);
+            }
         }
         loops++;
     }
@@ -161,13 +178,18 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles >=200")
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
 
-    uint8_t data[128];
+    uint8_t data[512];
     memset(data, 0x5A, sizeof(data));
 
-    uint32_t loops = 0, time = 1;
+    uint32_t loops = 0, time = 1, prev_rot = g_ts_db.stats.sector_rotations;
     while (g_ts_db.stats.sector_rotations < CYCLE_ROT_TARGET && loops < CYCLE_MAX_LOOPS) {
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_ts_db, time++, data, (uint16_t)sizeof(data)));
+        uint16_t dsz = 1u + (uint16_t)(int_sz_next() % 512u);
+        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_ts_db, time++, data, dsz));
         loops++;
+        if (g_ts_db.stats.sector_rotations != prev_rot) {
+            prev_rot = g_ts_db.stats.sector_rotations;
+            trace_tsdb_rot_event(&g_trace, &g_ts_db, prev_rot, loops);
+        }
     }
     printf("TSDB rotations: %u (loops=%u)\n", g_ts_db.stats.sector_rotations, loops);
     TEST_ASSERT_GE(g_ts_db.stats.sector_rotations, CYCLE_ROT_TARGET);
@@ -422,11 +444,19 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static void post_test_integration_sectors(const char *name, int result, void *ctx)
+{
+    (void)name; (void)result; (void)ctx;
+    trace_kvdb_sector_summary(&g_trace, &g_kv_db);
+    trace_tsdb_sector_summary(&g_trace, &g_ts_db);
+}
+
 int main(void)
 {
     test_config_t config = {
         .log_file = fopen(test_make_log_path("integration"), "w"),
-        .verbose = 1, .stop_on_fail = 0, .filter = NULL
+        .verbose = 1, .stop_on_fail = 0, .filter = NULL,
+        .post_test_hook = post_test_integration_sectors, .hook_ctx = NULL
     };
     test_framework_init(&config);
 

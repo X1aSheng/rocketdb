@@ -76,6 +76,9 @@ void fault_clear_rules(fault_ctx_t *ctx)
 {
     if (!ctx) return;
     ctx->rule_count = 0;
+    ctx->power_loss_armed = 0;
+    ctx->power_loss_at_write = 0;
+    ctx->power_loss_at_byte = 0;
 }
 
 void fault_set_rule_enabled(fault_ctx_t *ctx, uint32_t rule_id, int enabled)
@@ -147,15 +150,7 @@ int fault_should_write_fail(fault_ctx_t *ctx, uint32_t addr, size_t len)
     if (!ctx) return 0;
     
     ctx->write_count++;
-    
-    /* 检查掉电 */
-    if (ctx->power_loss_armed && 
-        ctx->write_count == ctx->power_loss_at_write) {
-        ctx->fault_injected++;
-        ctx->fault_by_type[FAULT_TYPE_POWER_LOSS]++;
-        return 1;  /* 通过写入失败模拟掉电 */
-    }
-    
+
     for (uint32_t i = 0; i < ctx->rule_count; i++) {
         fault_rule_t *rule = &ctx->rules[i];
         if (rule->type != FAULT_TYPE_WRITE_FAIL && 
