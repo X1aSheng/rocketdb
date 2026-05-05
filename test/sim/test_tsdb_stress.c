@@ -92,8 +92,8 @@ static uint16_t ts_sz_next(void)
  *  T-313: rotation stress
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define ROT_TARGET   13u
-#define ROT_MAX_LOOPS 200000u
+#define ROT_TARGET   100u
+#define ROT_MAX_LOOPS 500000u
 
 TEST_CASE(ts_rotation_stress, "TSDB", "Rotation stress >=100")
 {
@@ -293,8 +293,8 @@ TEST_CASE(ts_degraded_active_recovery, "TSDB", "Recover from degraded ACTIVE sec
  *  for verification.  Drives sector rotations with realistic size diversity.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define MIX_TS_ROT_TARGET  13u
-#define MIX_TS_MAX_LOOPS   300000u
+#define MIX_TS_ROT_TARGET  100u
+#define MIX_TS_MAX_LOOPS   500000u
 #define MIX_TS_SEED        0xBEEF5678u
 
 static uint32_t ts_xorshift(void)

@@ -141,9 +141,9 @@ static uint16_t int_sz_next(void)
  *  T-400: GC/Rotation cycle stress
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define CYCLE_GC_TARGET   13u
-#define CYCLE_ROT_TARGET  13u
-#define CYCLE_MAX_LOOPS   400000u
+#define CYCLE_GC_TARGET   100u
+#define CYCLE_ROT_TARGET  100u
+#define CYCLE_MAX_LOOPS   800000u
 
 TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
 {
@@ -364,9 +364,9 @@ TEST_CASE(ts_power_loss_stress, "TSDB", "TS power-loss stress over 50 iterations
  *  T-404: wear-leveling heatmap
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define WEAR_KV_GC_TGT   80u
-#define WEAR_TS_ROT_TGT  80u
-#define WEAR_MAX_LOOPS   200000u
+#define WEAR_KV_GC_TGT   100u
+#define WEAR_TS_ROT_TGT  100u
+#define WEAR_MAX_LOOPS   500000u
 
 static void print_kv_heatmap(void)
 {

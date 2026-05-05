@@ -100,9 +100,9 @@ static uint16_t kv_sz_next(void)
  *  T-301: GC stress
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define GC_STRESS_TARGET  13u
+#define GC_STRESS_TARGET  100u
 #define GC_STRESS_KEYS    20
-#define GC_STRESS_MAX_LOOPS 200000u
+#define GC_STRESS_MAX_LOOPS 500000u
 
 TEST_CASE(kv_gc_stress_100, "KVDB", "GC stress with >=100 cycles")
 {
