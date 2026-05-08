@@ -310,39 +310,39 @@ Supported distributions:
 | `ts_write_gran_matrix` | — | **WG 0 and 1**: append/query at each granularity |
 | `ts_max_boundaries` | TC-X-02 | Write at computed max_data_len, TOO_LARGE at max+1 |
 
-### 8.3 Test Suite: `test_kvdb_stress` (6 cases, 3,194 assertions)
+### 8.3 Test Suite: `test_kvdb_stress` (6 cases, 4,686 assertions)
 
 | Test | Section | Hardware Focus |
 |------|---------|----------------|
-| `kv_gc_stress_100` | T-301 | **≥13 GC cycles**: per-event sector tables, GC statistics |
+| `kv_gc_stress_100` | T-301 | **>=100 GC cycles**: per-event sector tables, GC statistics |
 | `kv_iter_after_gc` | T-303 | Iterator returns latest values after multiple GC rounds |
 | `kv_iter_busy_on_modify` | T-303 | ERR_BUSY when DB modified during iteration |
 | `kv_power_loss_recovery` | T-305 | **Power loss during write**: re-init recovers K0 and K1, PL is absent |
 | `kv_corrupt_sector_recovery` | TC-X-04 | Corrupt sector header → init detects and reclaims |
-| `kv_mixed_value_stress` | TC-X-05 | **1..4095B random values**: 20 keys, ≥13 GC, distribution histogram |
+| `kv_mixed_value_stress` | TC-X-05 | **1..4095B random values**: 20 keys, >=13 GC, distribution histogram |
 
-### 8.4 Test Suite: `test_tsdb_stress` (5 cases, 668 assertions)
+### 8.4 Test Suite: `test_tsdb_stress` (5 cases, 2,749 assertions)
 
 | Test | Section | Hardware Focus |
 |------|---------|----------------|
-| `ts_rotation_stress` | T-313 | **≥13 rotations**: per-event rotation tables |
+| `ts_rotation_stress` | T-313 | **>=100 rotations**: per-event rotation tables |
 | `ts_append_fail_once` | T-312 | **Write failure during append**: DB usable, next append succeeds |
 | `ts_crc_corruption` | T-315 | **Data CRC corruption**: get_latest → ERR_CRC, query → data=NULL |
 | `ts_degraded_active_recovery` | T-316 | **Seal power-loss**: corrupt sealed header → init recovers data |
 | `ts_mixed_payload_stress` | TC-X-05 | **1..max_data_len random**: piecewise distribution, stamp verification |
 
-### 8.5 Test Suite: `test_integration` (6 cases, 21,503 assertions)
+### 8.5 Test Suite: `test_integration` (6 cases, 25,508 assertions)
 
 | Test | Section | Hardware Focus |
 |------|---------|----------------|
-| `kv_gc_cycles_stress` | T-400 | KVDB side: ≥13 GC across full partition |
-| `ts_rotation_cycles_stress` | T-400 | TSDB side: ≥13 rotation across full partition |
+| `kv_gc_cycles_stress` | T-400 | KVDB side: >=100 GC across full partition |
+| `ts_rotation_cycles_stress` | T-400 | TSDB side: >=100 rotation across full partition |
 | `mixed_workload` | T-401 | **KV+TS simultaneous**: 10,000 ops, 55% set / 20% get / 10% del / 15% TS append |
 | `kv_power_loss_stress` | T-402 | **50 power-loss iterations**: set → crash → init → verify |
 | `ts_power_loss_stress` | T-403 | **50 power-loss iterations**: append → crash → init → verify |
-| `wear_heatmap` | T-404 | **≥80 GC + ≥80 rotation**: per-sector erase count distribution, min/max/avg |
+| `wear_heatmap` | T-404 | **>=100 GC + >=100 rotation**: per-sector erase count distribution, min/max/avg |
 
-### 8.6 Test Suite: `test_fault_injection` (5 cases, 52 assertions)
+### 8.6 Test Suite: `test_fault_injection` (7 cases, 66 assertions)
 
 Validates that every fault type is correctly detected and propagated through the flash abstraction layer, and that the engine's error handling paths (corrupt sectors, flash errors, CRC errors) function correctly.
 
@@ -371,7 +371,7 @@ Minimal smoke test demonstrating test framework usage. Verifies the framework's 
 | Append-only within sector | Engine never overwrites; every KVDB write produces new record |
 | Old record invalidation | `kv_delete_exists`: all copies marked DEAD; exists→NOT_FOUND |
 | write_off monotonic advancement | `kv_init_format_verify`: write_off at data_start after init |
-| Sector fill → GC trigger | `kv_gc_stress_100`: 20 keys loop until GC count ≥ 13 |
+| Sector fill -> GC trigger | `kv_gc_stress_100`: 20 keys loop until GC count >= 100 |
 
 ### 9.3 Sector (4KB) Write
 

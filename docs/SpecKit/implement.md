@@ -37,8 +37,8 @@
 - [x] `rdb_tsdb_init()` — 初始化，定位 head/tail
 - [x] `rdb_tsdb_format()` — 全盘擦除
 - [x] `rdb_tsdb_append()` — 追加时序数据，自动 rotation
-- [x] `rdb_tsdb_query_by_time()` — 时间范围查询
-- [x] `rdb_tsdb_get_range()` — 当前时间范围查询
+- [x] `rdb_tsdb_query()` / `rdb_tsdb_query_ex()` — 时间范围查询
+- [x] `rdb_tsdb_time_range()` — 当前时间范围查询
 - [x] `rdb_tsdb_get_stats/reset_stats()` — 运行统计
 
 #### TSDB 内部机制

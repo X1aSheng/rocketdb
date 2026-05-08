@@ -26,7 +26,7 @@ RocketDB is a zero-allocation, dual-mode Flash storage engine for resource-const
 
 `/examples` includes RocketDB usage sample code (KVDB, TSDB, STM32F4).
 
-`/test` includes the simulation test framework and comprehensive test suites (7 suites, 58,000+ assertions).
+`/test` includes the simulation test framework and comprehensive test suites (7 suites, 38,000+ assertions).
 
 `/docs` includes design manual, API reference, integration guides, and troubleshooting.
 

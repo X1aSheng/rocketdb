@@ -45,6 +45,25 @@ RocketDB 是面向资源受限嵌入式系统的双模 Flash 存储引擎：
 - **大记录读取策略**：超过 `RDB_STACK_BUF_SIZE` 的记录通过 `query_ex` 提供外部缓冲，默认回调返回 data=NULL。
 - **环形一致性**：head/tail 更新遵循单调序列与回绕检测，覆盖时明确推进 tail 以保证 ring 可用。
 
+### 1.2.2 代码审核沉淀规则
+
+历次代码审核中的关键问题已被归纳为以下长期设计规则。后续实现、移植和测试均应以这些规则为门禁，而不是仅依赖历史审查报告。
+
+| 主题 | 设计规则 | 来源问题 |
+|------|----------|----------|
+| 位宽与容量 | 所有扇区内偏移使用 `uint32_t`，RAM 中 TSDB `head_seq` 使用 `uint32_t`；On-Flash 字段宽度不变时必须在扫描/写入边界做范围校验 | 64KB+ 扇区 offset 截断、TSDB 65536 次 rotation 后序列回绕 |
+| 序列号哨兵 | `RDB_SEQ_INVALID = 0xFFFFFFFFu`，正常 `write_seq` 可从 0 开始并允许 uint32 wrap-safe 比较 | write_seq 回绕到 0 与 invalid 冲突 |
+| 提交失败处理 | 任何 record commit/state 写失败后，都必须推进写前沿或显式标记 DEAD，禁止后续写入复用同一物理地址 | KVDB set/migrate commit 失败后违反 NOR 1→0 约束 |
+| GC 原子性 | victim 扇区只有在所有 live 记录迁移成功后才允许擦除；迁移失败时保留 victim，以 init/fixup 自愈 | GC 迁移中断潜在数据丢失 |
+| 返回值传播 | Flash read/write/erase、seal、mark_dead、padding 写入等关键路径返回值必须检查并反映到错误码或统计计数 | 写失败/封存失败被静默忽略 |
+| 查询无副作用 | get/query/iter/latest/oldest/time_range 不修复 Flash、不提交 WRITING、不推进写偏移；恢复只发生在 init 或显式写路径 | TSDB 查询触发 Flash 写入和额外磨损 |
+| 锁语义 | 公共 API 内部围绕 Flash 与共享统计/元数据加锁；`iter_gen` 等代数计数必须在锁内更新 | stats/space/wear 并发读取竞态、迭代器过期窗口 |
+| 零动态内存 | 引擎本体不使用堆；大临时状态优先复用 caller buffer，避免静态全局缓冲和大栈数组 | format 静态缓冲、GC 候选栈数组、TSDB 1KB 栈数组 |
+| 磨损计数 | 擦除计数使用 RAM/Flash 双源取 max 后递增；format/init_sec 不得让 erase_cnt 回退 | 掉电或坏头导致 erase_cnt 丢失，磨损均衡失真 |
+| CRC 边界 | On-Flash 头部 CRC 覆盖范围必须由 `_Static_assert(offsetof(...))` 固化；CRC 错误可见但不应破坏其它数据 | 硬编码 CRC 字节数漂移、头部字段未受保护 |
+| 写入粒度 | 模拟器和 HAL 均必须强制写入粒度对齐；TSDB 当前仅验证 wg=0/1，若支持 wg≥2 需要重新审视 20B 扇区头和提交字节写入协议 | 单字节写绕过对齐、TSDB wg≥2 结构不兼容 |
+| 测试有效性 | 压力目标必须与文档一致（GC/rotation ≥100）；随机测试记录 seed；故障注入覆盖 read/write/erase/power-loss/corrupt/bit-flip | 压力目标降级、seed 不可追溯、故障类型未覆盖 |
+
 ### 1.3 典型使用模式
 
 **KVDB**：存储少量配置项（10\~1000 个 key），单个 key 被频繁读写更新。每次更新产生一条新记录和一条旧记录（垃圾）。系统稳定运行的核心是 GC 能持续回收旧记录占用的空间，并通过静态均衡机制（Phase 4）将长期不更新的冷扇区拉回擦写循环，保障全盘寿命均衡。
@@ -161,7 +180,7 @@ NOR 安全（每步仅 1→0）：
 #define RDB_ADDR_INVALID    0xFFFFFFFFu
 #define RDB_TIME_INVALID    0xFFFFFFFFu
 #define RDB_TIME_MAX        0xFFFFFFFEu
-#define RDB_SEQ_INVALID     0u
+#define RDB_SEQ_INVALID     0xFFFFFFFFu
 
 #define RDB_ALIGN_UP(v, a)  (((uint32_t)(v) + (uint32_t)(a) - 1u) \
                               & ~((uint32_t)(a) - 1u))
@@ -375,9 +394,9 @@ typedef struct {
     uint32_t create_seq;
     uint32_t erase_cnt;
     uint32_t garbage_bytes;
-    uint16_t write_off;
+    uint32_t write_off;
     uint8_t  status;
-    uint8_t  _pad;
+    uint8_t  _pad[3];
 } rdb_kv_sector_meta_t;        /* 16 bytes */
 
 typedef struct {
@@ -401,8 +420,7 @@ typedef struct {
     uint8_t   initialized;
     uint32_t  write_seq;
     uint32_t  live_bytes;
-    uint16_t  write_off;
-    uint16_t  _pad;
+    uint32_t  write_off;
     uint32_t  iter_gen;
     rdb_kv_stats_t stats;
 } rdb_kvdb_t;
@@ -437,7 +455,7 @@ rdb_err_t rdb_kvdb_set    (rdb_kvdb_t *db, const char *key,
 rdb_err_t rdb_kvdb_get    (rdb_kvdb_t *db, const char *key,
                             void *buf, uint16_t buf_len, uint16_t *out_len);
 rdb_err_t rdb_kvdb_delete (rdb_kvdb_t *db, const char *key);
-int       rdb_kvdb_exists (rdb_kvdb_t *db, const char *key);
+rdb_err_t rdb_kvdb_exists (rdb_kvdb_t *db, const char *key);
 rdb_err_t rdb_kvdb_gc     (rdb_kvdb_t *db);
 void      rdb_kvdb_space_info (rdb_kvdb_t *db,
                                 uint32_t *total, uint32_t *used, uint32_t *avail);
@@ -461,7 +479,7 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t *it,
 | set | OK / TOO_LARGE / FULL / FLASH | rec_sz ≤ DATA_CAP 强制检查 |
 | get | OK / NOT_FOUND / TOO_LARGE / CRC | buf 不够时 out_len 仍返回实际长度 |
 | delete | OK / NOT_FOUND | 全部 VALID 副本标记 DEAD |
-| exists | TRUE / FALSE | 不执行数据 CRC |
+| exists | OK / NOT_FOUND | 不执行数据 CRC |
 | gc | OK / FULL | 手动触发，通常无需调用 |
 | iter_next | OK / ITER_END / BUSY | 迭代期间禁止修改 |
 
@@ -817,8 +835,8 @@ typedef struct {
     uint8_t    initialized;
     uint8_t    head_sec;
     uint8_t    tail_sec;
-    uint16_t   head_seq;
-    uint16_t   head_off;
+    uint32_t   head_seq;
+    uint32_t   head_off;
     uint16_t   head_count;
     uint16_t   _pad;
     uint32_t   head_time_base;
@@ -1264,6 +1282,17 @@ if (rc == RDB_ERR_FULL) {
 | 毫秒 SysTick | ~49.7 天 | 监控 last_time，及时 reset_epoch |
 | 自增 (time=0) | ~42.9 亿次 | 每秒 100 次 1.36 年 |
 
+### 6.7 移植与并发注意事项
+
+| 主题 | 要求 |
+|------|------|
+| 初始化时机 | `init/format` 可能执行恢复写入、擦除和 GC，应在 Flash HAL 可用且锁机制已初始化后调用。若系统启动早期没有调度器，必须保证此阶段没有其它 Flash 访问者。 |
+| 锁回调 | `lock/unlock` 应覆盖同一物理 Flash 上所有 RocketDB 分区以及应用层直接 Flash 访问。不要只保护单个 DB 句柄。 |
+| yield 回调 | `yield` 只允许喂狗或让出 CPU，禁止在回调中再次调用 RocketDB API，避免重入死锁。 |
+| 统计读取 | `space_info/wear_info/get_stats/time_range/count` 属于观测接口，仍需要遵守锁语义，因为底层元数据可能被 GC/rotation 更新。 |
+| write_gran | HAL 必须拒绝未对齐写入。即使底层芯片允许 byte program，测试配置为 2/4/8B 时也要模拟目标平台约束。 |
+| 真实硬件 | 软件模拟不能覆盖电源斜率、片选毛刺、页编程边界、擦除中断后的不确定内容。生产前需做目标板断电测试。 |
+
 ---
 
 ## 第七章 工具函数
@@ -1277,6 +1306,21 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 ---
 
 ## 第八章 审核清单
+
+### 8.0 审核报告整合索引
+
+代码审核文件记录了从 v1.0.0 到 v1.1.2 的多轮缺陷发现和修复。本设计文档不逐条复制历史报告，而将关键点整合为以下架构门禁。
+
+| 类别 | 已纳入设计的关键点 | 设计位置 |
+|------|-------------------|----------|
+| Flash 原子性 | WRITING→VALID→DEAD、提交失败推进写前沿、先写新再删旧、victim 迁移成功后才擦除 | 1.2.1、1.2.2、4.6、4.7 |
+| 掉电恢复 | KVDB init fixup、TSDB seal 降级 ACTIVE、query 无副作用、三点擦除验证 + CRC 缓解 | 4.4、4.10、5.4、5.6、5.12 |
+| 位宽与对齐 | On-Flash 结构体自然对齐、RAM offset/seq 使用 32 位、CRC offset 静态断言 | 2.4、3.5、4.2、5.1 |
+| GC 与磨损 | gc_reserve+1 水位、will_free 虚拟垃圾、Phase 3 强制回收、Phase 4 静态磨损均衡、erase_cnt 单调 | 4.7、4.8、8.1 |
+| 并发与锁 | 公共 API 锁语义、iter_gen 失效检测、stats/space/wear 读取一致性 | 2.5、4.3、6.7、8.1 |
+| TSDB 查询 | 不按 time_base early break、跨 epoch 返回语义、降级 ACTIVE 参与 query/latest/oldest/time_range | 5.5、5.9、5.10 |
+| 测试有效性 | 7 套测试、42 用例、约 38,900 断言；GC/rotation ≥100；故障注入覆盖 6 类故障；seed 可追溯 | 8.2 |
+| 工程化 | CMake/CTest、bat、Makefile 都应构建真实测试套件；示例缺失不能破坏核心库构建 | 8.3 |
 
 ### 8.1 实现审核
 
@@ -1323,12 +1367,23 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | R-39 | ts_sector_count 双路径 | SEALED 读 header O(1)；ACTIVE 扫描 O(N) |
 | R-40 | GC Phase 1 零 live | 不要求 garbage > 0，空 SEALED 可回收 |
 | R-41 | GC 后重新定位 | set Step 2b 中 find_latest 刷新旧记录位置 |
+| R-42 | 扇区偏移位宽 | KVDB write_off、TSDB head_off 在 RAM 中均为 uint32_t |
+| R-43 | TSDB head_seq 位宽 | RAM 中 head_seq 为 uint32_t，避免 65536 次 rotation 后失真 |
+| R-44 | 提交失败清理 | commit/state 写失败后推进 write_off 或标记 DEAD，不复用物理地址 |
+| R-45 | 关键返回值检查 | seal、mark_dead、padding write、erase、CRC read 失败均返回错误或计入 stats |
+| R-46 | 公共观测接口锁 | stats/space/wear/time_range/count 读取共享元数据时遵守锁语义 |
+| R-47 | 零动态内存 | 引擎无 malloc/free；无静态全局临时缓冲；大临时状态复用 caller buffer |
+| R-48 | erase_cnt 不回退 | format/init_sec 使用 RAM 与 Flash header 中 erase_cnt 的较大值 |
+| R-49 | CRC offset 断言 | sector header CRC 覆盖范围由 offsetof 静态断言守护 |
+| R-50 | write_gran 对齐 | 模拟器与 HAL 对 addr/len 强制执行 write_gran 对齐 |
+| R-51 | strlen 安全 | key 长度扫描最多检查 RDB_MAX_KEY_LEN+1，非 NUL 终止返回 PARAM/TOO_LARGE |
+| R-52 | 故障统计可见 | Flash/CRC/corrupt/data_gaps 等异常不静默吞掉，应用可通过 stats 观测 |
 
 ### 8.2 测试审核
 
 | 编号 | 场景 | 验证目标 |
 |------|------|---------|
-| T-01 | 8扇区 KVDB 20key 循环 ≥50 GC | 无死锁，数据一致 |
+| T-01 | 8扇区 KVDB 20key 循环 ≥100 GC | 无死锁，数据一致 |
 | T-02 | 所有扇区垃圾 < 1% 时写入 | Phase 3 生效 |
 | T-03 | 静态扇区磨损差 ≥ 阈值 | Phase 4 触发 |
 | T-04 | GC CRC 坏记录 | 标记 DEAD |
@@ -1342,7 +1397,7 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | T-12 | victim_live > pre_erase_avail | 不选 |
 | T-13 | 迭代期间写入 | ERR_BUSY |
 | T-14 | key 长度 MAX+1 | ERR_TOO_LARGE |
-| T-15 | 8扇区 TSDB ≥50 rotation | total_count 准确 |
+| T-15 | 8扇区 TSDB ≥100 rotation | total_count 准确 |
 | T-16 | format 后 erase_cnt | 累加正确 |
 | T-17 | 满数据库更新已有 key | ERR_FULL，旧数据完整 |
 | T-18 | value 4B↔512B 反复 | 写入正常，GC 稳定 |
@@ -1370,7 +1425,26 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | T-40 | 同 sector 多次 ts_init_sec | erase_cnt 单调递增 |
 | T-41 | seq 非单调初始化 | 数据保留，data_gaps++ |
 | T-42 | 降级 ACTIVE tail 的 get_oldest | 正确返回第一条 VALID |
-| T-43 | 50 次 rotation 后 total_count | 校准无偏差 |
+| T-43 | 100 次 rotation 后 total_count | 校准无偏差 |
+| T-44 | READ_FAIL / WRITE_FAIL / ERASE_FAIL | 错误码和 stats.flash_errors 可观测 |
+| T-45 | POWER_LOSS 部分写入 | 字节级部分写真实发生，init 后数据一致 |
+| T-46 | DATA_CORRUPT / BIT_FLIP | CRC 检出，坏记录隔离，不影响其它记录 |
+| T-47 | 随机 workload seed | 日志记录 seed，失败可复现 |
+| T-48 | wear_heatmap | 验证 min/max/avg erase_count 分布，不使用永真断言 |
+| T-49 | write_gran=0/1/2/3 | KVDB 全矩阵；TSDB 明确当前支持范围 |
+| T-50 | CMake/CTest | 7 个测试目标注册且 100% 通过 |
+| T-51 | Windows bat | `build\build.bat all build/test` 均成功，日志时间戳与 locale 无关 |
+
+### 8.3 工程化审核
+
+| 编号 | 检查项 | 通过条件 |
+|------|--------|---------|
+| B-01 | CMake 默认配置 | `BUILD_EXAMPLES=ON` 时，缺失示例不影响核心库和测试构建 |
+| B-02 | CTest 注册 | 7 个 `test/sim/test_*.c` 均注册为独立测试 |
+| B-03 | Windows Clang 链接 | 不使用 freestanding 链接规则，host-side 测试能链接 CRT |
+| B-04 | bat 字符集 | 脚本仅使用 ASCII 控制文本，避免 cmd 编码误解析 |
+| B-05 | 日志命名 | 时间戳使用 `yyyyMMdd_HHmmss`，不依赖系统区域格式 |
+| B-06 | 文档同步 | README、test_plan、sim README、SpecKit 与当前 API/测试结果一致 |
 
 ---
 
@@ -1392,4 +1466,8 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | KVDB init fixup_stale 复杂度 | 最坏 O(N²)，32KB 可接受 | 大分区需索引优化 |
 | KVDB delete 不触发 GC | 删除后空间不立即回收 | 后续 set 自动触发，或手动 gc |
 | KVDB 查找无索引 | O(N) 线性扫描 | 大分区需引入索引机制 |
-```
+| TSDB wg≥2 未作为主支持目标 | 20B 扇区头、提交字节和部分 HAL 粒度组合需额外验证 | 生产使用前保持 wg=0/1，或重新设计头部布局 |
+| header CRC 覆盖有限 | KVDB sector header CRC 不覆盖全部历史/磨损语义 | erase_cnt 采用 RAM/Flash max 策略，关键字段用静态断言约束 |
+| uint32 序列比较理论边界 | 超过 2^31 差值时 wrap-safe 比较会翻转 | 典型 NOR 寿命内不可达；超长寿命场景需格式迁移到 64 位 |
+| 查询线性扫描 | TSDB range query、KVDB get 在大分区下延迟增长 | 未来增加索引/游标；当前通过分区规划控制规模 |
+| 真实硬件故障模型差异 | 模拟器无法覆盖所有电气边界 | 量产前执行目标板断电和长时耐久测试 |

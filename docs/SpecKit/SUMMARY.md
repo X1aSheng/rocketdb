@@ -107,7 +107,7 @@ g:\c-module\rocketdb\SpecKit\
 
 **公共 API 完整定义：**
 - KVDB API (11 个函数)：init/format/set/get/delete/exists/gc/space_info/wear_info/iter_init/iter_next
-- TSDB API (6 个函数)：init/format/append/query_by_time/get_range/stats
+- TSDB API：init/format/append/reset_epoch/query/query_ex/get_latest/get_oldest/count/time_range/wear_info/stats
 - Flash 抽象层：read/write/erase/lock/unlock/yield
 - 外部函数：crc16/crc16_cont/hash16
 
@@ -115,7 +115,7 @@ g:\c-module\rocketdb\SpecKit\
 - RDB_MAX_KEY_LEN (1~254)
 - RDB_MAX_VAL_LEN (0~65535)
 - RDB_GC_GARBAGE_PCT (20%)
-- RDB_GC_WEAR_THRESHOLD (1000)
+- RDB_GC_WEAR_THRESHOLD (100)
 
 ### 实现 (Implement)
 

@@ -27,10 +27,8 @@ if "%ACTION%"=="help" goto show_help
 REM cd to project root (script is in build\)
 cd /d "%~dp0.."
 
-REM Generate master timestamp for this run
-for /f "tokens=1-3 delims=/- " %%a in ("%DATE%") do set MASTER_DATESTAMP=%%a%%b%%c
-for /f "tokens=1-3 delims=:. " %%a in ("%TIME: =0%") do set MASTER_TIMESTAMP=%%a%%b%%c
-set MASTER_TS=%MASTER_DATESTAMP%_%MASTER_TIMESTAMP%
+REM Generate locale-independent master timestamp for this run
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set MASTER_TS=%%a
 
 set SUMMARY_LOG=%OUTPUT_DIR%\%MASTER_TS%_SUMMARY.log
 set PASSED_TOTAL=0
@@ -56,7 +54,7 @@ set FAIL=0
 
 if "%ACTION%"=="build" goto build_all
 
-REM ── test (default): compile and run ──────────────────────────────────────
+REM test (default): compile and run
 
 for %%t in (%TESTS%) do (
     call :compile_and_run "%%t" PASS FAIL
@@ -97,7 +95,7 @@ echo Summary log: %SUMMARY_LOG%
 goto end
 
 REM =============================================================================
-REM build_all — compile only, no execution
+REM build_all - compile only, no execution
 REM =============================================================================
 :build_all
 echo.
@@ -108,13 +106,13 @@ for %%t in (%TESTS%) do (
 )
 echo.
 echo ================================================
-echo   Build complete — all targets compiled
+echo   Build complete - all targets compiled
 echo   Run with: build\run_all_tests.bat test
 echo ================================================
 goto end
 
 REM =============================================================================
-REM compile_only — build single test, no run
+REM compile_only - build single test, no run
 REM =============================================================================
 :compile_only
 set TEST_NAME=%~1
@@ -130,14 +128,13 @@ if errorlevel 1 (
 goto :eof
 
 REM =============================================================================
-REM compile_and_run — build + execute single test, log with timestamp
+REM compile_and_run - build + execute single test, log with timestamp
 REM =============================================================================
 :compile_and_run
 set TEST_NAME=%~1
 
-REM Per-test timestamp
-for /f "tokens=1-3 delims=/- " %%a in ("%DATE%") do set TS=%%a%%b%%c
-for /f "tokens=1-3 delims=:. " %%a in ("%TIME: =0%") do set TS=!TS!_%%a%%b%%c
+REM Per-test locale-independent timestamp
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set TS=%%a
 
 set TARGET=%OUTPUT_DIR%\%TEST_NAME%.exe
 set LOG_FILE=%OUTPUT_DIR%\!TS!_%TEST_NAME%.log
@@ -146,7 +143,7 @@ REM Compile
 set SRCS=%BASE_SRCS% test\sim\%TEST_NAME%.c
 %CC% %CFLAGS% %INCLUDES% -o %TARGET% %SRCS% 2>"%LOG_FILE%.build_err"
 if errorlevel 1 (
-    echo   [FAIL] %TEST_NAME% — compile error
+    echo   [FAIL] %TEST_NAME% - compile error
     type "%LOG_FILE%.build_err"
     del "%LOG_FILE%.build_err"
     set /a %~3+=1
@@ -164,11 +161,11 @@ echo ================================================ >> "%LOG_FILE%"
 set TEST_ERR=%ERRORLEVEL%
 
 if %TEST_ERR% NEQ 0 (
-    echo   [FAIL] %TEST_NAME% — test returned %TEST_ERR%
+    echo   [FAIL] %TEST_NAME% - test returned %TEST_ERR%
     set /a %~3+=1
     goto :eof
 )
-echo   [PASS] %TEST_NAME%  —  !TS!_%TEST_NAME%.log
+echo   [PASS] %TEST_NAME%  -  !TS!_%TEST_NAME%.log
 set /a %~2+=1
 goto :eof
 

@@ -103,7 +103,7 @@ RocketDB 是针对资源受限嵌入式系统的**双模 Flash 存储引擎**，
 | RDB_MAX_KEY_LEN | 63 | KVDB key 最大长度 |
 | RDB_MAX_VAL_LEN | 4095 | KVDB value 最大长度 |
 | RDB_GC_GARBAGE_PCT | 20 | 垃圾率触发 GC 阈值 |
-| RDB_GC_WEAR_THRESHOLD | 1000 | Phase 4 磨损均衡阈值 |
+| RDB_GC_WEAR_THRESHOLD | 100 | Phase 4 磨损均衡阈值 |
 | RDB_MIN_SECTOR_SIZE | 4096 | 最小扇区大小 |
 
 ### 实现现状（From Implement）

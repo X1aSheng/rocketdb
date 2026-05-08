@@ -102,7 +102,7 @@ Test Date: YYYY-MM-DD_HH:mm:ss
 #define RDB_MAX_TS_DATA_LEN     0u        /* 0=由扇区决定；>0=软限制 */
 #define RDB_STACK_BUF_SIZE      64u       /* 栈缓冲大小，用于小记录合并写入 */
 #define RDB_GC_GARBAGE_PCT      20u       /* 垃圾率触发 GC 的百分比（Phase 1）*/
-#define RDB_GC_WEAR_THRESHOLD   1000u     /* 磨损均衡差异阈值（Phase 4）*/
+#define RDB_GC_WEAR_THRESHOLD   100u      /* 磨损均衡差异阈值（Phase 4）*/
 #define RDB_MIN_SECTOR_SIZE     4096u     /* 最小扇区大小 */
 #define RDB_KV_MIN_SECTORS      3u        /* KVDB 最少扇区数 */
 #define RDB_TS_MIN_SECTORS      2u        /* TSDB 最少扇区数 */
@@ -322,27 +322,42 @@ rdb_err_t rdb_tsdb_append(
     uint16_t len
 );
 
-rdb_err_t rdb_tsdb_query_by_time(
+rdb_err_t rdb_tsdb_reset_epoch(
+    rdb_tsdb_t *db
+);
+
+rdb_err_t rdb_tsdb_query(
     rdb_tsdb_t *db,
     uint32_t from_ts,
     uint32_t to_ts,
-    void *result_buf,
-    uint16_t buf_len,
-    uint32_t *out_count
+    rdb_ts_cb_t cb,
+    void *arg
 );
 
-void rdb_tsdb_get_range(
+rdb_err_t rdb_tsdb_query_ex(
     rdb_tsdb_t *db,
-    uint32_t *min_ts,
-    uint32_t *max_ts
+    uint32_t from_ts,
+    uint32_t to_ts,
+    rdb_ts_cb_t cb,
+    void *arg,
+    void *read_buf,
+    uint16_t buf_len
+);
+
+void rdb_tsdb_time_range(
+    rdb_tsdb_t *db,
+    uint32_t *oldest,
+    uint32_t *newest
 );
 ```
 
 | 函数 | 返回 | 说明 |
 |------|------|------|
 | append | OK / TOO_LARGE / FULL / TIME_EXHAUSTED / FLASH | 自动轮转到下一扇区；时间戳回绕自动触发 epoch 重置 |
-| query_by_time | OK / NOT_FOUND / TOO_LARGE | 范围查询 [from_ts, to_ts]，返回落在范围内的记录数 |
-| get_range | 无 | 返回当前可查询的最小/最大时间戳 |
+| reset_epoch | OK / FLASH | 强制开启新的时间 epoch |
+| query | OK / PARAM / FLASH | 范围查询 [from_ts, to_ts]，通过回调返回匹配记录 |
+| query_ex | OK / PARAM / FLASH | 与 query 相同，但使用调用者提供的读缓冲读取大 payload |
+| time_range | 无 | 返回当前可查询的最旧/最新时间戳 |
 
 ### 统计与诊断
 

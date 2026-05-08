@@ -62,9 +62,8 @@ for %%t in (%TESTS%) do (
     ) else (
         echo [%%t] Compile OK
         if "%ACTION%"=="test" (
-            REM Per-test timestamp
-            for /f "tokens=1-3 delims=/- " %%a in ("%DATE%") do set TS=%%a%%b%%c
-            for /f "tokens=1-3 delims=:. " %%a in ("%TIME: =0%") do set TS=!TS!_%%a%%b%%c
+            REM Per-test locale-independent timestamp
+            for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set TS=%%a
             set LOG_FILE=%OUTPUT_DIR%\!TS!_%%t.log
 
             echo ================================================ > "!LOG_FILE!"
@@ -77,7 +76,7 @@ for %%t in (%TESTS%) do (
                 echo [%%t] Test FAILED
                 set /a FAIL+=1
             ) else (
-                echo [%%t] Test PASSED  —  !TS!_%%t.log
+                echo [%%t] Test PASSED  -  !TS!_%%t.log
                 set /a PASS+=1
             )
         ) else (

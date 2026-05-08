@@ -205,7 +205,7 @@ append:
   - 时间戳带回绕
   - 单扇区填满后自动 rotation
 
-query_by_time:
+rdb_tsdb_query / rdb_tsdb_query_ex:
   - [from, to] 查询内的所有记录
   - 单扇区查询
   - 跨扇区查询（含已封存和开放扇区）
