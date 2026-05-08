@@ -1,21 +1,19 @@
 cmake_minimum_required(VERSION 3.10)
 project(RocketDB C)
 
-# ═══════════════════════════════════════════════════════════════════════════
+# =============================================================================
 # RocketDB CMake Configuration
 # Supports: Windows, Linux, macOS
 # Build types: Release, Debug, RelWithDebInfo
-# ═══════════════════════════════════════════════════════════════════════════
+# =============================================================================
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Werror")
-set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -Wall -Wextra")
-set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g -Wall -Wextra")
+set(CMAKE_C_EXTENSIONS OFF)
 
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Platform Detection
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 message(STATUS "=== RocketDB Cross-Platform Build ===")
 message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
@@ -28,10 +26,10 @@ if(WIN32)
     message(STATUS "Windows build detected")
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     add_definitions(-D_POSIX_C_SOURCE)
-    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-        # Some Windows Clang/CMake combinations generate a freestanding link
-        # rule (-nostartfiles -nostdlib).  Use the Clang driver default link
-        # rule so the CRT is linked for host-side examples and tests.
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
+        # Some Windows Clang/CMake combinations generate a freestanding
+        # executable link rule (-nostartfiles -nostdlib). Use the Clang driver
+        # default link rule so host-side examples and tests link the CRT.
         set(CMAKE_C_LINK_EXECUTABLE
             "<CMAKE_C_COMPILER> <FLAGS> <CMAKE_C_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
     endif()
@@ -45,58 +43,92 @@ elseif(UNIX AND NOT APPLE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 endif()
 
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Build Options
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
-option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_TESTS "Build test suite" ON)
 option(ENABLE_DEBUG_LOGGING "Enable debug logging" OFF)
+
+if(BUILD_SHARED_LIBS)
+    message(WARNING
+        "BUILD_SHARED_LIBS is ignored. RocketDB builds static libraries because "
+        "CRC/hash/HAL symbols are supplied by the final embedded application.")
+endif()
 
 if(ENABLE_DEBUG_LOGGING)
     add_definitions(-DRDB_DEBUG_LOG=1)
     message(STATUS "Debug logging enabled")
 endif()
 
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Target Helpers
+# -----------------------------------------------------------------------------
+
+function(rocketdb_apply_warnings target_name)
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE
+            /W4
+            $<$<CONFIG:Debug>:/WX>
+        )
+    elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(${target_name} PRIVATE
+            -Wall
+            -Wextra
+            $<$<CONFIG:Debug>:-Werror>
+        )
+    endif()
+endfunction()
+
+function(rocketdb_apply_optimization target_name)
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE
+            $<$<CONFIG:Debug>:/Od>
+            $<$<CONFIG:Release>:/O2>
+            $<$<CONFIG:RelWithDebInfo>:/O2>
+        )
+    elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(${target_name} PRIVATE
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Release>:-O3>
+            $<$<CONFIG:RelWithDebInfo>:-O2>
+        )
+    endif()
+endfunction()
+
+function(rocketdb_configure_target target_name)
+    target_include_directories(${target_name} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    rocketdb_apply_warnings(${target_name})
+    rocketdb_apply_optimization(${target_name})
+endfunction()
+
+# -----------------------------------------------------------------------------
 # Library Targets
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 # Core KVDB library
-add_library(rocketdb_kvdb
+add_library(rocketdb_kvdb STATIC
     src/rocketdb_kvdb.c
 )
-target_include_directories(rocketdb_kvdb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(rocketdb_kvdb PRIVATE
-    $<$<CONFIG:Debug>:-O0 -g -Wall -Wextra -Werror>
-    $<$<CONFIG:Release>:-O3 -Wall -Wextra>
-)
+rocketdb_configure_target(rocketdb_kvdb)
 
 # Core TSDB library
-add_library(rocketdb_tsdb
+add_library(rocketdb_tsdb STATIC
     src/rocketdb_tsdb.c
 )
-target_include_directories(rocketdb_tsdb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(rocketdb_tsdb PRIVATE
-    $<$<CONFIG:Debug>:-O0 -g -Wall -Wextra -Werror>
-    $<$<CONFIG:Release>:-O3 -Wall -Wextra>
-)
+rocketdb_configure_target(rocketdb_tsdb)
 
 # Combined RocketDB library
-add_library(rocketdb
+add_library(rocketdb STATIC
     src/rocketdb_kvdb.c
     src/rocketdb_tsdb.c
 )
-target_include_directories(rocketdb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(rocketdb PRIVATE
-    $<$<CONFIG:Debug>:-O0 -g -Wall -Wextra -Werror>
-    $<$<CONFIG:Release>:-O3 -Wall -Wextra>
-)
+rocketdb_configure_target(rocketdb)
 
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Example Programs
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 if(BUILD_EXAMPLES)
     message(STATUS "Building examples...")
@@ -107,10 +139,8 @@ if(BUILD_EXAMPLES)
             examples/example_kvdb_basic_v2.c
         )
         target_link_libraries(example_kvdb_basic PRIVATE rocketdb)
-        target_compile_options(example_kvdb_basic PRIVATE
-            $<$<CONFIG:Debug>:-O0 -g -Wall -Wextra>
-            $<$<CONFIG:Release>:-O2 -Wall -Wextra>
-        )
+        rocketdb_apply_warnings(example_kvdb_basic)
+        rocketdb_apply_optimization(example_kvdb_basic)
     else()
         message(STATUS "Skipping example_kvdb_basic: examples/example_kvdb_basic_v2.c not found")
     endif()
@@ -121,17 +151,15 @@ if(BUILD_EXAMPLES)
             examples/example_tsdb_sensor.c
         )
         target_link_libraries(example_tsdb_sensor PRIVATE rocketdb)
-        target_compile_options(example_tsdb_sensor PRIVATE
-            $<$<CONFIG:Debug>:-O0 -g -Wall -Wextra>
-            $<$<CONFIG:Release>:-O2 -Wall -Wextra>
-        )
+        rocketdb_apply_warnings(example_tsdb_sensor)
+        rocketdb_apply_optimization(example_tsdb_sensor)
     endif()
     
 endif()
 
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Testing
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 if(BUILD_TESTS)
     enable_testing()
@@ -149,10 +177,8 @@ if(BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/test/sim
     )
-    target_compile_options(rocketdb_sim_support PRIVATE
-        $<$<CONFIG:Debug>:-O0 -g -Wall -Wextra -Werror>
-        $<$<CONFIG:Release>:-O2 -Wall -Wextra>
-    )
+    rocketdb_apply_warnings(rocketdb_sim_support)
+    rocketdb_apply_optimization(rocketdb_sim_support)
     if(UNIX AND NOT APPLE)
         target_link_libraries(rocketdb_sim_support PUBLIC m)
     elseif(APPLE)
@@ -178,10 +204,8 @@ if(BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${CMAKE_CURRENT_SOURCE_DIR}/test/sim
         )
-        target_compile_options(${test_name} PRIVATE
-            $<$<CONFIG:Debug>:-O0 -g -Wall -Wextra -Werror>
-            $<$<CONFIG:Release>:-O2 -Wall -Wextra>
-        )
+        rocketdb_apply_warnings(${test_name})
+        rocketdb_apply_optimization(${test_name})
         add_test(NAME ${test_name} COMMAND ${test_name})
         set_tests_properties(${test_name} PROPERTIES
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -197,9 +221,9 @@ if(BUILD_TESTS)
     endif()
 endif()
 
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Installation
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 # Install headers
 install(FILES src/rocketdb.h
@@ -213,14 +237,14 @@ install(TARGETS rocketdb
     RUNTIME DESTINATION bin
 )
 
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Summary
-# ───────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 message(STATUS "")
 message(STATUS "=== Build Configuration Summary ===")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "Shared libs: ${BUILD_SHARED_LIBS}")
+message(STATUS "Library type: static")
 message(STATUS "Examples: ${BUILD_EXAMPLES}")
 message(STATUS "Tests: ${BUILD_TESTS}")
 message(STATUS "Debug logging: ${ENABLE_DEBUG_LOGGING}")
