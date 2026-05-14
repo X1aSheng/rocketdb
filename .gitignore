@@ -1,6 +1,10 @@
 # Build output
 test/out/
 .cache/
+test/perf/results_*.csv
+test/perf/results_*.txt
+test/perf/*.ilk
+test/perf/*.pdb
 *.o
 *.so
 *.a
