@@ -49,6 +49,7 @@ endif()
 
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_TESTS "Build test suite" ON)
+option(BUILD_PERF "Build performance benchmark" OFF)
 option(ENABLE_DEBUG_LOGGING "Enable debug logging" OFF)
 
 if(BUILD_SHARED_LIBS)
@@ -229,6 +230,28 @@ if(BUILD_TESTS)
 endif()
 
 # -----------------------------------------------------------------------------
+# Performance Benchmark
+# -----------------------------------------------------------------------------
+
+if(BUILD_PERF)
+    add_executable(rocketdb_perf
+        test/perf/scenarios.c
+        test/sim/sim_flash.c
+        test/sim/sim_fault.c
+        test/sim/sim_trace.c
+        test/sim/sim_crypto.c
+    )
+    target_link_libraries(rocketdb_perf PRIVATE rocketdb)
+    target_include_directories(rocketdb_perf PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/sim
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/perf
+    )
+    rocketdb_apply_warnings(rocketdb_perf)
+    rocketdb_apply_optimization(rocketdb_perf)
+endif()
+
+# -----------------------------------------------------------------------------
 # Installation
 # -----------------------------------------------------------------------------
 
@@ -254,6 +277,7 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Library type: static")
 message(STATUS "Examples: ${BUILD_EXAMPLES}")
 message(STATUS "Tests: ${BUILD_TESTS}")
+message(STATUS "Performance benchmark: ${BUILD_PERF}")
 message(STATUS "Debug logging: ${ENABLE_DEBUG_LOGGING}")
 message(STATUS "========================================")
 message(STATUS "")

@@ -1,14 +1,16 @@
 # Makefile for RocketDB Performance Benchmarks
 
 CC := gcc
-CFLAGS := -O2 -Wall -Wextra -std=c99
+CFLAGS := -O2 -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L
 LDFLAGS :=
 
 # Include paths
-INC := -I../../ -I../sim
+INC := -I../../src -I../sim
 
 # Source files
-SRCS := scenarios.c ../sim/sim_flash.c
+SRCS := ../../src/rocketdb_kvdb.c ../../src/rocketdb_tsdb.c \
+	../sim/sim_flash.c ../sim/sim_fault.c ../sim/sim_trace.c \
+	../sim/sim_crypto.c scenarios.c
 OBJS := $(SRCS:.c=.o)
 TARGET := benchmark
 
@@ -29,7 +31,7 @@ run: $(TARGET)
 	@echo "========================================="
 	@echo " Running RocketDB Performance Benchmark"
 	@echo "========================================="
-	./$(TARGET) | tee results_`date +%Y%m%d_%H%M%S`.txt
+	./$(TARGET) | tee results_`date +%Y%m%d_%H%M%S`.csv
 
 # Clean build artifacts
 clean:
@@ -38,7 +40,7 @@ clean:
 
 # Clean all including results
 distclean: clean
-	rm -f results_*.txt
+	rm -f results_*.txt results_*.csv
 	@echo "✓ Cleaned all artifacts and results"
 
 .PHONY: all run clean distclean

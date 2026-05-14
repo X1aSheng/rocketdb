@@ -7,7 +7,8 @@ REM ============================================================================
 
 setlocal enabledelayedexpansion
 
-set CC=D:\Programs\LLVM\bin\clang.exe
+set CC=clang.exe
+if exist "D:\Programs\LLVM\bin\clang.exe" set CC=D:\Programs\LLVM\bin\clang.exe
 set CFLAGS=-Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS
 set INCLUDES=-Isrc -Itest\sim
 
@@ -44,12 +45,8 @@ exit /b 1
 REM =============================================================================
 :build_perf
 echo [*] Building performance benchmark...
-if not exist "%CC%" (
-    echo [ERROR] Clang not found at %CC%
-    exit /b 1
-)
 
-set SRCS=test\sim\sim_flash.c test\perf\scenarios.c
+set SRCS=src\rocketdb_kvdb.c src\rocketdb_tsdb.c test\sim\sim_flash.c test\sim\sim_fault.c test\sim\sim_trace.c test\sim\sim_crypto.c test\perf\scenarios.c
 set TARGET=test\perf\benchmark.exe
 
 %CC% %CFLAGS% %INCLUDES% -o %TARGET% %SRCS%
@@ -66,8 +63,7 @@ call :build_perf
 if errorlevel 1 exit /b 1
 
 echo [*] Running performance benchmark...
-for /f "tokens=1-3 delims=/- " %%a in ("%DATE%") do set TS=%%a%%b%%c
-for /f "tokens=1-3 delims=:. " %%a in ("%TIME: =0%") do set TS=!TS!_%%a%%b%%c
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set TS=%%a
 set RESULT_FILE=test\perf\results_!TS!.csv
 
 test\perf\benchmark.exe > "%RESULT_FILE%" 2>&1
@@ -83,6 +79,8 @@ REM ============================================================================
 :clean_perf
 echo [*] Cleaning performance build artifacts...
 if exist "test\perf\benchmark.exe" del /q "test\perf\benchmark.exe"
+if exist "test\perf\benchmark.ilk" del /q "test\perf\benchmark.ilk"
+if exist "test\perf\benchmark.pdb" del /q "test\perf\benchmark.pdb"
 echo [+] Cleaned.
 goto end
 
