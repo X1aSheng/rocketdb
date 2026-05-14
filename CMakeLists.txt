@@ -165,7 +165,7 @@ if(BUILD_TESTS)
     enable_testing()
     message(STATUS "Testing enabled")
 
-    add_library(rocketdb_sim_support
+    add_library(rocketdb_sim_support STATIC
         test/sim/test_framework.c
         test/sim/sim_flash.c
         test/sim/sim_fault.c
@@ -217,6 +217,13 @@ if(BUILD_TESTS)
         add_test(
             NAME KVDB_Basic_Example
             COMMAND example_kvdb_basic
+        )
+    endif()
+
+    if(BUILD_EXAMPLES AND TARGET example_tsdb_sensor)
+        add_test(
+            NAME TSDB_Sensor_Example
+            COMMAND example_tsdb_sensor
         )
     endif()
 endif()
