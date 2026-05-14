@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <inttypes.h>
@@ -117,7 +118,9 @@ static inline perf_stats_t* perf_stats_create(const char *scenario_id,
     }
     
     strncpy(stats->scenario_id, scenario_id, sizeof(stats->scenario_id) - 1);
+    stats->scenario_id[sizeof(stats->scenario_id) - 1] = '\0';
     strncpy(stats->operation, operation, sizeof(stats->operation) - 1);
+    stats->operation[sizeof(stats->operation) - 1] = '\0';
     stats->count = 0;
     stats->capacity = max_samples;
     stats->sample_count = 0;
@@ -177,7 +180,9 @@ static inline void perf_stats_calculate(perf_stats_t *stats) {
     
     // Throughput in ops/sec
     uint64_t total_ns = sum * 1000;  // Convert us to ns
-    stats->throughput = (stats->count * 1000000000.0) / total_ns;
+    stats->throughput = (total_ns == 0)
+        ? 0.0
+        : (stats->count * 1000000000.0) / total_ns;
 }
 
 /**
