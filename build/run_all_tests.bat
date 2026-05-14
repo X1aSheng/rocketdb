@@ -9,7 +9,8 @@ REM ============================================================================
 setlocal enabledelayedexpansion
 
 REM Configuration
-set CC=D:\Programs\LLVM\bin\clang.exe
+set CC=clang.exe
+if exist "D:\Programs\LLVM\bin\clang.exe" set CC=D:\Programs\LLVM\bin\clang.exe
 set CFLAGS=-Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS
 set INCLUDES=-Isrc -Itest\sim
 set OUTPUT_DIR=test\out
