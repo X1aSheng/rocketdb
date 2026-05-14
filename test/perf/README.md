@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains comprehensive performance benchmarking scenarios for RocketDB v1.1.2. The benchmark suite measures key operations across both KVDB (Key-Value Database) and TSDB (Time-Series Database) modules.
+This directory contains performance benchmark scenarios for RocketDB. The benchmark suite measures key operations across both KVDB and TSDB using the current public `rocketdb.h` API and the same simulated flash layer used by the functional tests.
 
 ## Scenarios
 
@@ -50,37 +50,27 @@ This directory contains comprehensive performance benchmarking scenarios for Roc
 
 ## Building the Benchmark
 
-### Windows (MinGW/GCC)
+### Windows
 
-```bash
-# Navigate to this directory
-cd test\perf
-
-# Build and run
-run_benchmark.bat
+```bat
+build\build_perf.bat run
 ```
 
 ### Linux/macOS
 
 ```bash
-# Navigate to this directory
 cd test/perf
-
-# Build
 make clean
 make
-
-# Run
 make run
 ```
 
-Or manually:
+### CMake
 
 ```bash
-gcc -O2 -Wall -Wextra -std=c99 -I../../ -I../sim \
-    -o benchmark scenarios.c ../sim/sim_flash.c
-
-./benchmark
+cmake -S . -B cmake-build-perf -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_PERF=ON
+cmake --build cmake-build-perf
+./cmake-build-perf/rocketdb_perf
 ```
 
 ## Output Format
@@ -96,11 +86,11 @@ P-100 set (1000 samples)
   Avg: 0.856 us
   P95: 2.145 us
   Throughput: 1,167,883 ops/sec
-  CSV: results_20260225_140531.csv
+  CSV: results_20260514_212015.csv
 ```
 
 ### CSV Output
-Each scenario generates CSV entries with:
+The benchmark writes CSV rows with:
 - Scenario ID (P-100, P-101, etc.)
 - Operation type (set, get, append, etc.)
 - Sample count
@@ -148,9 +138,9 @@ awk -F, 'NR>1 {print $2, $4 / prev[$2]; prev[$2]=$4}' \
     results_baseline.csv results_optimized.csv
 ```
 
-## Performance Targets for v1.0.0
+## Performance Targets
 
-| Operation | Current (v0.0.2) | v1.0.0 Target | Notes |
+| Operation | Current | Target | Notes |
 |-----------|------------------|---------------|-------|
 | KVDB set (small) | TBD | < 10ms | -50% from baseline |
 | KVDB get (small) | TBD | < 5ms | Cache-friendly |
@@ -160,7 +150,7 @@ awk -F, 'NR>1 {print $2, $4 / prev[$2]; prev[$2]=$4}' \
 
 ## Optimization Strategy
 
-### Phase 6 Optimizations (Priority Order)
+### Candidate Optimizations
 
 1. **GC Pre-erase** (Estimated impact: -10ms)
    - Pre-allocate erase buffer
@@ -221,10 +211,11 @@ awk -F, 'NR>1 {print $2, $4 / prev[$2]; prev[$2]=$4}' \
 - [ ] Competitive benchmarking suite
 - [ ] Automated regression detection
 - [ ] Web dashboard for results visualization
+- [ ] Hardware-in-the-loop benchmark runner for real flash devices
 
 ## References
 
-- Main: ../../rocketdb.h
-- Tests: ../test_*.c
+- Main API: ../../src/rocketdb.h
+- Tests: ../sim/test_*.c
 - Simulator: ../sim/sim_flash.c
 - Framework: perf_benchmark.h
