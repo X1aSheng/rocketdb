@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cmake:
+    name: CMake ${{ matrix.os }} ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+        build_type:
+          - Debug
+          - Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B cmake-build
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DBUILD_TESTS=ON
+          -DBUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build cmake-build --parallel
+
+      - name: Test
+        run: ctest --test-dir cmake-build --output-on-failure
+
+  windows-batch:
+    name: Windows batch runner
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Clang
+        run: clang --version
+
+      - name: Run legacy test script
+        run: cmd /c build\build.bat all test
