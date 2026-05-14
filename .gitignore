@@ -1,5 +1,6 @@
 # Build output
 test/out/
+.cache/
 *.o
 *.so
 *.a
@@ -25,6 +26,11 @@ Thumbs.db
 # Build artifacts
 build/*
 !build/*.bat
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+cmake-build-*/
 dist/
 *.pyc
 __pycache__/
