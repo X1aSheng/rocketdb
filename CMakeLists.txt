@@ -1,4 +1,26 @@
 cmake_minimum_required(VERSION 3.10)
+
+# Windows Clang builds need a resource compiler during compiler platform setup.
+# Detect LLVM's llvm-rc before project() so users do not have to pass
+# -DCMAKE_RC_COMPILER manually when clang.exe is outside PATH.
+if(CMAKE_HOST_WIN32 AND NOT CMAKE_RC_COMPILER)
+    set(_ROCKETDB_LLVM_HINTS)
+    if(CMAKE_C_COMPILER)
+        get_filename_component(_ROCKETDB_C_COMPILER_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
+        list(APPEND _ROCKETDB_LLVM_HINTS "${_ROCKETDB_C_COMPILER_DIR}")
+    endif()
+    list(APPEND _ROCKETDB_LLVM_HINTS
+        "$ENV{ProgramFiles}/LLVM/bin"
+        "$ENV{ProgramFiles\(x86\)}/LLVM/bin"
+        "D:/Programs/LLVM/bin"
+    )
+    find_program(CMAKE_RC_COMPILER
+        NAMES llvm-rc rc
+        HINTS ${_ROCKETDB_LLVM_HINTS}
+        DOC "Windows resource compiler"
+    )
+endif()
+
 project(RocketDB C)
 
 # =============================================================================
