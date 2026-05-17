@@ -30,11 +30,17 @@ static rdb_partition_t g_part;
 static rdb_tsdb_t  g_db;
 static uint32_t    g_ec[TS_SECTOR_CNT];
 static trace_ctx_t g_trace;
+static uint8_t     g_enforce_bounded_program;
+static uint32_t    g_max_write_len;
 
 static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
     return sim_flash_read(&g_flash, addr, buf, len);
 }
 static int fl_write(uint32_t addr, const uint8_t *buf, size_t len) {
+    if (len > g_max_write_len)
+        g_max_write_len = (uint32_t)len;
+    if (g_enforce_bounded_program && len > RDB_STACK_BUF_SIZE)
+        return -1;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
 static int fl_erase(uint32_t addr) {
@@ -51,6 +57,8 @@ static rdb_flash_ops_t g_ops = {
 
 static rdb_err_t ts_reset(void)
 {
+    g_enforce_bounded_program = 0;
+    g_max_write_len = 0;
     if (sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE,
                        SECTOR_SIZE, PAGE_SIZE, DEFAULT_WG) != 0)
         return RDB_ERR_FLASH;
@@ -310,6 +318,41 @@ TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test")
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Bounded SPI NOR program chunks
+ *
+ *  Large TSDB payloads should be split before they reach the HAL so
+ *  W25QXX-style drivers can further respect their 256-byte page boundaries.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+TEST_CASE(ts_large_payload_bounded_program_chunks, "TSDB",
+          "Large payload writes use bounded SPI NOR program chunks")
+{
+    (void)ctx;
+    TEST_ASSERT_RDB_OK(ts_reset());
+    g_enforce_bounded_program = 1;
+    g_max_write_len = 0;
+
+    uint8_t data[600];
+    uint8_t out[600];
+    for (uint16_t i = 0; i < sizeof(data); i++)
+        data[i] = (uint8_t)(i ^ 0xA5u);
+    memset(out, 0, sizeof(out));
+
+    TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, 100, data, (uint16_t)sizeof(data)));
+
+    uint32_t t = 0;
+    uint16_t out_len = 0;
+    TEST_ASSERT_RDB_OK(rdb_tsdb_get_latest(&g_db, &t, out, sizeof(out), &out_len));
+    TEST_ASSERT_EQ(t, 100u);
+    TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(data));
+    TEST_ASSERT_MEM_EQ(out, data, sizeof(data));
+    TEST_ASSERT_LE(g_max_write_len, (uint32_t)RDB_STACK_BUF_SIZE);
+
+    g_enforce_bounded_program = 0;
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -338,6 +381,7 @@ int main(void)
     test_register_case(s, &test_case_ts_recount_jitter);
     test_register_case(s, &test_case_ts_write_gran_matrix);
     test_register_case(s, &test_case_ts_max_boundaries);
+    test_register_case(s, &test_case_ts_large_payload_bounded_program_chunks);
 
     test_run_all(NULL);
 

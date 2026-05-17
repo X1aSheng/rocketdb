@@ -1250,24 +1250,38 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
             return RDB_ERR_FLASH;
         }
 
-        /* Write data payload */
-        if (twr_f(db, wa + TS_REC_SZ, data, len) != 0) {
-            db->stats.flash_errors++;
-            tunlock(db);
-            return RDB_ERR_FLASH;
-        }
+        /* Write data payload plus alignment padding in bounded chunks.
+           This keeps HAL calls inside common SPI NOR page-program limits
+           (for example W25QXX 256-byte pages) and preserves write_gran
+           alignment for the final padded write. */
+        {
+            uint32_t g = twr(db);
+            uint32_t max_chunk = (uint32_t)RDB_STACK_BUF_SIZE;
+            max_chunk -= max_chunk % g;
+            uint32_t rem = da;
+            uint32_t data_pos = 0;
+            uint32_t wpos = wa + TS_REC_SZ;
+            uint8_t  buf[RDB_STACK_BUF_SIZE];
 
-        /* Write alignment padding (0xFF fill) */
-        if (da > len) {
-            uint32_t pad_rem = da - len;
-            uint32_t pad_pos = wa + TS_REC_SZ + len;
-            uint8_t  ff[8];
-            memset(ff, 0xFF, sizeof(ff));
-            while (pad_rem > 0) {
-                uint32_t pw = RDB_MIN(pad_rem, (uint32_t)sizeof(ff));
-                twr_f(db, pad_pos, ff, pw);
-                pad_pos += pw;
-                pad_rem -= pw;
+            while (rem > 0) {
+                uint32_t ch = RDB_MIN(rem, max_chunk);
+                uint32_t data_rem = (len > data_pos) ? (uint32_t)len - data_pos : 0;
+                uint32_t data_ch = RDB_MIN(ch, data_rem);
+
+                if (data_ch > 0)
+                    memcpy(buf, (const uint8_t*)data + data_pos, data_ch);
+                if (ch > data_ch)
+                    memset(buf + data_ch, 0xFF, ch - data_ch);
+
+                if (twr_f(db, wpos, buf, ch) != 0) {
+                    db->stats.flash_errors++;
+                    tunlock(db);
+                    return RDB_ERR_FLASH;
+                }
+
+                data_pos += data_ch;
+                wpos += ch;
+                rem -= ch;
             }
         }
     }
