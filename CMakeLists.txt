@@ -157,15 +157,15 @@ if(BUILD_EXAMPLES)
     message(STATUS "Building examples...")
     
     # KVDB Basic Example
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/example_kvdb_basic_v2.c")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples/example_kvdb_basic.c")
         add_executable(example_kvdb_basic
-            examples/example_kvdb_basic_v2.c
+            examples/example_kvdb_basic.c
         )
         target_link_libraries(example_kvdb_basic PRIVATE rocketdb)
         rocketdb_apply_warnings(example_kvdb_basic)
         rocketdb_apply_optimization(example_kvdb_basic)
     else()
-        message(STATUS "Skipping example_kvdb_basic: examples/example_kvdb_basic_v2.c not found")
+        message(STATUS "Skipping example_kvdb_basic: examples/example_kvdb_basic.c not found")
     endif()
     
     # TSDB Sensor Example (if available)
