@@ -1319,7 +1319,7 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | GC 与磨损 | gc_reserve+1 水位、will_free 虚拟垃圾、Phase 3 强制回收、Phase 4 静态磨损均衡、erase_cnt 单调 | 4.7、4.8、8.1 |
 | 并发与锁 | 公共 API 锁语义、iter_gen 失效检测、stats/space/wear 读取一致性 | 2.5、4.3、6.7、8.1 |
 | TSDB 查询 | 不按 time_base early break、跨 epoch 返回语义、降级 ACTIVE 参与 query/latest/oldest/time_range | 5.5、5.9、5.10 |
-| 测试有效性 | 7 套测试、42 用例、约 38,900 断言；GC/rotation ≥100；故障注入覆盖 6 类故障；seed 可追溯 | 8.2 |
+| 测试有效性 | 7 套测试、43 用例、约 39,000 断言；GC/rotation ≥100；故障注入覆盖 6 类故障；seed 可追溯 | 8.2 |
 | 工程化 | CMake/CTest、bat、Makefile 都应构建真实测试套件；示例缺失不能破坏核心库构建 | 8.3 |
 
 ### 8.1 实现审核

@@ -440,7 +440,7 @@ clang test/out/test_kvdb_basic.o test/out/sim_flash.o test/out/sim_fault.o \
 
 ### 10.2 Log Files
 
-Each test suite produces a timestamped trace log in `test/out/<YYMMDD_HHMMSS>_<name>.log`. Log path is relative to the working directory — run executables from the project root.
+Each test suite produces a timestamped trace log in `test/out/<YYYYMMDD_HHMMSS>_<name>.log`. Log path is relative to the working directory — run executables from the project root.
 
 ### 10.3 Selecting Verbosity
 

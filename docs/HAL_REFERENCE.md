@@ -476,8 +476,17 @@ static int hal_spi_flash_read(uint32_t addr, uint8_t *buf, size_t len) {
 }
 
 static int hal_spi_flash_write(uint32_t addr, const uint8_t *buf, size_t len) {
-    // SPI NOR 支持页编程（通常 256 字节/页）
-    return W25qxx_WritePage(addr, buf, len) == W25Q_OK ? 0 : -1;
+    // SPI NOR 页编程通常不能跨 256 字节页边界，HAL 必须分段。
+    while (len > 0) {
+        size_t page_rem = 256u - (addr & 0xFFu);
+        size_t chunk = (len < page_rem) ? len : page_rem;
+        if (W25qxx_WritePage(addr, buf, chunk) != W25Q_OK)
+            return -1;
+        addr += (uint32_t)chunk;
+        buf += chunk;
+        len -= chunk;
+    }
+    return 0;
 }
 
 static int hal_spi_flash_erase(uint32_t addr) {

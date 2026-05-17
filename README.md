@@ -26,11 +26,11 @@ RocketDB is a zero-allocation, dual-mode Flash storage engine for resource-const
 
 `/examples` includes RocketDB usage sample code (KVDB, TSDB, STM32F4).
 
-`/test` includes the simulation test framework and comprehensive test suites (7 suites, 38,000+ assertions).
+`/test` includes the simulation test framework and comprehensive test suites (7 suites, 39,000+ assertions).
 
 `/docs` includes design manual, API reference, integration guides, and troubleshooting.
 
-`/project` includes platform build scripts and reference projects.
+`/build` includes Windows build/test scripts and benchmark runners.
 
 ### Install
 
@@ -99,7 +99,7 @@ Online API reference: [rocketdb.h](src/rocketdb.h) (Doxygen-formatted comments t
 
 Offline documents:
 
-- [`docs/rocketdb%20design.md`](docs/rocketdb%20design.md) — Full architecture and design manual
+- [`docs/Architecture.md`](docs/Architecture.md) — Full architecture and design manual
 - [`docs/EXAMPLES.md`](docs/EXAMPLES.md) — 8 complete code examples
 - [`docs/HAL_REFERENCE.md`](docs/HAL_REFERENCE.md) — STM32 MCU integration guide
 - [`docs/W25QXX_GUIDE.md`](docs/W25QXX_GUIDE.md) — W25QXX SPI NOR Flash integration guide

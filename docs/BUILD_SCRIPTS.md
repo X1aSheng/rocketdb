@@ -2,7 +2,7 @@
 
 ## 概述
 
-RocketDB 提供两种构建方式：根目录 **Makefile**（推荐，跨平台）和 `project/build/` 下的 **批处理脚本**（Windows 专用）。
+RocketDB 提供三种构建方式：根目录 **Makefile**、根目录 **CMake/CTest**，以及 `build/` 下的 **批处理脚本**（Windows 专用）。
 
 ## 方式 1：Makefile（推荐）
 
@@ -51,33 +51,42 @@ make test/out/test_kvdb_basic.exe
 
 ### 输出
 
-所有日志输出到 `test/out/` 目录，`YYMMDD_HHMMSS_***.log`：
-- `YYMMDD_HHMMSS_kvdb_basic.log`
-- `YYMMDD_HHMMSS_kvdb_stress.log`
-- `YYMMDD_HHMMSS_tsdb_basic.log`
-- `YYMMDD_HHMMSS_tsdb_stress.log`
-- `YYMMDD_HHMMSS_integration.log`
-- `YYMMDD_HHMMSS_example.log`
-- `YYMMDD_HHMMSS_fault_injection.log`
+所有日志输出到 `test/out/` 目录，格式为 `YYYYMMDD_HHMMSS_test_name.log`：
+- `YYYYMMDD_HHMMSS_test_kvdb_basic.log`
+- `YYYYMMDD_HHMMSS_test_kvdb_stress.log`
+- `YYYYMMDD_HHMMSS_test_tsdb_basic.log`
+- `YYYYMMDD_HHMMSS_test_tsdb_stress.log`
+- `YYYYMMDD_HHMMSS_test_integration.log`
+- `YYYYMMDD_HHMMSS_test_example.log`
+- `YYYYMMDD_HHMMSS_test_fault_injection.log`
 
 ## 方式 2：批处理脚本（Windows）
 
-`project/build/` 目录下提供了 Windows 批处理脚本：
+`build/` 目录下提供了 Windows 批处理脚本，从项目根目录运行：
 
 ```bash
 # 统一入口
-cd project/build
-build.bat all test          # 编译并运行全部测试
-build.bat kvdb test         # 仅 KVDB 测试
-build.bat tsdb test         # 仅 TSDB 测试
+build\build.bat all test          # 编译并运行全部测试
+build\build.bat kvdb test         # 仅 KVDB 测试
+build\build.bat tsdb test         # 仅 TSDB 测试
 
 # 单独模块脚本
-build_kvdb_all.bat          # KVDB 全部测试
-build_tsdb_all.bat          # TSDB 全部测试
-build_unified.bat           # 集成测试
-run_all_tests.bat           # 运行已有可执行文件
-build_perf.bat              # 性能基准测试
+build\build_kvdb_all.bat          # KVDB 全部测试
+build\build_tsdb_all.bat          # TSDB 全部测试
+build\build_unified.bat           # 全量测试入口
+build\run_all_tests.bat           # 编译并运行 7 套测试
+build\build_perf.bat run          # 性能基准测试
 ```
+
+## 方式 3：CMake/CTest
+
+```bash
+cmake -S . -B cmake-build -G Ninja -DCMAKE_C_COMPILER=D:/Programs/LLVM/bin/clang.exe
+cmake --build cmake-build
+ctest --test-dir cmake-build --output-on-failure
+```
+
+Windows Clang 构建会自动查找 `llvm-rc`/`rc` 资源编译器。若编译器安装在非标准位置，也可显式传入 `-DCMAKE_RC_COMPILER=<path-to-llvm-rc.exe>`。
 
 ## 编译要求
 
@@ -117,7 +126,7 @@ C99 模式下 clang 可能报告此警告。添加 `-Wno-unused-but-set-variable
 
 - [测试框架说明](../test/sim/README.md)
 - [故障注入文档](../test/sim/FAULT_INJECTION.md)
-- [设计文档](rocketdb%20design.md)
+- [设计文档](Architecture.md)
 
 ---
 

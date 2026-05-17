@@ -335,7 +335,7 @@ void test_reset_stats(void);
 /**
  * @brief 生成带时间戳的日志文件路径
  * @param name  测试名称（不含路径和后缀，如 "kvdb_basic"）
- * @return      静态缓冲区指针，格式 "test/out/YYMMDD_HHMMSS_name.log"
+ * @return      静态缓冲区指针，格式 "test/out/YYYYMMDD_HHMMSS_name.log"
  *
  * 调用者不应释放返回的指针。每次调用会覆盖上一次的结果。
  * 如果 test/out/ 目录不存在，会自动创建。

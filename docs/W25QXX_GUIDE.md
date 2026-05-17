@@ -13,7 +13,7 @@ RocketDB 针对 W25QXX 系列 SPI NOR Flash 芯片的 HAL 集成完整指南。
 | NOR 1→0 语义 | 页编程支持 | 必须 | ✓ |
 | 先擦后写 | 硬件强制 | 逻辑强制 | ✓ |
 | 擦除时间 | 45ms typ（4KB 扇区） | yield 回调 | ✓ |
-| 页编程 | 最大 256 字节 | 栈缓冲 ≤64 字节 | ✓ |
+| 页编程 | 最大 256 字节，不能跨页 | HAL 需按页边界分段 | ✓ |
 | 耐久度 | 100K 次 | 磨损均衡 | ✓ |
 
 ---
@@ -128,23 +128,32 @@ static int flash_read(uint32_t addr, uint8_t *buf, size_t len) {
 
 ### 4.3 write() 实现
 
-W25QXX 页编程不能跨越 256 字节页边界。单次 write 不超过 256 字节，
-RocketDB 内部保证每次调用 ≤64 字节，因此无需分段。
+W25QXX 页编程不能跨越 256 字节页边界。`write()` 回调必须自行按页边界分段：
+即使 RocketDB 典型写入较小，也不能假设调用地址天然落在页内安全范围。
 
 ```c
 static int flash_write(uint32_t addr, const uint8_t *buf, size_t len) {
-    w25q_write_enable();
-    uint8_t cmd[4] = {
-        0x02,
-        (uint8_t)(addr >> 16),
-        (uint8_t)(addr >> 8),
-        (uint8_t)(addr)
-    };
-    spi_select();
-    spi_transfer(cmd, NULL, 4);
-    spi_transfer(buf, NULL, len);
-    spi_deselect();
-    w25q_wait_busy();
+    while (len > 0) {
+        size_t page_rem = 256u - (addr & 0xFFu);
+        size_t chunk = (len < page_rem) ? len : page_rem;
+
+        w25q_write_enable();
+        uint8_t cmd[4] = {
+            0x02,
+            (uint8_t)(addr >> 16),
+            (uint8_t)(addr >> 8),
+            (uint8_t)(addr)
+        };
+        spi_select();
+        spi_transfer(cmd, NULL, 4);
+        spi_transfer(buf, NULL, chunk);
+        spi_deselect();
+        w25q_wait_busy();
+
+        addr += (uint32_t)chunk;
+        buf += chunk;
+        len -= chunk;
+    }
     return 0;
 }
 ```
@@ -270,10 +279,12 @@ void rocketdb_w25q_init(void) {
 | 读取（1B-∞） | ~40MHz SPI | — | 不需要 |
 
 **RocketDB 实际负载**：
-- KVDB set：1 次页编程（头 16B + 值 ≤64B） + 0-1 次提交写入（2 字节）
+- KVDB set：小记录通常一次合并写入；大 value 以 `RDB_STACK_BUF_SIZE` 分块写入
 - GC 迁移：批量读写，每扇区最多 1 次擦除
-- TSDB append：1 次页编程（头 12B + 数据）
+- TSDB append：小记录通常一次合并写入；大 data 以 `RDB_STACK_BUF_SIZE` 分块写入
 - 扇区轮转：1 次擦除
+
+HAL 仍需按 W25QXX 256B 页边界拆分，因为 64B 分块也可能从页尾附近开始。
 
 ---
 

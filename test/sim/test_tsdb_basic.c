@@ -214,12 +214,12 @@ TEST_CASE(ts_recount_jitter, "TSDB", "Recount occurs only per full ring")
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  TSDB write granularity matrix (1/2/4/8 bytes)
+ *  TSDB write granularity matrix (currently supported 1/2 bytes)
  *
  *  Per test plan 4.2: run append/query with each supported write_gran.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2/4/8B")
+TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
 {
     (void)ctx;
 
