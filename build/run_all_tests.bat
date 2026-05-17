@@ -28,10 +28,10 @@ if "%ACTION%"=="help" goto show_help
 REM cd to project root (script is in build\)
 cd /d "%~dp0.."
 
-REM Generate locale-independent master timestamp for this run
-for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set MASTER_TS=%%a
+REM Generate locale-independent master timestamp for this run: YYMMDD-HHMMSS
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyMMdd-HHmmss"') do set MASTER_TS=%%a
 
-set SUMMARY_LOG=%OUTPUT_DIR%\%MASTER_TS%_SUMMARY.log
+set SUMMARY_LOG=%OUTPUT_DIR%\%MASTER_TS%-SUMMARY.log
 set PASSED_TOTAL=0
 set FAILED_TOTAL=0
 
@@ -134,11 +134,11 @@ REM ============================================================================
 :compile_and_run
 set TEST_NAME=%~1
 
-REM Per-test locale-independent timestamp
-for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set TS=%%a
+REM Per-test locale-independent timestamp: YYMMDD-HHMMSS
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyMMdd-HHmmss"') do set TS=%%a
 
 set TARGET=%OUTPUT_DIR%\%TEST_NAME%.exe
-set LOG_FILE=%OUTPUT_DIR%\!TS!_%TEST_NAME%.log
+set LOG_FILE=%OUTPUT_DIR%\!TS!-%TEST_NAME%.log
 
 REM Compile
 set SRCS=%BASE_SRCS% test\sim\%TEST_NAME%.c
@@ -166,7 +166,7 @@ if %TEST_ERR% NEQ 0 (
     set /a %~3+=1
     goto :eof
 )
-echo   [PASS] %TEST_NAME%  -  !TS!_%TEST_NAME%.log
+echo   [PASS] %TEST_NAME%  -  !TS!-%TEST_NAME%.log
 set /a %~2+=1
 goto :eof
 
@@ -206,8 +206,8 @@ echo   test_integration       KVDB+TSDB combined + mixed workload
 echo   test_fault_injection   Fault injection demo
 echo   test_example           Tutorial example
 echo.
-echo Log format: YYYYMMDD_HHMMSS_testname.log
-echo Summary:     YYYYMMDD_HHMMSS_SUMMARY.log
+echo Log format: YYMMDD-HHMMSS-testname.log
+echo Summary:     YYMMDD-HHMMSS-SUMMARY.log
 echo.
 goto end
 

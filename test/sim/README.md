@@ -435,12 +435,12 @@ clang test/out/test_kvdb_basic.o test/out/sim_flash.o test/out/sim_fault.o \
     test/out/sim_crypto.o test/out/rocketdb_kvdb.o test/out/rocketdb_tsdb.o \
     -o test/out/test_kvdb_basic.exe
 
-./test/out/test_kvdb_basic.exe   # Trace log → test/out/<timestamp>_kvdb_basic.log
+./test/out/test_kvdb_basic.exe   # Trace log -> test/out/<timestamp>-kvdb_basic.log
 ```
 
 ### 10.2 Log Files
 
-Each test suite produces a timestamped trace log in `test/out/<YYYYMMDD_HHMMSS>_<name>.log`. Log path is relative to the working directory — run executables from the project root.
+Each test suite produces a timestamped trace log in `test/out/<YYMMDD-HHMMSS>-<name>.log`. Log path is relative to the working directory — run executables from the project root.
 
 ### 10.3 Selecting Verbosity
 

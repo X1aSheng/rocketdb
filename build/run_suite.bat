@@ -63,9 +63,9 @@ for %%t in (%TESTS%) do (
     ) else (
         echo [%%t] Compile OK
         if "%ACTION%"=="test" (
-            REM Per-test locale-independent timestamp
-            for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set TS=%%a
-            set LOG_FILE=%OUTPUT_DIR%\!TS!_%%t.log
+            REM Per-test locale-independent timestamp: YYMMDD-HHMMSS
+            for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyMMdd-HHmmss"') do set TS=%%a
+            set LOG_FILE=%OUTPUT_DIR%\!TS!-%%t.log
 
             echo ================================================ > "!LOG_FILE!"
             echo RocketDB Test: %%t >> "!LOG_FILE!"
@@ -77,7 +77,7 @@ for %%t in (%TESTS%) do (
                 echo [%%t] Test FAILED
                 set /a FAIL+=1
             ) else (
-                echo [%%t] Test PASSED  -  !TS!_%%t.log
+                echo [%%t] Test PASSED  -  !TS!-%%t.log
                 set /a PASS+=1
             )
         ) else (
