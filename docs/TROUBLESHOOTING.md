@@ -1055,7 +1055,7 @@ clang -fsanitize=address test_kvdb_basic.c ... -o test_kvdb_basic
 
 2. **检查日志**:
    - 测试日志: `test/out/test_*_log_*.log`
-   - 最近审查报告: `docs/CODE_REVIEW_260505_130821.md`
+   - 最近审查报告: `docs/CODE_REVIEW_CONSOLIDATED_260517.md`
 
 3. **报告问题**:
    - 提供详细的错误信息
