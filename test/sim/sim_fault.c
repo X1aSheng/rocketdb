@@ -419,15 +419,27 @@ int fault_import_rules(fault_ctx_t *ctx, const char *str)
 
         /* Parse: type,mode,trigger_count,probability_pct,addr_start,addr_end,seed,enabled */
         fault_rule_t rule;
+        int type = 0;
+        int mode = 0;
+        int enabled = 0;
         int n = 0;
         int fields = sscanf(p, "%d,%d,%u,%u,%u,%u,%u,%d%n",
-                            (int *)&rule.type, (int *)&rule.trigger_mode,
+                            &type, &mode,
                             &rule.trigger_count, &rule.probability_pct,
                             &rule.addr_start, &rule.addr_end,
-                            &rule.seed, &rule.enabled, &n);
+                            &rule.seed, &enabled, &n);
         if (fields < 8) break; /* malformed line, stop */
 
-        if (fault_add_rule(ctx, &rule) == 0)
+        if (type < 0 || type > FAULT_TYPE_BIT_FLIP ||
+            mode < 0 || mode > FAULT_TRIGGER_PATTERN) {
+            break;
+        }
+
+        rule.type = (fault_type_t)type;
+        rule.trigger_mode = (fault_trigger_mode_t)mode;
+        rule.enabled = enabled;
+
+        if (fault_add_rule(ctx, &rule) >= 0)
             imported++;
 
         p += n;

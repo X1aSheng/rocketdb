@@ -69,3 +69,9 @@ Observed baseline issue: Windows Clang CMake configure fails without an explicit
 | P4 Ignore local CMake review builds | Done | `77a49bb` | `git status --short --untracked-files=all` no longer reports `.cmake-*` generated files |
 
 Final verification is run after this record update so the review artifact reflects the completed state.
+
+## Legacy CODE_REVIEW Consolidation
+
+Follow-up consolidation is captured in `docs/CODE_REVIEW_CONSOLIDATED_260517.md`.
+It reconciles all historical `CODE_REVIEW_*.md` findings against current source and
+records the remaining accepted limitations separately from fixed defects.

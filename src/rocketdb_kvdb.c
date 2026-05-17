@@ -1146,6 +1146,8 @@ static void gc_build_cache(rdb_kvdb_t* db, gc_prep_t* c) {
             uint32_t used = db->sectors[s].write_off - ds;
             c[s].live = (used > c[s].garbage) ? used - c[s].garbage : 0;
         }
+        if ((s & 0x0Fu) == 0x0Fu)
+            fl_yield(db);
     }
 }
 

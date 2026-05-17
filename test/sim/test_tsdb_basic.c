@@ -137,6 +137,19 @@ TEST_CASE(ts_basic_append_query, "TSDB", "Append/query/latest/oldest/count/time_
     TEST_ASSERT_EQ(out_time, TS_APPEND_COUNT);
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(payload));
     TEST_ASSERT_MEM_EQ(out, payload, sizeof(payload));
+
+    uint8_t small[4];
+    out_len = 0; out_time = 0;
+    TEST_ASSERT_RDB_ERR(rdb_tsdb_get_oldest(&g_db, &out_time,
+        small, sizeof(small), &out_len), RDB_ERR_TOO_LARGE);
+    TEST_ASSERT_EQ(out_time, 1u);
+    TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(payload));
+
+    out_len = 0; out_time = 0;
+    TEST_ASSERT_RDB_ERR(rdb_tsdb_get_latest(&g_db, &out_time,
+        small, sizeof(small), &out_len), RDB_ERR_TOO_LARGE);
+    TEST_ASSERT_EQ(out_time, TS_APPEND_COUNT);
+    TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(payload));
     return 0;
 }
 

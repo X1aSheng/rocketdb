@@ -475,6 +475,51 @@ TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC")
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Test 8: Fault rule export/import round-trip
+ *
+ *  Verifies the text rule parser imports every valid exported rule, not only
+ *  the first rule whose insertion index is zero.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+TEST_CASE(fault_rule_import_roundtrip, "Fault", "Fault rule export/import round-trip")
+{
+    (void)ctx;
+
+    fault_ctx_t src;
+    fault_ctx_t dst;
+    char buf[256];
+
+    fault_init(&src, 0x1234u);
+    fault_quick_write_fail(&src, 3u);
+
+    fault_rule_t read_rule = {
+        .type = FAULT_TYPE_READ_FAIL,
+        .trigger_mode = FAULT_TRIGGER_COUNT,
+        .trigger_count = 5u,
+        .probability_pct = 0u,
+        .addr_start = 0u,
+        .addr_end = 0u,
+        .seed = 0u,
+        .enabled = 1
+    };
+    TEST_ASSERT_GE(fault_add_rule(&src, &read_rule), 0);
+
+    int exported = fault_export_rules(&src, buf, sizeof(buf));
+    TEST_ASSERT_GT((uint32_t)exported, 0u);
+
+    fault_init(&dst, 0x5678u);
+    int imported = fault_import_rules(&dst, buf);
+    TEST_ASSERT_EQ(imported, 2);
+    TEST_ASSERT_EQ(dst.rule_count, 2u);
+    TEST_ASSERT_EQ(dst.rules[0].type, FAULT_TYPE_WRITE_FAIL);
+    TEST_ASSERT_EQ(dst.rules[0].trigger_count, 3u);
+    TEST_ASSERT_EQ(dst.rules[1].type, FAULT_TYPE_READ_FAIL);
+    TEST_ASSERT_EQ(dst.rules[1].trigger_count, 5u);
+
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -499,6 +544,7 @@ int main(void)
     test_register_case(suite, &test_case_fault_data_corruption);
     test_register_case(suite, &test_case_fault_read_fail);
     test_register_case(suite, &test_case_fault_bit_flip);
+    test_register_case(suite, &test_case_fault_rule_import_roundtrip);
 
     test_run_all(NULL);
 

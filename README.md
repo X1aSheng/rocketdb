@@ -105,6 +105,7 @@ Offline documents:
 - [`docs/W25QXX_GUIDE.md`](docs/W25QXX_GUIDE.md) — W25QXX SPI NOR Flash integration guide
 - [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — Common problems and solutions
 - [`docs/test_plan.md`](docs/test_plan.md) — Test plan and coverage assessment
+- [`docs/CODE_REVIEW_CONSOLIDATED_260517.md`](docs/CODE_REVIEW_CONSOLIDATED_260517.md) — Consolidated legacy code-review status
 
 Generate HTML API docs with Doxygen:
 

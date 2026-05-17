@@ -127,7 +127,10 @@ static rdb_err_t ts_reset(void)
 
 /* ── Size PRNG for stress tests ────────────────────────────────────────── */
 
-static uint32_t g_int_sz_prng = 0xDEADBEEFu;
+#define INT_SIZE_SEED 0xDEADBEEFu
+#define MIX_SEED      0x13579BDFu
+
+static uint32_t g_int_sz_prng = INT_SIZE_SEED;
 
 static uint16_t int_sz_next(void)
 {
@@ -149,6 +152,7 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(kv_reset());
+    g_int_sz_prng = INT_SIZE_SEED;
     trace_event(&g_trace, "  [INT-KV-GC] start: target=%u seed=0x%08X",
                 CYCLE_GC_TARGET, g_int_sz_prng);
 
@@ -179,6 +183,7 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles >=200")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
+    g_int_sz_prng = INT_SIZE_SEED;
     trace_event(&g_trace, "  [INT-TS-ROT] start: target=%u seed=0x%08X",
                 CYCLE_ROT_TARGET, g_int_sz_prng);
 
@@ -212,7 +217,7 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles >=200")
 static uint8_t  g_mix_kv_vals[MIX_KEY_POOL][MIX_MAX_VAL];
 static uint16_t g_mix_kv_lens[MIX_KEY_POOL];
 static uint8_t  g_mix_kv_present[MIX_KEY_POOL];
-static uint32_t g_mix_prng = 0x13579BDFu;
+static uint32_t g_mix_prng = MIX_SEED;
 
 static uint32_t mix_rand(void)
 {
@@ -240,6 +245,7 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(mix_reset());
+    g_mix_prng = MIX_SEED;
     memset(g_mix_kv_present, 0, sizeof(g_mix_kv_present));
     trace_event(&g_trace, "  [MIXED-WL] start: seed=0x%08X", g_mix_prng);
 
@@ -435,10 +441,18 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
         ts_sum += ec;
     }
 
-    printf("KV wear: min=%u max=%u avg=%u\n", kv_min, kv_max, kv_sum / KV_SECTOR_CNT);
-    printf("TS wear: min=%u max=%u avg=%u\n", ts_min, ts_max, ts_sum / TS_SECTOR_CNT);
-    TEST_ASSERT_GE(kv_max, kv_min);
-    TEST_ASSERT_GE(ts_max, ts_min);
+    uint32_t kv_spread = kv_max - kv_min;
+    uint32_t ts_spread = ts_max - ts_min;
+    printf("KV wear: min=%u max=%u avg=%u spread=%u\n",
+           kv_min, kv_max, kv_sum / KV_SECTOR_CNT, kv_spread);
+    printf("TS wear: min=%u max=%u avg=%u spread=%u\n",
+           ts_min, ts_max, ts_sum / TS_SECTOR_CNT, ts_spread);
+    TEST_ASSERT_GE(g_kv_db.stats.gc_runs, WEAR_KV_GC_TGT);
+    TEST_ASSERT_GE(g_ts_db.stats.sector_rotations, WEAR_TS_ROT_TGT);
+    TEST_ASSERT_GT(kv_sum, KV_SECTOR_CNT);
+    TEST_ASSERT_GT(ts_sum, TS_SECTOR_CNT);
+    TEST_ASSERT_LE(kv_spread, WEAR_KV_GC_TGT);
+    TEST_ASSERT_LE(ts_spread, WEAR_TS_ROT_TGT);
 
     print_kv_heatmap();
     print_ts_heatmap();

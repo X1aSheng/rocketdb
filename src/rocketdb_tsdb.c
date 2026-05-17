@@ -1770,8 +1770,9 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
         }
     }
 
+    rdb_err_t rc = (buf && buf_len < c.dlen) ? RDB_ERR_TOO_LARGE : RDB_OK;
     tunlock(db);
-    return RDB_OK;
+    return rc;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1890,8 +1891,9 @@ rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time,
         }
     }
 
+    rdb_err_t rc = (buf && buf_len < c.dlen) ? RDB_ERR_TOO_LARGE : RDB_OK;
     tunlock(db);
-    return RDB_OK;
+    return rc;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
