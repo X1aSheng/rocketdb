@@ -31,23 +31,34 @@ static rdb_kvdb_t         g_db;
 static rdb_kv_sector_meta_t g_meta[KV_SECTOR_CNT];
 static trace_ctx_t          g_trace;
 
-static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
+static int fl_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_read(&g_flash, addr, buf, len);
 }
-static int fl_write(uint32_t addr, const uint8_t *buf, size_t len) {
+static int fl_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
-static int fl_erase(uint32_t addr) {
+static int fl_erase(void *ctx, uint32_t addr) {
+    (void)ctx;
     return sim_flash_erase(&g_flash, addr);
 }
-static void fl_lock(void) { }
-static void fl_unlock(void) { }
-static void fl_yield(void) { }
+static void fl_lock(void *ctx) { (void)ctx; }
+static void fl_unlock(void *ctx) { (void)ctx; }
+static void fl_yield(void *ctx) { (void)ctx; }
 
 static rdb_flash_ops_t g_ops = {
     .read = fl_read, .write = fl_write, .erase = fl_erase,
     .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
 };
+
+/* ── Trace wrapper ─────────────────────────────────────────────────── */
+static rdb_err_t trace_kv_set(rdb_kvdb_t *db, const char *key,
+                               const void *val, uint16_t vlen)
+{
+    trace_event(&g_trace, "  [KV-WRITE] key=%s vsz=%u", key, (unsigned)vlen);
+    return rdb_kvdb_set(db, key, (const uint8_t *)val, vlen);
+}
 
 static rdb_err_t kv_reset(void)
 {
@@ -121,7 +132,7 @@ TEST_CASE(kv_gc_stress_100, "KVDB", "GC stress with >=100 cycles")
             key[1] = (char)('0' + (i / 10));
             key[2] = (char)('0' + (i % 10));
             uint16_t vsz = 1u + (uint16_t)(kv_sz_next() % 512u);
-            TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, val, vsz));
+            TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, val, vsz));
             if (g_db.stats.gc_runs != prev_gc) {
                 prev_gc = g_db.stats.gc_runs;
                 trace_kvdb_gc_event(&g_trace, &g_db, prev_gc, loops);
@@ -162,7 +173,7 @@ TEST_CASE(kv_iter_after_gc, "KVDB", "Iterator returns latest values after GC")
         expected[i][2] = (uint8_t)(i + 2);
         expected[i][3] = (uint8_t)(i + 3);
         expected_len[i] = 4;
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, expected[i], expected_len[i]));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, expected[i], expected_len[i]));
     }
 
     for (int round = 0; round < 8; round++) {
@@ -175,7 +186,7 @@ TEST_CASE(kv_iter_after_gc, "KVDB", "Iterator returns latest values after GC")
             expected[i][2] = (uint8_t)(round ^ i);
             expected[i][3] = (uint8_t)(0xA5u ^ i);
             expected_len[i] = 4;
-            TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, expected[i], expected_len[i]));
+            TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, expected[i], expected_len[i]));
         }
     }
 
@@ -188,7 +199,7 @@ TEST_CASE(kv_iter_after_gc, "KVDB", "Iterator returns latest values after GC")
             expected[i][2] = (uint8_t)i;
             expected[i][3] = (uint8_t)(loops & 0xFF);
             expected_len[i] = 4;
-            TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, expected[i], expected_len[i]));
+            TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, expected[i], expected_len[i]));
         }
         loops++;
     }
@@ -230,14 +241,14 @@ TEST_CASE(kv_iter_busy_on_modify, "KVDB", "Iterator returns BUSY when DB modifie
     TEST_ASSERT_RDB_OK(kv_reset());
 
     trace_event(&g_trace, "  [KV-BUSY] writing key=K00 val='A'");
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "K00", "A", 1));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "K00", "A", 1));
     trace_event(&g_trace, "  [KV-BUSY] writing key=K01 val='B'");
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "K01", "B", 1));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "K01", "B", 1));
 
     rdb_kv_iter_t it;
     TEST_ASSERT_RDB_OK(rdb_kv_iter_init(&it, &g_db));
     trace_event(&g_trace, "  [KV-BUSY] iterator active, writing key=K02 val='C'");
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "K02", "C", 1));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "K02", "C", 1));
 
     char key_buf[16]; uint8_t val_buf[16]; uint16_t klen, vlen;
     TEST_ASSERT_RDB_ERR(rdb_kv_iter_next(&it, key_buf, sizeof(key_buf),
@@ -257,11 +268,11 @@ TEST_CASE(kv_power_loss_recovery, "KVDB", "Recover after power loss during write
     TEST_ASSERT_RDB_OK(kv_reset());
 
     trace_event(&g_trace, "  [KV-PL] writing K0, K1 before power-loss");
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "K0", "A", 1));
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "K1", "B", 1));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "K0", "A", 1));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "K1", "B", 1));
 
     fault_quick_power_loss(&g_fault, g_fault.write_count + 1u, 0u);
-    TEST_ASSERT_NE(rdb_kvdb_set(&g_db, "PL", "X", 1), RDB_OK);
+    TEST_ASSERT_NE(trace_kv_set(&g_db, "PL", "X", 1), RDB_OK);
     trace_event(&g_trace, "  [KV-PL] power-loss injected, key=PL lost");
 
     fault_clear_rules(&g_fault);
@@ -296,7 +307,7 @@ TEST_CASE(kv_corrupt_sector_recovery, "KVDB", "Corrupt sector header recovery")
     /* Write known data so we can verify it survives */
     const char *key = "survivor";
     const uint8_t val[] = { 0xCA, 0xFE, 0xBA, 0xBE };
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, val, (uint16_t)sizeof(val)));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, val, (uint16_t)sizeof(val)));
     trace_event(&g_trace, "  [KV-CORRUPT] wrote key=%s val_len=%u",
                 key, (uint16_t)sizeof(val));
 
@@ -337,7 +348,7 @@ TEST_CASE(kv_corrupt_sector_recovery, "KVDB", "Corrupt sector header recovery")
     trace_event(&g_trace, "  [KV-CORRUPT] key=%s survived len=%u", key, out_len);
 
     /* DB remains usable — can write new data */
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "new_key", "NEW", 3));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "new_key", "NEW", 3));
     uint8_t out2[8] = { 0 }; uint16_t out2_len = 0;
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "new_key", out2, sizeof(out2), &out2_len));
     TEST_ASSERT_EQ(out2_len, 3u);
@@ -348,18 +359,20 @@ TEST_CASE(kv_corrupt_sector_recovery, "KVDB", "Corrupt sector header recovery")
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  TC-X-05: Mixed-length value stress (1..max_val random, clamped per key)
+ *  TC-X-05: Mixed-length value stress (uniform 1..max_val)
  *
- *  Uses a deterministic PRNG to generate random key names and value sizes
- *  with flat 20%-per-bucket distribution across the full 1..4095 range.
- *  Large values (3501..4095) appear at 20% probability — clearly visible
- *  in trace logs.  Drives GC with realistic fragmentation.
+ *  Uses uniform random distribution across the full 1..max_val range
+ *  so every value length has equal probability.  Tracks a 10-bin
+ *  decile histogram and asserts full-range coverage.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define MIX_KV_KEY_COUNT  20
-#define MIX_KV_GC_TARGET  13u
+#define MIX_KV_KEY_COUNT  12
+#define MIX_KV_GC_TARGET  25u
 #define MIX_KV_MAX_LOOPS  80000u
 #define MIX_KV_SEED       0xCAFE1234u
+
+#define HIST_BINS         10u
+#define HIST_MIN_COVERAGE 8u    /* at least 8 of 10 decile bins must be hit */
 
 static uint32_t kv_max_val_for_key(const rdb_kvdb_t *db, uint16_t key_len)
 {
@@ -380,28 +393,13 @@ static uint32_t kv_xorshift(void)
 
 static uint16_t kv_rand_size(uint32_t max_val)
 {
-    /* Piecewise distribution clamped to actual max_val:
-     * 40% 1-32, 40% 33-256, 15% 257-1024, 4% 1025..max-1, 1% max_val */
-    uint32_t r = kv_xorshift() % 100u;
-    uint32_t sz;
-    if (r < 40u) {
-        sz = 1u + (kv_xorshift() % 32u);
-    } else if (r < 80u) {
-        sz = 33u + (kv_xorshift() % 224u);
-    } else if (r < 95u) {
-        sz = 257u + (kv_xorshift() % 768u);
-    } else if (r < 99u) {
-        if (max_val > 1025u) sz = 1025u + (kv_xorshift() % (max_val - 1025u));
-        else                 sz = max_val;
-    } else {
-        sz = max_val;
-    }
-    if (sz > max_val) sz = max_val;
-    if (sz < 1u) sz = 1u;
-    return (uint16_t)sz;
+    /* Uniform distribution across 1..max_val.
+     * Every value length has equal probability — maximum diversity
+     * for stress-testing fragmentation and GC across all sizes. */
+    return (uint16_t)(1u + (kv_xorshift() % max_val));
 }
 
-TEST_CASE(kv_mixed_value_stress, "KVDB", "Random mixed-length value GC stress (clamped to max_val)")
+TEST_CASE(kv_mixed_value_stress, "KVDB", "Uniform random mixed-length value GC stress (full-range coverage)")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(kv_reset());
@@ -412,11 +410,9 @@ TEST_CASE(kv_mixed_value_stress, "KVDB", "Random mixed-length value GC stress (c
     char    keys[MIX_KV_KEY_COUNT][20];
     uint8_t key_lens[MIX_KV_KEY_COUNT];
     for (int i = 0; i < MIX_KV_KEY_COUNT; i++) {
-        /* Random prefix + index suffix guarantees uniqueness */
         uint8_t pre_len = (uint8_t)(1 + (kv_xorshift() % 12));
         for (uint8_t j = 0; j < pre_len; j++)
             keys[i][j] = (char)('a' + (kv_xorshift() % 26));
-        /* Append "-%02d" suffix for uniqueness */
         int suff_len = snprintf(keys[i] + pre_len, 4, "-%02d", i);
         key_lens[i] = (uint8_t)(pre_len + suff_len);
     }
@@ -431,33 +427,37 @@ TEST_CASE(kv_mixed_value_stress, "KVDB", "Random mixed-length value GC stress (c
     trace_event(&g_trace, "  [KV-MIX] key_max_vals range: %u..%u",
                 min_max_val, kv_max_val_for_key(&g_db, 1));
 
+    /* Decile histogram: split 1..min_max_val into HIST_BINS equal-width buckets */
+    uint32_t bin_w  = (min_max_val + HIST_BINS - 1u) / HIST_BINS;
+    uint32_t hist[HIST_BINS];
+    memset(hist, 0, sizeof(hist));
+
     uint32_t write_seq[MIX_KV_KEY_COUNT];
     memset(write_seq, 0, sizeof(write_seq));
 
-    uint16_t max_size = 0;
-    uint32_t total_writes = 0, large_writes = 0;
-    uint32_t size_bins[5] = {0};  /* 1-32, 33-256, 257-1024, 1025..max-1, max_val */
+    uint16_t max_size = 0, min_size = 0xFFFFu;
+    uint32_t total_writes = 0;
     uint32_t loops = 0, prev_gc = g_db.stats.gc_runs;
-    trace_event(&g_trace, "  [KV-MIX] start: %u keys target_gc=%u",
-                MIX_KV_KEY_COUNT, MIX_KV_GC_TARGET);
+    trace_event(&g_trace, "  [KV-MIX] start: %u keys target_gc=%u bin_w=%u",
+                MIX_KV_KEY_COUNT, MIX_KV_GC_TARGET, bin_w);
     while (g_db.stats.gc_runs < MIX_KV_GC_TARGET && loops < MIX_KV_MAX_LOOPS) {
         for (int i = 0; i < MIX_KV_KEY_COUNT; i++) {
             uint32_t kmax = key_max_vals[i];
-            uint16_t vsz = kv_rand_size(kmax);
+            uint16_t vsz  = kv_rand_size(kmax);
             if (vsz > max_size) max_size = vsz;
+            if (vsz < min_size) min_size = vsz;
             total_writes++;
-            if      (vsz <= 32)    size_bins[0]++;
-            else if (vsz <= 256)   size_bins[1]++;
-            else if (vsz <= 1024)  size_bins[2]++;
-            else if (vsz < kmax)   size_bins[3]++;
-            else                   size_bins[4]++;
-            if (vsz >= 1000) large_writes++;
-            uint8_t  val[4100];
+
+            uint32_t bin = (vsz - 1u) / bin_w;
+            if (bin >= HIST_BINS) bin = HIST_BINS - 1u;
+            hist[bin]++;
+
+            uint8_t val[4100];
             val[0] = (uint8_t)i;
             val[1] = (uint8_t)(write_seq[i] & 0xFFu);
             for (uint16_t b = 2; b < vsz; b++)
                 val[b] = (uint8_t)(kv_xorshift() & 0xFFu);
-            rdb_err_t rc = rdb_kvdb_set(&g_db, keys[i], val, vsz);
+            rdb_err_t rc = trace_kv_set(&g_db, keys[i], val, vsz);
             TEST_ASSERT_RDB_OK(rc);
             write_seq[i]++;
             if (g_db.stats.gc_runs != prev_gc) {
@@ -469,14 +469,28 @@ TEST_CASE(kv_mixed_value_stress, "KVDB", "Random mixed-length value GC stress (c
     }
     TEST_ASSERT_GE(g_db.stats.gc_runs, MIX_KV_GC_TARGET);
 
-    trace_event(&g_trace, "Mixed-KV size distribution (writes=%u large=%u): "
-                "1..32=%u 33..256=%u 257..1024=%u <max=%u =max=%u",
-                total_writes, large_writes, size_bins[0], size_bins[1],
-                size_bins[2], size_bins[3], size_bins[4]);
-    trace_event(&g_trace, "Mixed-KV max_size=%uB (key_max=%u..%u) loops=%u gc=%u",
-                max_size, min_max_val, kv_max_val_for_key(&g_db, 1), loops, g_db.stats.gc_runs);
+    /* ── Histogram report + coverage assertion ──────────────────────────── */
+    uint32_t covered = 0;
+    trace_event(&g_trace, "Mixed-KV decile histogram (writes=%u bin_w=%u):",
+                total_writes, bin_w);
+    for (uint32_t b = 0; b < HIST_BINS; b++) {
+        uint32_t lo = 1u + b * bin_w;
+        uint32_t hi = (b + 1u) * bin_w;
+        if (hi > min_max_val) hi = min_max_val;
+        if (hist[b] > 0u) covered++;
+        trace_event(&g_trace, "  bin[%u] %5u..%-5u: %u writes (%.1f%%)",
+                    b, lo, hi, hist[b],
+                    total_writes > 0 ? (double)hist[b] * 100.0 / (double)total_writes : 0.0);
+    }
+    trace_event(&g_trace, "Mixed-KV coverage: %u/%u deciles hit (need >=%u) "
+                "min=%u max=%u loops=%u gc=%u",
+                covered, HIST_BINS, HIST_MIN_COVERAGE,
+                min_size, max_size, loops, g_db.stats.gc_runs);
 
+    TEST_ASSERT_GE(covered, HIST_MIN_COVERAGE);
     TEST_ASSERT_GE(max_size, 4000u);
+    TEST_ASSERT_LE(min_size, 50u);
+    (void)min_size;  /* used above, suppress unused warning if assertions disabled */
 
     /* Every key must be retrievable, size in range, key_index byte intact */
     uint8_t out[4100]; uint16_t out_len;

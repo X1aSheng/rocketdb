@@ -29,31 +29,37 @@ static uint32_t g_ts_ec[PERF_SECTOR_CNT];
 static uint32_t g_mixed_ts_ec[PERF_PART_SECTORS];
 static uint32_t g_query_count;
 
-static int perf_read(uint32_t addr, uint8_t *buf, size_t len)
+static int perf_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len)
 {
+    (void)ctx;
     return sim_flash_read(&g_flash, addr, buf, len);
 }
 
-static int perf_write(uint32_t addr, const uint8_t *buf, size_t len)
+static int perf_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len)
 {
+    (void)ctx;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
 
-static int perf_erase(uint32_t addr)
+static int perf_erase(void *ctx, uint32_t addr)
 {
+    (void)ctx;
     return sim_flash_erase(&g_flash, addr);
 }
 
-static void perf_lock(void)
+static void perf_lock(void *ctx)
 {
+    (void)ctx;
 }
 
-static void perf_unlock(void)
+static void perf_unlock(void *ctx)
 {
+    (void)ctx;
 }
 
-static void perf_yield(void)
+static void perf_yield(void *ctx)
 {
+    (void)ctx;
 }
 
 static const rdb_flash_ops_t g_ops = {

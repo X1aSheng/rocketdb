@@ -31,23 +31,35 @@ static rdb_tsdb_t  g_db;
 static uint32_t    g_ec[TS_SECTOR_CNT];
 static trace_ctx_t g_trace;
 
-static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
+static int fl_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_read(&g_flash, addr, buf, len);
 }
-static int fl_write(uint32_t addr, const uint8_t *buf, size_t len) {
+static int fl_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
-static int fl_erase(uint32_t addr) {
+static int fl_erase(void *ctx, uint32_t addr) {
+    (void)ctx;
     return sim_flash_erase(&g_flash, addr);
 }
-static void fl_lock(void) { }
-static void fl_unlock(void) { }
-static void fl_yield(void) { }
+static void fl_lock(void *ctx) { (void)ctx; }
+static void fl_unlock(void *ctx) { (void)ctx; }
+static void fl_yield(void *ctx) { (void)ctx; }
 
 static rdb_flash_ops_t g_ops = {
     .read = fl_read, .write = fl_write, .erase = fl_erase,
     .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
 };
+
+/* ── Trace wrapper ─────────────────────────────────────────────────── */
+static rdb_err_t trace_ts_append(rdb_tsdb_t *db, uint32_t ts,
+                                  const void *data, uint16_t dlen)
+{
+    trace_event(&g_trace, "  [TS-APPEND] ts=%lu dlen=%u",
+                (unsigned long)ts, (unsigned)dlen);
+    return rdb_tsdb_append(db, ts, (const uint8_t *)data, dlen);
+}
 
 static rdb_err_t ts_reset(void)
 {
@@ -108,7 +120,7 @@ TEST_CASE(ts_rotation_stress, "TSDB", "Rotation stress >=100")
     uint32_t loops = 0, time = 1, prev_rot = g_db.stats.sector_rotations;
     while (g_db.stats.sector_rotations < ROT_TARGET && loops < ROT_MAX_LOOPS) {
         uint16_t dsz = 1u + (uint16_t)(ts_sz_next() % 512u);
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, time++, data, dsz));
+        TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, time++, data, dsz));
         loops++;
         if (g_db.stats.sector_rotations != prev_rot) {
             prev_rot = g_db.stats.sector_rotations;
@@ -137,11 +149,11 @@ TEST_CASE(ts_append_fail_once, "TSDB", "Append failure does not corrupt DB")
 
     trace_event(&g_trace, "  [TS-FAIL] appending ts=1 with write-fail injected");
     fault_quick_write_fail(&g_fault, g_fault.write_count + 1u);
-    TEST_ASSERT_NE(rdb_tsdb_append(&g_db, 1, data, sizeof(data)), RDB_OK);
+    TEST_ASSERT_NE(trace_ts_append(&g_db, 1, data, sizeof(data)), RDB_OK);
 
     fault_clear_rules(&g_fault);
     trace_event(&g_trace, "  [TS-FAIL] appending ts=2 (should succeed)");
-    TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, 2, data, sizeof(data)));
+    TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 2, data, sizeof(data)));
 
     TEST_ASSERT_EQ(rdb_tsdb_count(&g_db), 1u);
 
@@ -206,7 +218,7 @@ TEST_CASE(ts_crc_corruption, "TSDB", "CRC corruption reported in query/get_lates
     uint8_t payload[16];
     for (uint8_t i = 0; i < sizeof(payload); i++) payload[i] = (uint8_t)(0xC0u + i);
     for (uint32_t i = 1; i <= CRC_RECORDS; i++) {
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, i, payload, (uint16_t)sizeof(payload)));
+        TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, i, payload, (uint16_t)sizeof(payload)));
     }
     trace_event(&g_trace, "  [TS-CRC] wrote %u records ts=1..%u", CRC_RECORDS, CRC_RECORDS);
 
@@ -264,7 +276,7 @@ TEST_CASE(ts_degraded_active_recovery, "TSDB", "Recover from degraded ACTIVE sec
 
     uint32_t time = 1;
     while (g_db.stats.sector_rotations < DG_TARGET_ROT)
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, time++, data, sizeof(data)));
+        TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, time++, data, sizeof(data)));
     trace_event(&g_trace, "  [TS-DEGRADED] wrote ts=1..%u rotations=%u count=%u",
                 time - 1, g_db.stats.sector_rotations, g_db.total_count);
 
@@ -390,7 +402,7 @@ TEST_CASE(ts_mixed_payload_stress, "TSDB", "Random mixed-length payload rotation
         data[1] = (uint8_t)((time >> 8) & 0xFFu);
         for (uint16_t b = 2; b < sz; b++)
             data[b] = (uint8_t)(ts_xorshift() & 0xFFu);
-        rdb_err_t rc = rdb_tsdb_append(&g_db, time, data, sz);
+        rdb_err_t rc = trace_ts_append(&g_db, time, data, sz);
         TEST_ASSERT(rc == RDB_OK || rc == RDB_ERR_TOO_LARGE);
         time++; loops++;
         if (g_db.stats.sector_rotations != prev_rot) {

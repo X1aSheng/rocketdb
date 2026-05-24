@@ -28,18 +28,21 @@ static rdb_partition_t    g_part;
 static rdb_kvdb_t         g_kvdb;
 static trace_ctx_t        g_trace;
 
-static int ex_read(uint32_t addr, uint8_t *buf, size_t len) {
+static int ex_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_read(&g_flash, addr, buf, len);
 }
-static int ex_write(uint32_t addr, const uint8_t *buf, size_t len) {
+static int ex_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
-static int ex_erase(uint32_t addr) {
+static int ex_erase(void *ctx, uint32_t addr) {
+    (void)ctx;
     return sim_flash_erase(&g_flash, addr);
 }
-static void ex_lock(void) { }
-static void ex_unlock(void) { }
-static void ex_yield(void) { }
+static void ex_lock(void *ctx) { (void)ctx; }
+static void ex_unlock(void *ctx) { (void)ctx; }
+static void ex_yield(void *ctx) { (void)ctx; }
 
 static rdb_flash_ops_t g_ops = {
     .read   = ex_read,
@@ -49,6 +52,14 @@ static rdb_flash_ops_t g_ops = {
     .unlock = ex_unlock,
     .yield  = ex_yield
 };
+
+/* ── Trace wrapper ─────────────────────────────────────────────────── */
+static rdb_err_t trace_kv_set(rdb_kvdb_t *db, const char *key,
+                               const void *val, uint16_t vlen)
+{
+    trace_event(&g_trace, "  [KV-WRITE] key=%s vsz=%u", key, (unsigned)vlen);
+    return rdb_kvdb_set(db, key, (const uint8_t *)val, vlen);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  示例 1: 基础测试用例
@@ -108,7 +119,7 @@ TEST_CASE(example_kvdb_set_get, "KVDB", "KVDB set/get operations")
     memset(val_write, 0xAA, sizeof(val_write));
     
     /* 测试 set */
-    rdb_err_t ret = rdb_kvdb_set(db, key, val_write, sizeof(val_write));
+    rdb_err_t ret = trace_kv_set(db, key, val_write, sizeof(val_write));
     TEST_ASSERT_RDB_OK(ret);
     
     /* 测试 get */

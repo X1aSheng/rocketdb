@@ -33,27 +33,39 @@ static trace_ctx_t g_trace;
 static uint8_t     g_enforce_bounded_program;
 static uint32_t    g_max_write_len;
 
-static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
+static int fl_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_read(&g_flash, addr, buf, len);
 }
-static int fl_write(uint32_t addr, const uint8_t *buf, size_t len) {
+static int fl_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
+    (void)ctx;
     if (len > g_max_write_len)
         g_max_write_len = (uint32_t)len;
     if (g_enforce_bounded_program && len > RDB_STACK_BUF_SIZE)
         return -1;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
-static int fl_erase(uint32_t addr) {
+static int fl_erase(void *ctx, uint32_t addr) {
+    (void)ctx;
     return sim_flash_erase(&g_flash, addr);
 }
-static void fl_lock(void) { }
-static void fl_unlock(void) { }
-static void fl_yield(void) { }
+static void fl_lock(void *ctx) { (void)ctx; }
+static void fl_unlock(void *ctx) { (void)ctx; }
+static void fl_yield(void *ctx) { (void)ctx; }
 
 static rdb_flash_ops_t g_ops = {
     .read = fl_read, .write = fl_write, .erase = fl_erase,
     .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
 };
+
+/* ── Trace wrapper ─────────────────────────────────────────────────── */
+static rdb_err_t trace_ts_append(rdb_tsdb_t *db, uint32_t ts,
+                                  const void *data, uint16_t dlen)
+{
+    trace_event(&g_trace, "  [TS-APPEND] ts=%lu dlen=%u",
+                (unsigned long)ts, (unsigned)dlen);
+    return rdb_tsdb_append(db, ts, (const uint8_t *)data, dlen);
+}
 
 static rdb_err_t ts_reset(void)
 {
@@ -109,7 +121,7 @@ TEST_CASE(ts_basic_append_query, "TSDB", "Append/query/latest/oldest/count/time_
     for (uint8_t i = 0; i < sizeof(payload); i++) payload[i] = (uint8_t)(0xA0u + i);
 
     for (uint32_t i = 1; i <= TS_APPEND_COUNT; i++)
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, i, payload, (uint16_t)sizeof(payload)));
+        TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, i, payload, (uint16_t)sizeof(payload)));
 
     ts_check_ctx_t qctx = { 0 };
     memcpy(qctx.expected, payload, sizeof(payload));
@@ -187,10 +199,10 @@ TEST_CASE(ts_epoch_query_integrity, "TSDB", "Epoch reset keeps query integrity")
 
     uint8_t data[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
     for (uint32_t i = 1; i <= 50; i++)
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, i, data, sizeof(data)));
+        TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, i, data, sizeof(data)));
     TEST_ASSERT_RDB_OK(rdb_tsdb_reset_epoch(&g_db));
     for (uint32_t i = 1; i <= 50; i++)
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, i, data, sizeof(data)));
+        TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, i, data, sizeof(data)));
 
     ts_count_ctx_t qctx = { 0 };
     TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_db, 1, 100, ts_count_cb, &qctx));
@@ -220,7 +232,7 @@ TEST_CASE(ts_recount_jitter, "TSDB", "Recount occurs only per full ring")
     uint32_t target_rot = g_db.sector_cnt * 2u;
     uint32_t time = 1;
     while (g_db.stats.sector_rotations < target_rot)
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, time++, data, sizeof(data)));
+        TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, time++, data, sizeof(data)));
 
     TEST_ASSERT_EQ(rdb_tsdb_count(&g_db), g_db.total_count);
     return 0;
@@ -260,7 +272,7 @@ TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
         uint32_t time = 1;
 
         for (uint32_t i = 0; i < 200; i++)
-            TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, time++, data,
+            TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, time++, data,
                 (uint16_t)sizeof(data)));
 
         /* Verify records are readable and count is correct */
@@ -304,7 +316,7 @@ TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test")
         uint8_t* data = (uint8_t*)malloc(max_dl);
         TEST_ASSERT(data != NULL);
         memset(data, 0x7E, max_dl);
-        TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, 1, data, (uint16_t)max_dl));
+        TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 1, data, (uint16_t)max_dl));
         free(data);
 
         uint32_t t = 0; uint16_t ol = 0;
@@ -316,16 +328,16 @@ TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test")
     {
         uint8_t* data = (uint8_t*)malloc(max_dl + 1u);
         TEST_ASSERT(data != NULL);
-        rdb_err_t r = rdb_tsdb_append(&g_db, 2, data, (uint16_t)(max_dl + 1u));
+        rdb_err_t r = trace_ts_append(&g_db, 2, data, (uint16_t)(max_dl + 1u));
         TEST_ASSERT(r == RDB_ERR_TOO_LARGE || r == RDB_ERR_PARAM);
         free(data);
     }
 
     /* Zero-length data → TOO_LARGE (checked before null-data) */
-    TEST_ASSERT_RDB_ERR(rdb_tsdb_append(&g_db, 3, NULL, 0), RDB_ERR_TOO_LARGE);
+    TEST_ASSERT_RDB_ERR(trace_ts_append(&g_db, 3, NULL, 0), RDB_ERR_TOO_LARGE);
     /* Non-null data with valid len 1 → OK */
     uint8_t dummy = 0;
-    TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, 4, &dummy, 1));
+    TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 4, &dummy, 1));
 
     return 0;
 }
@@ -351,7 +363,7 @@ TEST_CASE(ts_large_payload_bounded_program_chunks, "TSDB",
         data[i] = (uint8_t)(i ^ 0xA5u);
     memset(out, 0, sizeof(out));
 
-    TEST_ASSERT_RDB_OK(rdb_tsdb_append(&g_db, 100, data, (uint16_t)sizeof(data)));
+    TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 100, data, (uint16_t)sizeof(data)));
 
     uint32_t t = 0;
     uint16_t out_len = 0;

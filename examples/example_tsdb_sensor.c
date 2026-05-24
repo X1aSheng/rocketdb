@@ -75,8 +75,9 @@ uint16_t rdb_hash16(const void *data, size_t len)
     return (uint16_t)(hash ^ (hash >> 16));
 }
 
-static int flash_read(uint32_t addr, uint8_t *buf, size_t len)
+static int flash_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len)
 {
+    (void)ctx;
     if ((buf == NULL && len != 0u) || addr > EXAMPLE_FLASH_SIZE ||
         len > (EXAMPLE_FLASH_SIZE - addr)) {
         return -1;
@@ -86,8 +87,9 @@ static int flash_read(uint32_t addr, uint8_t *buf, size_t len)
     return 0;
 }
 
-static int flash_write(uint32_t addr, const uint8_t *buf, size_t len)
+static int flash_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len)
 {
+    (void)ctx;
     if ((buf == NULL && len != 0u) || addr > EXAMPLE_FLASH_SIZE ||
         len > (EXAMPLE_FLASH_SIZE - addr)) {
         return -1;
@@ -116,8 +118,9 @@ static int flash_write(uint32_t addr, const uint8_t *buf, size_t len)
     return 0;
 }
 
-static int flash_erase(uint32_t addr)
+static int flash_erase(void *ctx, uint32_t addr)
 {
+    (void)ctx;
     uint32_t sector;
 
     if (addr > EXAMPLE_FLASH_SIZE ||
@@ -132,16 +135,19 @@ static int flash_erase(uint32_t addr)
     return 0;
 }
 
-static void flash_lock(void)
+static void flash_lock(void *ctx)
 {
+    (void)ctx;
 }
 
-static void flash_unlock(void)
+static void flash_unlock(void *ctx)
 {
+    (void)ctx;
 }
 
-static void flash_yield(void)
+static void flash_yield(void *ctx)
 {
+    (void)ctx;
 }
 
 static const rdb_flash_ops_t flash_ops = {

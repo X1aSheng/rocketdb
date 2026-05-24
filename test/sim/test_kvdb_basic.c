@@ -34,23 +34,34 @@ static rdb_kvdb_t           g_db;
 static rdb_kv_sector_meta_t g_meta[KV_SECTOR_CNT];
 static trace_ctx_t          g_trace;
 
-static int fl_read(uint32_t addr, uint8_t *buf, size_t len) {
+static int fl_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_read(&g_flash, addr, buf, len);
 }
-static int fl_write(uint32_t addr, const uint8_t *buf, size_t len) {
+static int fl_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
+    (void)ctx;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
-static int fl_erase(uint32_t addr) {
+static int fl_erase(void *ctx, uint32_t addr) {
+    (void)ctx;
     return sim_flash_erase(&g_flash, addr);
 }
-static void fl_lock(void) { }
-static void fl_unlock(void) { }
-static void fl_yield(void) { }
+static void fl_lock(void *ctx) { (void)ctx; }
+static void fl_unlock(void *ctx) { (void)ctx; }
+static void fl_yield(void *ctx) { (void)ctx; }
 
 static rdb_flash_ops_t g_ops = {
     .read = fl_read, .write = fl_write, .erase = fl_erase,
     .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
 };
+
+/* ── Trace wrapper ─────────────────────────────────────────────────── */
+static rdb_err_t trace_kv_set(rdb_kvdb_t *db, const char *key,
+                               const void *val, uint16_t vlen)
+{
+    trace_event(&g_trace, "  [KV-WRITE] key=%s vsz=%u", key, (unsigned)vlen);
+    return rdb_kvdb_set(db, key, (const uint8_t *)val, vlen);
+}
 
 static rdb_err_t kv_reset(uint8_t write_gran)
 {
@@ -108,7 +119,7 @@ TEST_CASE(kv_set_get_basic, "KVDB", "Basic set/get operations")
     const uint8_t val[] = { 1, 2, 3, 4, 5 };
 
     trace_kv_op(&g_trace, "SET", key, 5, (uint16_t)sizeof(val), g_db.write_seq, RDB_OK);
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, val, (uint16_t)sizeof(val)));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, val, (uint16_t)sizeof(val)));
     uint8_t out[8] = { 0 }; uint16_t out_len = 0;
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, key, out, sizeof(out), &out_len));
     trace_kv_op(&g_trace, "GET", key, 5, out_len, 0, RDB_OK);
@@ -130,8 +141,8 @@ TEST_CASE(kv_set_update, "KVDB", "Update existing key")
     const uint8_t v1[] = { '1', '2', '3' };
     const uint8_t v2[] = { 'A', 'B', 'C', 'D', 'E' };
 
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, v1, (uint16_t)sizeof(v1)));
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, v2, (uint16_t)sizeof(v2)));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, v1, (uint16_t)sizeof(v1)));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, v2, (uint16_t)sizeof(v2)));
 
     uint8_t out[8] = { 0 }; uint16_t out_len = 0;
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, key, out, sizeof(out), &out_len));
@@ -147,7 +158,7 @@ TEST_CASE(kv_delete_exists, "KVDB", "Delete and exists checks")
     const char *key = "to_delete";
     const uint8_t val[] = { 0xAA, 0xBB };
 
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, val, (uint16_t)sizeof(val)));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, val, (uint16_t)sizeof(val)));
     TEST_ASSERT_RDB_OK(rdb_kvdb_exists(&g_db, key));
     TEST_ASSERT_RDB_OK(rdb_kvdb_delete(&g_db, key));
     TEST_ASSERT_RDB_ERR(rdb_kvdb_exists(&g_db, key), RDB_ERR_NOT_FOUND);
@@ -164,7 +175,7 @@ TEST_CASE(kv_get_too_large, "KVDB", "Get with undersized buffer")
     const char *key = "big";
     const uint8_t val[] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, val, (uint16_t)sizeof(val)));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, val, (uint16_t)sizeof(val)));
     uint8_t out[4] = { 0 }; uint16_t out_len = 0;
     TEST_ASSERT_RDB_ERR(rdb_kvdb_get(&g_db, key, out, sizeof(out), &out_len), RDB_ERR_TOO_LARGE);
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(val));
@@ -185,8 +196,8 @@ TEST_CASE(kv_write_gran_matrix, "KVDB", "Write granularity matrix 1/2/4/8B")
 
     for (uint8_t gran = 0; gran <= 3; gran++) {
         TEST_ASSERT_RDB_OK(kv_reset(gran));
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "WG", v1, (uint16_t)sizeof(v1)));
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "WG", v2, (uint16_t)sizeof(v2)));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "WG", v1, (uint16_t)sizeof(v1)));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "WG", v2, (uint16_t)sizeof(v2)));
         memset(out, 0, sizeof(out));
         out_len = 0;
         TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "WG", out, sizeof(out), &out_len));
@@ -206,8 +217,8 @@ TEST_CASE(kv_seq_wrap_recovery, "KVDB", "Sequence wrap-around recovery")
     TEST_ASSERT_RDB_OK(kv_reset(DEFAULT_WG));
     g_db.write_seq = 0xFFFFFFFEu;
 
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "wrap", "old", 3));
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "wrap", "new", 3));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "wrap", "old", 3));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "wrap", "new", 3));
     TEST_ASSERT_EQ(g_db.write_seq, 0u);
 
     /* Power-cycle: re-init without erasing flash */
@@ -262,7 +273,7 @@ TEST_CASE(kv_mixed_lengths, "KVDB", "Mixed key/value length Monte Carlo")
             if (vlen > MIX_MAX_VAL) vlen = MIX_MAX_VAL;
             for (uint16_t j = 0; j < vlen; j++) expected[i][j] = (uint8_t)lcg_next(&seed);
             expected_len[i] = vlen;
-            TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, keys[i], expected[i], vlen));
+            TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, keys[i], expected[i], vlen));
         }
     }
 
@@ -297,7 +308,7 @@ TEST_CASE(kv_corrupt_header_skip, "KVDB", "Corrupt header skip during iteration"
     for (int i = 0; i < CORRUPT_KEY_CNT; i++) {
         build_key_2d(keys[i], i);
         uint8_t v = (uint8_t)(0x10u + i);
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, keys[i], &v, 1));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, keys[i], &v, 1));
     }
 
     /* Find first record in sector 0 and corrupt its header byte */
@@ -323,13 +334,13 @@ TEST_CASE(kv_corrupt_header_skip, "KVDB", "Corrupt header skip during iteration"
         latest_val[i][2] = (uint8_t)(0xA0u + i);
         latest_val[i][3] = (uint8_t)(0xB0u + i);
         latest_len[i] = 4;
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, keys[i], latest_val[i], 4));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, keys[i], latest_val[i], 4));
     }
 
     uint32_t loops = 0;
     while (g_db.stats.gc_runs < CORRUPT_GC_TGT && loops < CORRUPT_MAX_LOOPS) {
         for (int i = 0; i < CORRUPT_KEY_CNT; i++)
-            TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, keys[i], latest_val[i], 4));
+            TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, keys[i], latest_val[i], 4));
         loops++;
     }
     TEST_ASSERT_GE(g_db.stats.gc_runs, CORRUPT_GC_TGT);
@@ -393,7 +404,7 @@ TEST_CASE(kv_init_format_verify, "KVDB", "Empty init and format verification")
 
     /* Step 5: basic set/get works after init */
     uint8_t val = 0xAB;
-    TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "key", &val, 1));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "key", &val, 1));
     uint16_t out_len = 0; uint8_t out[1];
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "key", out, 1, &out_len));
     TEST_ASSERT_EQ(out_len, 1u);
@@ -431,7 +442,7 @@ TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
         char mk[RDB_MAX_KEY_LEN + 2];
         memset(mk, 'K', RDB_MAX_KEY_LEN);
         mk[RDB_MAX_KEY_LEN] = '\0';
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, mk, "v", 1));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, mk, "v", 1));
 
         uint8_t out[2]; uint16_t out_len = 0;
         TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, mk, out, sizeof(out), &out_len));
@@ -443,7 +454,7 @@ TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
         char ok[RDB_MAX_KEY_LEN + 3];
         memset(ok, 'K', RDB_MAX_KEY_LEN + 1u);
         ok[RDB_MAX_KEY_LEN + 1u] = '\0';
-        TEST_ASSERT_RDB_ERR(rdb_kvdb_set(&g_db, ok, "v", 1), RDB_ERR_TOO_LARGE);
+        TEST_ASSERT_RDB_ERR(trace_kv_set(&g_db, ok, "v", 1), RDB_ERR_TOO_LARGE);
     }
 
     /* ── Max value length (computed from geometry) ── */
@@ -457,7 +468,7 @@ TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
         uint8_t* mv = (uint8_t*)malloc(max_val);
         TEST_ASSERT(mv != NULL);
         memset(mv, 0xCC, max_val);
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "MK", mv, (uint16_t)max_val));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "MK", mv, (uint16_t)max_val));
         uint8_t* out = (uint8_t*)malloc(max_val);
         TEST_ASSERT(out != NULL);
         uint16_t out_len = 0;
@@ -471,7 +482,7 @@ TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
         mv = (uint8_t*)malloc(max_val + 1u);
         TEST_ASSERT(mv != NULL);
         memset(mv, 0xDD, max_val + 1u);
-        TEST_ASSERT_RDB_ERR(rdb_kvdb_set(&g_db, "OV", mv, (uint16_t)(max_val + 1u)),
+        TEST_ASSERT_RDB_ERR(trace_kv_set(&g_db, "OV", mv, (uint16_t)(max_val + 1u)),
                             RDB_ERR_TOO_LARGE);
         free(mv);
     }
@@ -480,14 +491,14 @@ TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
     {
         uint8_t* ov = (uint8_t*)malloc(RDB_MAX_VAL_LEN + 1u);
         TEST_ASSERT(ov != NULL);
-        TEST_ASSERT_RDB_ERR(rdb_kvdb_set(&g_db, "FV", ov,
+        TEST_ASSERT_RDB_ERR(trace_kv_set(&g_db, "FV", ov,
             RDB_MAX_VAL_LEN + 1u), RDB_ERR_TOO_LARGE);
         free(ov);
     }
 
     /* ── Zero-length value ── */
     {
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, "ZV", NULL, 0));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "ZV", NULL, 0));
         uint16_t out_len = 0xFFFF;
         TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "ZV", NULL, 0, &out_len));
         TEST_ASSERT_EQ(out_len, 0u);
@@ -520,7 +531,7 @@ TEST_CASE(kv_capacity_accounting, "KVDB", "Capacity accounting cross-check")
     for (int i = 0; i < 50; i++) {
         key[1] = (char)('0' + (i / 10));
         key[2] = (char)('0' + (i % 10));
-        TEST_ASSERT_RDB_OK(rdb_kvdb_set(&g_db, key, val, (uint16_t)sizeof(val)));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, val, (uint16_t)sizeof(val)));
     }
 
     rdb_kvdb_space_info(&g_db, &total, &used, &avail);
