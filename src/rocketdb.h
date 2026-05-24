@@ -47,7 +47,7 @@
  * Copyright (c) 2015 XiaSheng(info@zhis.net)
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
- * @version 1.1.2
+ * @version 1.1.0
  * 
  *****************************************************************************/
 #ifndef ROCKETDB_H
@@ -343,14 +343,22 @@ typedef enum {
  *             Useful for cooperative RTOS or watchdog feeding.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** @brief Flash operation function table. */
+/**
+ * @brief Flash operation function table.
+ *
+ * Every callback receives a @c void* ctx as its first argument.
+ * The context pointer is stored in @c rdb_partition_t.flash_ctx
+ * and enables a single ops table to be shared across multiple
+ * flash devices or partitions.  Set flash_ctx to NULL for
+ * bare-metal single-instance use (backward compatible).
+ */
 typedef struct {
-    int (*read)(uint32_t addr, uint8_t* buf, size_t len);        /**< Read    */
-    int (*write)(uint32_t addr, const uint8_t* buf, size_t len); /**< Write */
-    int (*erase)(uint32_t addr);                                 /**< Erase   */
-    void (*lock)(void);                                          /**< Acquire flash lock (NULL = no-op)         */
-    void (*unlock)(void);                                        /**< Release flash lock (NULL = no-op)         */
-    void (*yield)(void);                                         /**< Yield CPU (NULL = no-op)                  */
+    int  (*read)  (void* ctx, uint32_t addr, uint8_t* buf, size_t len); /**< Read    */
+    int  (*write) (void* ctx, uint32_t addr, const uint8_t* buf, size_t len); /**< Write */
+    int  (*erase) (void* ctx, uint32_t addr);                           /**< Erase   */
+    void (*lock)  (void* ctx);          /**< Acquire flash lock (NULL = no-op)         */
+    void (*unlock)(void* ctx);          /**< Release flash lock (NULL = no-op)         */
+    void (*yield) (void* ctx);          /**< Yield CPU (NULL = no-op)                  */
 } rdb_flash_ops_t;
 
 /**
@@ -365,13 +373,15 @@ typedef struct {
  *        sector_size must be a power of 2 and ≥ RDB_MIN_SECTOR_SIZE.
  */
 typedef struct {
-    const char* name;           /**< Human-readable name (debug)   */
-    uint32_t    base_addr;      /**< Absolute flash start address  */
-    uint32_t    total_size;     /**< Total partition size (bytes)  */
-    uint32_t    sector_size;    /**< Erase block size (bytes)      */
-    uint8_t     write_gran;     /**< Write granularity exponent:
-                                     0→1B, 1→2B, 2→4B, 3→8B      */
-    const rdb_flash_ops_t* ops; /**< Flash operation callbacks     */
+    const char*           name;      /**< Human-readable name (debug)   */
+    uint32_t              base_addr; /**< Absolute flash start address  */
+    uint32_t              total_size;/**< Total partition size (bytes)  */
+    uint32_t              sector_size;/**< Erase block size (bytes)     */
+    uint8_t               write_gran;/**< Write granularity exponent:
+                                          0→1B, 1→2B, 2→4B, 3→8B      */
+    const rdb_flash_ops_t* ops;      /**< Flash operation callbacks     */
+    void*                 flash_ctx; /**< Opaque pointer passed to every
+                                          ops callback (NULL = no ctx)  */
 } rdb_partition_t;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -795,7 +805,7 @@ extern uint16_t rdb_hash16(const void* data, size_t len);
 /**
  * @brief Get the library version as a packed integer.
  * @return  Version in 0x00MMNNPP format (major.minor.patch).
- *          Example: v1.1.2 → 0x010102.
+ *          Example: v1.1.0 → 0x010100.
  */
 uint32_t rdb_version(void);
 

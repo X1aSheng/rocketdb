@@ -230,36 +230,36 @@ static int strkey_len(const char* key, uint8_t* out_len) {
 /** @brief Acquire the flash mutex (no-op if lock callback is NULL). */
 static inline void fl_lock(const rdb_kvdb_t* db) {
     if (db->part->ops->lock)
-        db->part->ops->lock();
+        db->part->ops->lock(db->part->flash_ctx);
 }
 
 /** @brief Release the flash mutex (no-op if unlock callback is NULL). */
 static inline void fl_unlock(const rdb_kvdb_t* db) {
     if (db->part->ops->unlock)
-        db->part->ops->unlock();
+        db->part->ops->unlock(db->part->flash_ctx);
 }
 
 /** @brief Yield CPU during long operations (no-op if yield callback is NULL). */
 static inline void fl_yield(const rdb_kvdb_t* db) {
     if (db->part->ops->yield)
-        db->part->ops->yield();
+        db->part->ops->yield(db->part->flash_ctx);
 }
 
 /** @brief Read `n` bytes from flash address `a` into buffer `b`. */
 static inline int fl_read(const rdb_kvdb_t* db,
     uint32_t a, void* b, size_t n) {
-    return db->part->ops->read(a, (uint8_t*)b, n);
+    return db->part->ops->read(db->part->flash_ctx, a, (uint8_t*)b, n);
 }
 
 /** @brief Write `n` bytes from buffer `b` to flash address `a`. */
 static inline int fl_write(const rdb_kvdb_t* db,
     uint32_t a, const void* b, size_t n) {
-    return db->part->ops->write(a, (const uint8_t*)b, n);
+    return db->part->ops->write(db->part->flash_ctx, a, (const uint8_t*)b, n);
 }
 
 /** @brief Erase the sector at flash address `a`. */
 static inline int fl_erase(const rdb_kvdb_t* db, uint32_t a) {
-    return db->part->ops->erase(a);
+    return db->part->ops->erase(db->part->flash_ctx, a);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -270,9 +270,9 @@ static inline int fl_erase(const rdb_kvdb_t* db, uint32_t a) {
  *  engine-independent.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** @brief Return the library version as a packed 24-bit integer (0x010102 = v1.1.2). */
+/** @brief Return the library version as a packed 24-bit integer (0x010100 = v1.1.0). */
 uint32_t rdb_version(void) {
-    return 0x010102u;
+    return 0x010100u;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1230,20 +1230,22 @@ static int migrate_one(rdb_kvdb_t* db, uint8_t src_sec,
         return -1;
 
     /* Copy key + value payload from source to destination */
-    uint32_t src_pos = ri->addr + KV_REC_SZ;
-    uint32_t dst_pos = dst + KV_REC_SZ;
-    uint32_t total = ka + va;
-    uint8_t  buf[RDB_STACK_BUF_SIZE];
+    {
+        uint32_t src_pos = ri->addr + KV_REC_SZ;
+        uint32_t dst_pos = dst + KV_REC_SZ;
+        uint32_t total = ka + va;
+        uint8_t  buf[RDB_STACK_BUF_SIZE];
 
-    while (total) {
-        uint32_t ch = RDB_MIN(total, sizeof(buf));
-        if (fl_read(db, src_pos, buf, ch) != 0)
-            return -1;
-        if (fl_write(db, dst_pos, buf, ch) != 0)
-            return -1;
-        src_pos += ch;
-        dst_pos += ch;
-        total -= ch;
+        while (total) {
+            uint32_t ch = RDB_MIN(total, sizeof(buf));
+            if (fl_read(db, src_pos, buf, ch) != 0)
+                return -1;
+            if (fl_write(db, dst_pos, buf, ch) != 0)
+                return -1;
+            src_pos += ch;
+            dst_pos += ch;
+            total -= ch;
+        }
     }
 
     /* Commit: WRITING → VALID */
@@ -2220,10 +2222,8 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
                   db->sectors[db->active_sec].write_off;
 
     if (rsz <= RDB_STACK_BUF_SIZE) {
-        /* ── Small-record merged write ──
-           Assemble the entire record (header + key + value) in a
-           stack buffer and write it in a single flash operation.
-           This reduces write latency and wear for typical small KV pairs. */
+        /* Assemble the entire record (header + key + value) in a
+           stack buffer and write in one flash operation. */
         uint8_t mbuf[RDB_STACK_BUF_SIZE];
         memcpy(mbuf, &rh, KV_REC_SZ);
 
@@ -2247,7 +2247,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
             return RDB_ERR_FLASH;
         }
     } else {
-        /* ── Large-record multi-step write ──
+        /* Large-record multi-step write.
            For records that exceed the stack buffer, write header,
            key, and value as separate flash operations. */
 

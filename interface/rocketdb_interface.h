@@ -52,6 +52,7 @@ extern "C" {
 
 /**
  * @brief     Flash read operation
+ * @param[in] ctx  Opaque context pointer (e.g. flash device handle)
  * @param[in] addr absolute flash address
  * @param[out] buf pointer to output buffer
  * @param[in] len number of bytes to read
@@ -60,10 +61,11 @@ extern "C" {
  *            - non-zero read failed
  * @note      Must handle unaligned addresses.
  */
-int rocketdb_interface_flash_read(uint32_t addr, uint8_t* buf, size_t len);
+int rocketdb_interface_flash_read(void *ctx, uint32_t addr, uint8_t* buf, size_t len);
 
 /**
  * @brief     Flash write operation
+ * @param[in] ctx  Opaque context pointer
  * @param[in] addr absolute flash address
  * @param[in] buf pointer to data buffer
  * @param[in] len number of bytes to write
@@ -73,10 +75,11 @@ int rocketdb_interface_flash_read(uint32_t addr, uint8_t* buf, size_t len);
  * @note      Must respect NOR flash 1->0 bit-flip semantics.
  *            Caller guarantees addr and len are write-granularity aligned.
  */
-int rocketdb_interface_flash_write(uint32_t addr, const uint8_t* buf, size_t len);
+int rocketdb_interface_flash_write(void *ctx, uint32_t addr, const uint8_t* buf, size_t len);
 
 /**
  * @brief     Flash sector erase operation
+ * @param[in] ctx  Opaque context pointer
  * @param[in] addr absolute address within the sector to erase
  * @return    status code
  *            - 0 success
@@ -84,28 +87,28 @@ int rocketdb_interface_flash_write(uint32_t addr, const uint8_t* buf, size_t len
  * @note      Erases the entire sector containing addr.
  *            All bytes in the sector become 0xFF after erase.
  */
-int rocketdb_interface_flash_erase(uint32_t addr);
+int rocketdb_interface_flash_erase(void *ctx, uint32_t addr);
 
 /**
  * @brief     Acquire flash mutex
  * @note      May be empty if single-threaded.
  *            Should disable interrupts or take a mutex.
  */
-void rocketdb_interface_flash_lock(void);
+void rocketdb_interface_flash_lock(void *ctx);
 
 /**
  * @brief     Release flash mutex
  * @note      May be empty if single-threaded.
  *            Should enable interrupts or release a mutex.
  */
-void rocketdb_interface_flash_unlock(void);
+void rocketdb_interface_flash_unlock(void *ctx);
 
 /**
  * @brief     Yield CPU during long operations
  * @note      May be empty.  Useful for feeding watchdog or
  *            yielding to RTOS scheduler during GC / rotation.
  */
-void rocketdb_interface_flash_yield(void);
+void rocketdb_interface_flash_yield(void *ctx);
 
 /**
  * @brief     Compute CRC-16 over a data block

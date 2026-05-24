@@ -64,9 +64,10 @@
  *            - non-zero read failed
  * @note      Implement flash read for your hardware here.
  */
-int rocketdb_interface_flash_read(uint32_t addr, uint8_t* buf, size_t len)
+int rocketdb_interface_flash_read(void *ctx, uint32_t addr, uint8_t* buf, size_t len)
 {
     /* TODO: Implement flash read for your hardware */
+    (void)ctx;
     (void)addr;
     (void)buf;
     (void)len;
@@ -75,6 +76,7 @@ int rocketdb_interface_flash_read(uint32_t addr, uint8_t* buf, size_t len)
 
 /**
  * @brief     Flash write operation
+ * @param[in] ctx  Opaque context pointer
  * @param[in] addr absolute flash address
  * @param[in] buf pointer to data buffer
  * @param[in] len number of bytes to write
@@ -83,9 +85,10 @@ int rocketdb_interface_flash_read(uint32_t addr, uint8_t* buf, size_t len)
  *            - non-zero write failed
  * @note      Implement flash write for your hardware here.
  */
-int rocketdb_interface_flash_write(uint32_t addr, const uint8_t* buf, size_t len)
+int rocketdb_interface_flash_write(void *ctx, uint32_t addr, const uint8_t* buf, size_t len)
 {
     /* TODO: Implement flash write for your hardware */
+    (void)ctx;
     (void)addr;
     (void)buf;
     (void)len;
@@ -94,15 +97,17 @@ int rocketdb_interface_flash_write(uint32_t addr, const uint8_t* buf, size_t len
 
 /**
  * @brief     Flash sector erase operation
+ * @param[in] ctx  Opaque context pointer
  * @param[in] addr absolute address within the sector to erase
  * @return    status code
  *            - 0 success
  *            - non-zero erase failed
  * @note      Implement flash erase for your hardware here.
  */
-int rocketdb_interface_flash_erase(uint32_t addr)
+int rocketdb_interface_flash_erase(void *ctx, uint32_t addr)
 {
     /* TODO: Implement flash erase for your hardware */
+    (void)ctx;
     (void)addr;
     return 0;
 }
@@ -111,27 +116,30 @@ int rocketdb_interface_flash_erase(uint32_t addr)
  * @brief     Acquire flash mutex
  * @note      Implement lock for your hardware here.
  */
-void rocketdb_interface_flash_lock(void)
+void rocketdb_interface_flash_lock(void *ctx)
 {
     /* TODO: Implement flash lock for your hardware (may be empty) */
+    (void)ctx;
 }
 
 /**
  * @brief     Release flash mutex
  * @note      Implement unlock for your hardware here.
  */
-void rocketdb_interface_flash_unlock(void)
+void rocketdb_interface_flash_unlock(void *ctx)
 {
     /* TODO: Implement flash unlock for your hardware (may be empty) */
+    (void)ctx;
 }
 
 /**
  * @brief     Yield CPU during long operations
  * @note      Implement yield for your hardware here (may be empty).
  */
-void rocketdb_interface_flash_yield(void)
+void rocketdb_interface_flash_yield(void *ctx)
 {
     /* TODO: Implement yield for your hardware (may be empty) */
+    (void)ctx;
 }
 
 /**

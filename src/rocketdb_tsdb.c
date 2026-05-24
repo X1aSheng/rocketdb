@@ -109,35 +109,35 @@ static inline uint8_t tprev(const rdb_tsdb_t* db, uint8_t s) {
 /** @brief Acquire the flash mutex (no-op if lock callback is NULL). */
 static inline void tlock(const rdb_tsdb_t* db) {
     if (db->part->ops->lock)
-        db->part->ops->lock();
+        db->part->ops->lock(db->part->flash_ctx);
 }
 
 /** @brief Release the flash mutex (no-op if unlock callback is NULL). */
 static inline void tunlock(const rdb_tsdb_t* db) {
     if (db->part->ops->unlock)
-        db->part->ops->unlock();
+        db->part->ops->unlock(db->part->flash_ctx);
 }
 
 /** @brief Yield CPU during long operations (no-op if yield callback is NULL). */
 static inline void tyield(const rdb_tsdb_t* db) {
     if (db->part->ops->yield)
-        db->part->ops->yield();
+        db->part->ops->yield(db->part->flash_ctx);
 }
 
 /** @brief Read `n` bytes from flash address `a` into buffer `b`. */
 static inline int trd(const rdb_tsdb_t* db, uint32_t a, void* b, size_t n) {
-    return db->part->ops->read(a, (uint8_t*)b, n);
+    return db->part->ops->read(db->part->flash_ctx, a, (uint8_t*)b, n);
 }
 
 /** @brief Write `n` bytes from buffer `b` to flash address `a`. */
 static inline int twr_f(const rdb_tsdb_t* db, uint32_t a,
     const void* b, size_t n) {
-    return db->part->ops->write(a, (const uint8_t*)b, n);
+    return db->part->ops->write(db->part->flash_ctx, a, (const uint8_t*)b, n);
 }
 
 /** @brief Erase the sector at flash address `a`. */
 static inline int tera(const rdb_tsdb_t* db, uint32_t a) {
-    return db->part->ops->erase(a);
+    return db->part->ops->erase(db->part->flash_ctx, a);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1228,7 +1228,7 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
     /* ── Write record — merged path for small records ── */
     if (rsz <= RDB_STACK_BUF_SIZE) {
         /* Small record: assemble header + data + padding in one
-           stack buffer and write as a single flash operation. */
+           stack buffer and write in one flash operation. */
         uint8_t mbuf[RDB_STACK_BUF_SIZE];
         memcpy(mbuf, &rh, TS_REC_SZ);
         memcpy(mbuf + TS_REC_SZ, data, len);
@@ -1250,13 +1250,10 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
             return RDB_ERR_FLASH;
         }
 
-        /* Write data payload plus alignment padding in bounded chunks.
-           This keeps HAL calls inside common SPI NOR page-program limits
-           (for example W25QXX 256-byte pages) and preserves write_gran
-           alignment for the final padded write. */
+        /* Write data payload plus alignment padding in streaming chunks */
         {
-            uint32_t g = twr(db);
-            uint32_t max_chunk = (uint32_t)RDB_STACK_BUF_SIZE;
+            uint32_t g  = twr(db);
+            uint32_t max_chunk = RDB_STACK_BUF_SIZE;
             max_chunk -= max_chunk % g;
             uint32_t rem = da;
             uint32_t data_pos = 0;
@@ -1265,6 +1262,7 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
 
             while (rem > 0) {
                 uint32_t ch = RDB_MIN(rem, max_chunk);
+
                 uint32_t data_rem = (len > data_pos) ? (uint32_t)len - data_pos : 0;
                 uint32_t data_ch = RDB_MIN(ch, data_rem);
 
