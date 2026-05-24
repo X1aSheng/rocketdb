@@ -1,0 +1,79 @@
+# RocketDB Kconfig options for Zephyr build system
+# SPDX-License-Identifier: MIT
+
+menuconfig ROCKETDB
+	bool "RocketDB — Zero-allocation Flash Storage Engine"
+	help
+	  Dual-mode embedded flash database engine providing KVDB
+	  (log-structured key-value store with GC and wear-leveling)
+	  and TSDB (ring-buffer time-series store).  Zero malloc.
+	  Operates on raw NOR flash via the Zephyr flash API.
+
+if ROCKETDB
+
+config ROCKETDB_KVDB
+	bool "KVDB key-value engine"
+	default y
+	help
+	  Build the log-structured key-value database engine.
+
+config ROCKETDB_TSDB
+	bool "TSDB time-series engine"
+	default y
+	help
+	  Build the ring-buffer time-series database engine.
+
+config ROCKETDB_MAX_KEY_LEN
+	int "Maximum KVDB key length (bytes)"
+	range 1 254
+	default 63
+	help
+	  Maximum key length for KVDB operations (1..254).
+
+config ROCKETDB_MAX_VAL_LEN
+	int "Maximum KVDB value length (bytes)"
+	range 1 65535
+	default 4095
+	help
+	  Maximum value length per KV record.
+
+config ROCKETDB_MAX_TS_DATA_LEN
+	int "Maximum TSDB data payload length (0 = physical limit)"
+	range 0 65535
+	default 0
+	help
+	  Maximum data payload per TSDB record.
+	  0 means use the physical limit (sector_size minus headers).
+
+config ROCKETDB_STACK_BUF_SIZE
+	int "Stack buffer size for merged writes"
+	range 32 512
+	default 64
+	help
+	  Records smaller than this are assembled in a stack buffer
+	  and written in one flash operation.  Must be >= 32.
+
+config ROCKETDB_GC_GARBAGE_PCT
+	int "GC Phase 2 garbage percentage threshold"
+	range 0 100
+	default 20
+	help
+	  Sectors with garbage% below this threshold are not considered
+	  as GC candidates.  Lower values make GC more aggressive.
+
+config ROCKETDB_GC_WEAR_THRESHOLD
+	int "Wear-leveling trigger threshold"
+	range 0 10000
+	default 100
+	help
+	  When max_ec - min_ec exceeds this value, Phase 4 wear
+	  leveling activates to redistribute wear.
+
+config ROCKETDB_SHELL
+	bool "RocketDB shell commands"
+	depends on SHELL
+	help
+	  Provides shell subcommands for inspecting and managing
+	  RocketDB instances at runtime.
+
+endif # ROCKETDB

@@ -1,0 +1,4 @@
+name: rocketdb
+build:
+  cmake: zephyr
+  kconfig: zephyr/Kconfig
