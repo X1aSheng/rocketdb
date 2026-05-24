@@ -1,6 +1,6 @@
 # RocketDB
 
-[![Version](https://img.shields.io/badge/version-1.1.2-blue)]()
+[![Version](https://img.shields.io/badge/version-1.2.0-blue)]()
 [![C99](https://img.shields.io/badge/C-99-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
@@ -32,7 +32,11 @@ RocketDB is a zero-allocation, dual-mode Flash storage engine for resource-const
 
 `/build` includes Windows build/test scripts and benchmark runners.
 
+`/zephyr` includes Zephyr OS port layer (flash adapter, Kconfig, module.yml).
+
 ### Install
+
+#### Bare-metal / traditional RTOS
 
 Reference `/interface` platform independent template and implement the Flash HAL for your target hardware:
 
@@ -41,11 +45,21 @@ Reference `/interface` platform independent template and implement the Flash HAL
 3. If you only need one engine, you may exclude the other `.c` file.
 
 Required external primitives (implemented in the interface template):
-- `rdb_crc16()` / `rdb_crc16_cont()` — CRC-16/CCITT
+- `rdb_crc16()` / `rdb_crc16_cont()` — CRC-16/MODBUS
 - `rdb_hash16()` — 16-bit key hash (DJB2 or similar)
-- `rdb_flash_ops_t` — Flash read / write / erase callbacks
+- `rdb_flash_ops_t` — Flash read / write / erase callbacks (with `void *ctx`)
 
-See [`docs/HAL_REFERENCE.md`](docs/HAL_REFERENCE.md) for a complete STM32F4 integration walkthrough.
+#### Zephyr OS
+
+Add RocketDB as a Zephyr module (see `zephyr/module.yml`):
+
+1. Configure your west manifest to include this repository.
+2. Enable `CONFIG_ROCKETDB=y` in your Kconfig.
+3. Use `rocketdb_partition_init()` from `zephyr/rocketdb_port.h` to wire a
+   Zephyr flash device to a RocketDB partition descriptor.
+
+All external primitives (`rdb_crc16`, `rdb_hash16`, flash ops) are provided
+by `zephyr/rocketdb_port.c`.  No additional HAL code is needed.
 
 ### Usage
 
@@ -65,6 +79,7 @@ rdb_partition_t part = {
     .total_size  = 64 * 1024,
     .sector_size = 4 * 1024,
     .ops         = &flash_ops,
+    .flash_ctx   = NULL,    /* bare-metal: no context */
 };
 
 rdb_kvdb_t db;

@@ -5,11 +5,12 @@
 
 | 项目 | 内容 |
 |------|------|
-| 版本 | 1.1.2 |
+| 版本 | 1.2.0 |
 | 状态 | 生产级基线 |
 | 适用硬件 | SPI NOR Flash（W25Q系列及兼容型号） |
 | 适用 MCU | Cortex-M0 / M3 / M4 / M7（已针对非对齐访问做结构体自然对齐） |
 | 分区约束 | 单分区 ≤ 1MB，扇区 4KB |
+| 可移植 RTOS | Zephyr OS（zephyr/rocketdb_port.c 适配层） |
 
 ---
 
@@ -99,6 +100,13 @@ RocketDB 是面向资源受限嵌入式系统的双模 Flash 存储引擎：
 rocketdb.h          公共类型、常量、API 声明
 rocketdb_kvdb.c     KVDB 引擎实现
 rocketdb_tsdb.c     TSDB 引擎实现
+
+zephyr/
+  rocketdb_port.c   Zephyr OS 适配层（flash ops + CRC + hash）
+  rocketdb_port.h   Zephyr 适配层公共头文件
+  Kconfig           Zephyr 构建配置项
+  CMakeLists.txt    Zephyr 模块构建脚本
+  module.yml        Zephyr 模块清单
 ```
 
 ---
@@ -201,23 +209,28 @@ NOR 安全（每步仅 1→0）：
 
 ```c
 typedef struct {
-    int  (*read )(uint32_t addr, uint8_t *buf, size_t len);
-    int  (*write)(uint32_t addr, const uint8_t *buf, size_t len);
-    int  (*erase)(uint32_t addr);
-    void (*lock )(void);
-    void (*unlock)(void);
-    void (*yield)(void);
+    int  (*read)  (void *ctx, uint32_t addr, uint8_t *buf, size_t len);
+    int  (*write) (void *ctx, uint32_t addr, const uint8_t *buf, size_t len);
+    int  (*erase) (void *ctx, uint32_t addr);
+    void (*lock)  (void *ctx);
+    void (*unlock)(void *ctx);
+    void (*yield) (void *ctx);
 } rdb_flash_ops_t;
 ```
 
 | 回调 | 返回值 | 说明 |
 |------|--------|------|
-| read | 0/非0 | 读取 |
+| read | 0/非0 | 读取；ctx 为 rdb_partition_t.flash_ctx |
 | write | 0/非0 | 写入；调用者保证不跨页 |
 | erase | 0/非0 | 擦除整个扇区 |
 | lock | 无 | 可选，NULL 跳过 |
 | unlock | 无 | 可选，NULL 跳过 |
 | yield | 无 | 可选，耗时操作期间喂狗/让出线程；NULL 跳过；内部禁止调用 RocketDB API |
+
+每个回调的第一个参数 `void *ctx` 由 `rdb_partition_t.flash_ctx` 传入。
+这使得同一张 ops 函数表可以被多个 flash 设备/分区共享，ctx 携带
+每实例状态（如 Zephyr flash 设备指针 + 基地址偏移量）。
+裸机单实例场景设置 flash_ctx = NULL 即向后兼容。
 
 ```c
 typedef struct {
@@ -227,6 +240,7 @@ typedef struct {
     uint32_t               sector_size;
     uint8_t                write_gran;  /* 0→1B 1→2B 2→4B 3→8B */
     const rdb_flash_ops_t *ops;
+    void                  *flash_ctx;   /* 传入所有 ops 回调的透明指针 */
 } rdb_partition_t;
 ```
 
@@ -1201,7 +1215,7 @@ static int ts_data_crc(const rdb_tsdb_t *db,
 
 ## 第六章 集成指南
 
-### 6.1 初始化代码
+### 6.1 初始化代码（裸机 / 传统 RTOS）
 
 ```c
 static const rdb_flash_ops_t flash_ops = {
@@ -1218,6 +1232,7 @@ static const rdb_partition_t kvdb1_part = {
     .total_size = 32*1024, .sector_size = 4096,
     .write_gran = 0,
     .ops = &flash_ops,
+    .flash_ctx = NULL,  /* 裸机无上下文 */
 };
 
 static rdb_kvdb_t kvdb1;
@@ -1229,6 +1244,40 @@ void storage_init(void)
         rdb_kvdb_format(&kvdb1);
 }
 ```
+
+### 6.1.1 Zephyr OS 初始化
+
+```c
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/flash.h>
+#include <rocketdb.h>
+#include <rocketdb_port.h>
+
+#define MY_FLASH_DEV  DEVICE_DT_GET(DT_NODELABEL(flash0))
+#define MY_PART_OFF   0x00080000
+#define MY_PART_SIZE  (16 * 4096)   /* 16 sectors @ 4KB */
+
+static struct rocketdb_flash_ctx kv_ctx;
+static rdb_partition_t kv_part;
+static rdb_kvdb_t kvdb;
+static uint8_t kv_meta[rdb_kvdb_meta_size(16)];
+
+void storage_init(void)
+{
+    rocketdb_partition_init(&kv_part, &kv_ctx, MY_FLASH_DEV,
+                            MY_PART_OFF, MY_PART_SIZE, 4096,
+                            0, "config-kv");
+
+    if (rdb_kvdb_init(&kvdb, &kv_part, kv_meta) != RDB_OK)
+        rdb_kvdb_format(&kvdb);
+}
+```
+
+Zephyr 适配文件位于 `zephyr/rocketdb_port.c`，提供：
+- `rdb_flash_ops_t` 的 Zephyr flash API 实现
+- `rdb_crc16 / rdb_crc16_cont`（CRC-16/MODBUS）
+- `rdb_hash16`（DJB2）
+- `rocketdb_partition_init()` 工厂函数
 
 ### 6.2 大记录 query_ex 缓冲
 

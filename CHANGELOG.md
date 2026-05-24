@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] — 2026-05-24
+
+### Added
+
+- **Zephyr OS port layer** (`zephyr/`): Provides `rocketdb_port.c` with flash
+  ops backed by Zephyr's `flash_read/write/erase` API, CRC-16/MODBUS and DJB2
+  hash implementations, `rocketdb_partition_init()` factory, Kconfig options
+  for all compile-time settings, CMakeLists.txt for Zephyr module build, and
+  `module.yml` for Zephyr module auto-discovery.
+- **Per-callback context pointer** (`void *ctx`): Every callback in
+  `rdb_flash_ops_t` now receives a `void *ctx` first argument. This enables a
+  single ops table to be shared across multiple flash devices/partitions. The
+  context is stored in `rdb_partition_t.flash_ctx`.
+
+### Changed
+
+- **`rdb_flash_ops_t` signature**: All six callbacks gain `void *ctx` as first
+  parameter. Existing users must add a `void *ctx` parameter to their ops
+  implementations and set `rdb_partition_t.flash_ctx = NULL` for backward
+  compatibility.
+- **`rdb_partition_t`**: New field `void *flash_ctx`. Uninitialised fields
+  are zeroed by C99 designated-initialiser rules, so existing code that omits
+  this field is automatically compatible (ctx = NULL).
+
+---
+
 ## [1.1.2] — 2026-04-30
 
 ### Fixed
