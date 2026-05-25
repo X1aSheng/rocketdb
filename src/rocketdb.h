@@ -56,6 +56,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Portable compile-time assertion helper. */
+#ifndef RDB_STATIC_ASSERT
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#define RDB_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
+#else
+#define RDB_STATIC_ASSERT_JOIN_(a, b) a##b
+#define RDB_STATIC_ASSERT_JOIN(a, b) RDB_STATIC_ASSERT_JOIN_(a, b)
+#define RDB_STATIC_ASSERT(cond, msg) \
+    typedef char RDB_STATIC_ASSERT_JOIN(rdb_static_assert_, __LINE__)[(cond) ? 1 : -1]
+#endif
+#endif
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -147,7 +159,11 @@ typedef struct {
  * default of 0, the cache is a zero-element flexible array and costs
  * nothing.  Use at least 64 slots for production workloads. */
 typedef struct {
+#if RDB_KV_CACHE_SIZE > 0
     rdb_kv_cache_slot_t slots[RDB_KV_CACHE_SIZE];
+#else
+    uint8_t disabled;
+#endif
 } rdb_kv_cache_t;
 
 /**
@@ -197,9 +213,9 @@ typedef struct {
 #endif
 
 /* Compile-time validation */
-_Static_assert(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 254u,
+RDB_STATIC_ASSERT(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 254u,
     "RDB_MAX_KEY_LEN must be 1..254");
-_Static_assert(RDB_STACK_BUF_SIZE >= 32u,
+RDB_STATIC_ASSERT(RDB_STACK_BUF_SIZE >= 32u,
     "RDB_STACK_BUF_SIZE must be >= 32 (record header + minimum payload)");
 
 /* ═══════════════════════════════════════════════════════════════════════════

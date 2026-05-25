@@ -21,6 +21,10 @@ if(CMAKE_HOST_WIN32 AND NOT CMAKE_RC_COMPILER)
     )
 endif()
 
+if(CMAKE_HOST_WIN32 AND CMAKE_C_COMPILER MATCHES "clang(\\.exe)?$")
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+endif()
+
 project(RocketDB C)
 
 # =============================================================================
@@ -188,6 +192,11 @@ if(BUILD_TESTS)
     enable_testing()
     message(STATUS "Testing enabled")
 
+    # Tests include boundary configurations that are part of the public ABI.
+    # CMake links them against the combined library, so compile that library
+    # with the same macro values the cache/max-key tests include.
+    target_compile_definitions(rocketdb PUBLIC RDB_MAX_KEY_LEN=254)
+
     add_library(rocketdb_sim_support STATIC
         test/sim/test_framework.c
         test/sim/sim_flash.c
@@ -236,8 +245,11 @@ if(BUILD_TESTS)
         )
     endforeach()
 
-    # test_kvdb_cache enables the KV key cache for cache-specific test coverage
-    target_compile_definitions(test_kvdb_cache PRIVATE RDB_KV_CACHE_SIZE=64)
+    # test_kvdb_cache enables the KV key cache and max-key boundary coverage.
+    target_compile_definitions(test_kvdb_cache PRIVATE
+        RDB_KV_CACHE_SIZE=64
+        RDB_MAX_KEY_LEN=254
+    )
 
     # Keep example smoke coverage when examples are present.
     if(BUILD_EXAMPLES AND TARGET example_kvdb_basic)

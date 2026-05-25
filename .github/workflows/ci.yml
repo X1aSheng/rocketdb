@@ -22,10 +22,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
         run: >
           cmake -S . -B cmake-build
           -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DBUILD_TESTS=ON
+          -DBUILD_EXAMPLES=ON
+          -DBUILD_PERF=ON
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake -S . -B cmake-build
+          -G Ninja
+          -DCMAKE_C_COMPILER=clang
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DBUILD_TESTS=ON
           -DBUILD_EXAMPLES=ON
@@ -50,3 +62,6 @@ jobs:
 
       - name: Run legacy test script
         run: cmd /c build\build.bat all test
+
+      - name: Run performance benchmark
+        run: cmd /c build\build.bat perf run
