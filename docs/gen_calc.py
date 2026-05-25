@@ -103,7 +103,7 @@ R('Life', '>> TSDB MERGE GAIN (years)',         'T_ts_gain',  '=D46-D47',       
 
 # ── Measured Test Data (Excel rows 50-55) ──
 R()
-R('', '=== MEASURED TEST DATA (from test/out/*.log) ===')
+R('', '=== MEASURED TEST DATA (from tests/out/*.log) ===')
 R('Test', 'kvdb_basic',  2648,  8126,  3.07, 'WAF', '99% merge hit avg_val=11B +30% life')
 R('Test', 'kvdb_stress', 4184,  23267, 5.56, 'WAF', '65% merge hit avg_val=131B +22% life')
 R('Test', 'tsdb_basic',  2402,  6780,  2.82, 'WAF', '29% merge hit avg_data=56B +17% life')

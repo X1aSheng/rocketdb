@@ -336,6 +336,6 @@ const char *test_make_log_path(const char *name)
     struct tm *tm_info = localtime(&now);
     char ts[16];
     strftime(ts, sizeof(ts), "%y%m%d-%H%M%S", tm_info);
-    snprintf(path, sizeof(path), "test/out/%s-%s.log", ts, name);
+    snprintf(path, sizeof(path), "tests/out/%s-%s.log", ts, name);
     return path;
 }

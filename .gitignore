@@ -1,10 +1,10 @@
 # Build output
-test/out/
+tests/out/
 .cache/
-test/perf/results_*.csv
-test/perf/results_*.txt
-test/perf/*.ilk
-test/perf/*.pdb
+tests/perf/results_*.csv
+tests/perf/results_*.txt
+tests/perf/*.ilk
+tests/perf/*.pdb
 *.o
 *.so
 *.a

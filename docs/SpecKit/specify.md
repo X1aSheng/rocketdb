@@ -27,13 +27,13 @@ rocketdb.h              公共头文件（含所有类型与 API 声明）
 rocketdb_kvdb.c         KVDB 引擎实现
 rocketdb_tsdb.c         TSDB 引擎实现
 
-# 测试 / 模拟层（test/sim/）
-test/sim/sim_flash.c    NOR Flash 模拟器（1→0 写入、故障注入）
-test/sim/sim_flash.h
-test/sim/sim_vectors.c  确定性测试向量生成器
-test/sim/sim_vectors.h
-test/sim/sim_crypto.c   CRC16 / Hash16 实现（外部依赖提供）
-test/sim/sim_runner.c   测试主程序（main）
+# 测试 / 模拟层（tests/sim/）
+tests/sim/sim_flash.c    NOR Flash 模拟器（1→0 写入、故障注入）
+tests/sim/sim_flash.h
+tests/sim/sim_vectors.c  确定性测试向量生成器
+tests/sim/sim_vectors.h
+tests/sim/sim_crypto.c   CRC16 / Hash16 实现（外部依赖提供）
+tests/sim/sim_runner.c   测试主程序（main）
 ```
 
 ### Include 路径
@@ -45,10 +45,10 @@ test/sim/sim_runner.c   测试主程序（main）
 
 ### 输出目录结构
 
-所有编译产物、可执行文件、测试向量和日志统一输出到 `test/out/`：
+所有编译产物、可执行文件、测试向量和日志统一输出到 `tests/out/`：
 
 ```
-test/out/
+tests/out/
 ├── sim_test.exe                  测试可执行文件
 ├── *.o                           中间目标文件（Makefile 增量编译产生）
 ├── sim_log.txt                   最近一次 sim 运行的控制台日志
@@ -57,15 +57,15 @@ test/out/
 └── test_log_YYYYMMDD_HHMMSS.log  带时间戳的完整测试日志
 ```
 
-> `test/out/` 应加入 `.gitignore`，不纳入版本控制。
+> `tests/out/` 应加入 `.gitignore`，不纳入版本控制。
 
 ### 构建命令
 
 ```bat
 REM Windows — build.bat（推荐，无需 make）
-build.bat            REM 仅编译，生成 test\out\sim_test.exe
+build.bat            REM 仅编译，生成 tests\out\sim_test.exe
 build.bat test       REM 编译 + 运行 + 生成带时间戳日志
-build.bat clean      REM 删除整个 test\out\ 目录
+build.bat clean      REM 删除整个 tests\out\ 目录
 build.bat rebuild    REM clean 后重新编译
 build.bat help       REM 显示帮助
 ```
@@ -74,13 +74,13 @@ build.bat help       REM 显示帮助
 # Unix/Linux / Windows(make) — Makefile
 make           # 增量编译（.o 文件 → sim_test.exe）
 make test      # 编译并运行测试
-make clean     # 删除 test/out/
+make clean     # 删除 tests/out/
 make rebuild   # clean 后重新编译
 ```
 
 ### 测试日志格式
 
-`build.bat test` 在 `test/out/` 目录生成 `test_log_YYYYMMDD_HHMMSS.log`，内容：
+`build.bat test` 在 `tests/out/` 目录生成 `test_log_YYYYMMDD_HHMMSS.log`，内容：
 
 ```
 ==========================================

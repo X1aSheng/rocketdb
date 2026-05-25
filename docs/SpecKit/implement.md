@@ -51,14 +51,14 @@
 
 | 项目 | 状态 | 说明 |
 |------|------|------|
-| `build.bat` | ✅ 完成 | Windows 批处理编译脚本，输出到 `test\out\` |
-| `Makefile` | ✅ 完成 | make 增量编译脚本，`.o` 文件统一到 `test/out/` |
-| `test/sim/sim_runner.c` | ✅ 修复 | 路径修复（`test\out\`）、头文件修复（`rocketdb.h`）|
-| `test/sim/rocketdb.h` | ✅ 修复 | 指向正确的 `../../rocketdb.h` |
-| `test/sim/sim_flash.c` | ✅ 完成 | NOR Flash 模拟器（1→0 写入、故障注入）|
-| `test/sim/sim_crypto.c` | ✅ 完成 | CRC16-MODBUS / Hash16 FNV 实现 |
-| `test/sim/sim_vectors.c` | ✅ 完成 | 确定性测试向量生成器（LCG PRNG）|
-| 测试日志 | ✅ 统一 | 全部输出到 `test/out/`，带时间戳 |
+| `build.bat` | ✅ 完成 | Windows 批处理编译脚本，输出到 `tests\out\` |
+| `Makefile` | ✅ 完成 | make 增量编译脚本，`.o` 文件统一到 `tests/out/` |
+| `tests/sim/sim_runner.c` | ✅ 修复 | 路径修复（`tests\out\`）、头文件修复（`rocketdb.h`）|
+| `tests/sim/rocketdb.h` | ✅ 修复 | 指向正确的 `../../rocketdb.h` |
+| `tests/sim/sim_flash.c` | ✅ 完成 | NOR Flash 模拟器（1→0 写入、故障注入）|
+| `tests/sim/sim_crypto.c` | ✅ 完成 | CRC16-MODBUS / Hash16 FNV 实现 |
+| `tests/sim/sim_vectors.c` | ✅ 完成 | 确定性测试向量生成器（LCG PRNG）|
+| 测试日志 | ✅ 统一 | 全部输出到 `tests/out/`，带时间戳 |
 
 **构建验证状态（2026-02-25）**：`build.bat test` 已可完整编译并运行基础测试套件。
 
@@ -73,10 +73,10 @@
 ```
 rocketdb_kvdb.c           KVDB 引擎
 rocketdb_tsdb.c           TSDB 引擎
-test/sim/sim_flash.c      Flash 模拟器
-test/sim/sim_vectors.c    向量生成器
-test/sim/sim_crypto.c     CRC / Hash
-test/sim/sim_runner.c     测试主程序
+tests/sim/sim_flash.c      Flash 模拟器
+tests/sim/sim_vectors.c    向量生成器
+tests/sim/sim_crypto.c     CRC / Hash
+tests/sim/sim_runner.c     测试主程序
 ```
 
 ## 输出目录规划
@@ -110,7 +110,7 @@ build.bat              # 或 make
 # 测试（自动生成带时间戳的日志）
 build.bat test         # 或 make test
 
-# 清理（删除整个 test/out/ 目录）
+# 清理（删除整个 tests/out/ 目录）
 build.bat clean        # 或 make clean
 
 # 重新编译
@@ -121,10 +121,10 @@ build.bat rebuild      # 或 make rebuild
 
 | 文件类型 | 当前位置 | 规划位置 | 优势 |
 |---------|---------|---------|------|
-| 测试报告 | 根目录 | test/out/ | 统一管理、易于清理 |
-| 测试向量 | tests/sim/out/ | test/out/ | 统一输出路径 |
-| 编译产物 | 分散 | test/out/ | 便于版本控制（.gitignore） |
-| 测试日志 | 分散 | test/out/ | CI/CD 友好 |
+| 测试报告 | 根目录 | tests/out/ | 统一管理、易于清理 |
+| 测试向量 | tests/sim/out/ | tests/out/ | 统一输出路径 |
+| 编译产物 | 分散 | tests/out/ | 便于版本控制（.gitignore） |
+| 测试日志 | 分散 | tests/out/ | CI/CD 友好 |
 
 ## 已知设计亮点（来自 design.md）
 
@@ -246,14 +246,14 @@ if (count_erased(db) < gc_reserve + 1)
 | `design.md` | 完整的设计文档（1391 行） | 根目录 | 保持 |
 | `test_plan.md` | 测试计划与覆盖分析 | 根目录 | 保持 |
 | `test_request.txt` | 原始需求文本 | 根目录 | 保持 |
-| 测试报告 | 多份历史报告 | 根目录（分散） | **→ test/out/** |
+| 测试报告 | 多份历史报告 | 根目录（分散） | **→ tests/out/** |
 
 ## 下一步实现目标
 
 ### 立即（项目结构优化）
-1. **统一输出目录**：创建 `test/out/` 目录，迁移所有编译产物和测试输出。
+1. **统一输出目录**：创建 `tests/out/` 目录，迁移所有编译产物和测试输出。
 2. **创建构建脚本**：编写 `build.bat` 和 `Makefile`，参考 bitarray 项目。
-3. **统一测试日志格式**：所有测试输出到 `test/out/test_log_YYYYMMDD_HHMMSS.log`。
+3. **统一测试日志格式**：所有测试输出到 `tests/out/test_log_YYYYMMDD_HHMMSS.log`。
 4. **更新测试文档**：在 tests/sim/README.md 中说明新的输出路径。
 
 ### 短期（v0.0.2 完善）

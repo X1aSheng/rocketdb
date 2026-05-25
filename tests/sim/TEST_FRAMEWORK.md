@@ -220,7 +220,7 @@ Time:
 
 将相关测试放在同一个文件中：
 ```
-test/sim/
+tests/sim/
 ├── test_kvdb_basic.c      - KVDB 基础测试
 ├── test_kvdb_gc.c         - KVDB GC 测试
 ├── test_tsdb_basic.c      - TSDB 基础测试
@@ -276,11 +276,11 @@ TEST_CASE(my_test, "KVDB", "Description")
 # 编译测试框架示例
 clang -std=c99 -Wall -Wextra -O2 ^
     -I. -Itest/sim ^
-    -o test/out/test_example.exe ^
-    test/sim/test_example.c ^
-    test/sim/test_framework.c ^
-    test/sim/sim_flash.c ^
-    test/sim/sim_crypto.c ^
+    -o tests/out/test_example.exe ^
+    tests/sim/test_example.c ^
+    tests/sim/test_framework.c ^
+    tests/sim/sim_flash.c ^
+    tests/sim/sim_crypto.c ^
     rocketdb_kvdb.c ^
     rocketdb_tsdb.c
 ```
@@ -288,8 +288,8 @@ clang -std=c99 -Wall -Wextra -O2 ^
 ### 使用 Makefile
 
 ```makefile
-test_example: test/sim/test_example.c test/sim/test_framework.c
-	$(CC) $(CFLAGS) -o test/out/test_example.exe $^ $(OBJS)
+test_example: tests/sim/test_example.c tests/sim/test_framework.c
+	$(CC) $(CFLAGS) -o tests/out/test_example.exe $^ $(OBJS)
 ```
 
 ## 迁移现有测试

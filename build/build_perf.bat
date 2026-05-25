@@ -46,8 +46,8 @@ REM ============================================================================
 :build_perf
 echo [*] Building performance benchmark...
 
-set SRCS=src\rocketdb_kvdb.c src\rocketdb_tsdb.c test\sim\sim_flash.c test\sim\sim_fault.c test\sim\sim_trace.c test\sim\sim_crypto.c test\perf\scenarios.c
-set TARGET=test\perf\benchmark.exe
+set SRCS=src\rocketdb_kvdb.c src\rocketdb_tsdb.c tests\sim\sim_flash.c tests\sim\sim_fault.c tests\sim\sim_trace.c tests\sim\sim_crypto.c tests\perf\scenarios.c
+set TARGET=tests\perf\benchmark.exe
 
 %CC% %CFLAGS% %INCLUDES% -o %TARGET% %SRCS%
 if errorlevel 1 (
@@ -64,9 +64,9 @@ if errorlevel 1 exit /b 1
 
 echo [*] Running performance benchmark...
 for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set TS=%%a
-set RESULT_FILE=test\perf\results_!TS!.csv
+set RESULT_FILE=tests\perf\results_!TS!.csv
 
-test\perf\benchmark.exe > "%RESULT_FILE%" 2>&1
+tests\perf\benchmark.exe > "%RESULT_FILE%" 2>&1
 if errorlevel 1 (
     echo [ERROR] Benchmark execution failed!
     exit /b 1
@@ -78,17 +78,17 @@ goto end
 REM =============================================================================
 :clean_perf
 echo [*] Cleaning performance build artifacts...
-if exist "test\perf\benchmark.exe" del /q "test\perf\benchmark.exe"
-if exist "test\perf\benchmark.ilk" del /q "test\perf\benchmark.ilk"
-if exist "test\perf\benchmark.pdb" del /q "test\perf\benchmark.pdb"
+if exist "tests\perf\benchmark.exe" del /q "tests\perf\benchmark.exe"
+if exist "tests\perf\benchmark.ilk" del /q "tests\perf\benchmark.ilk"
+if exist "tests\perf\benchmark.pdb" del /q "tests\perf\benchmark.pdb"
 echo [+] Cleaned.
 goto end
 
 REM =============================================================================
 :distclean_perf
 call :clean_perf
-for /f %%f in ('dir /b test\perf\results_*.* 2^>nul') do (
-    del "test\perf\%%f"
+for /f %%f in ('dir /b tests\perf\results_*.* 2^>nul') do (
+    del "tests\perf\%%f"
     echo   Removed %%f
 )
 echo [+] Cleaned all artifacts and results.

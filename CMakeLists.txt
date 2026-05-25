@@ -193,16 +193,16 @@ if(BUILD_TESTS)
     message(STATUS "Testing enabled")
 
     add_library(rocketdb_sim_support STATIC
-        test/sim/test_framework.c
-        test/sim/sim_flash.c
-        test/sim/sim_fault.c
-        test/sim/sim_crypto.c
-        test/sim/sim_dist.c
-        test/sim/sim_trace.c
+        tests/sim/test_framework.c
+        tests/sim/sim_flash.c
+        tests/sim/sim_fault.c
+        tests/sim/sim_crypto.c
+        tests/sim/sim_dist.c
+        tests/sim/sim_trace.c
     )
     target_include_directories(rocketdb_sim_support PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/sim
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sim
     )
     rocketdb_apply_warnings(rocketdb_sim_support)
     rocketdb_apply_optimization(rocketdb_sim_support)
@@ -225,12 +225,12 @@ if(BUILD_TESTS)
 
     foreach(test_name IN LISTS ROCKETDB_TESTS)
         add_executable(${test_name}
-            test/sim/${test_name}.c
+            tests/sim/${test_name}.c
         )
         target_link_libraries(${test_name} PRIVATE rocketdb rocketdb_sim_support)
         target_include_directories(${test_name} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}/test/sim
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/sim
         )
         rocketdb_apply_warnings(${test_name})
         rocketdb_apply_optimization(${test_name})
@@ -267,17 +267,17 @@ endif()
 
 if(BUILD_PERF)
     add_executable(rocketdb_perf
-        test/perf/scenarios.c
-        test/sim/sim_flash.c
-        test/sim/sim_fault.c
-        test/sim/sim_trace.c
-        test/sim/sim_crypto.c
+        tests/perf/scenarios.c
+        tests/sim/sim_flash.c
+        tests/sim/sim_fault.c
+        tests/sim/sim_trace.c
+        tests/sim/sim_crypto.c
     )
     target_link_libraries(rocketdb_perf PRIVATE rocketdb)
     target_include_directories(rocketdb_perf PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/sim
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/perf
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sim
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/perf
     )
     rocketdb_apply_warnings(rocketdb_perf)
     rocketdb_apply_optimization(rocketdb_perf)

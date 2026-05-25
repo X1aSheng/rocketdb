@@ -444,25 +444,25 @@ New-feature validation suite covering KVDB key-to-address cache, TSDB safety fix
 cd g:/rocketdb
 
 clang -Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS \
-    -Isrc -Itest/sim -c src/rocketdb_kvdb.c -o test/out/rocketdb_kvdb.o
+    -Isrc -Itest/sim -c src/rocketdb_kvdb.c -o tests/out/rocketdb_kvdb.o
 clang -Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS \
-    -Isrc -Itest/sim -c src/rocketdb_tsdb.c -o test/out/rocketdb_tsdb.o
+    -Isrc -Itest/sim -c src/rocketdb_tsdb.c -o tests/out/rocketdb_tsdb.o
 clang -Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS \
-    -Isrc -Itest/sim -c test/sim/sim_flash.c -o test/out/sim_flash.o
+    -Isrc -Itest/sim -c tests/sim/sim_flash.c -o tests/out/sim_flash.o
 # ... (compile all sim_*.c and test_*.c similarly)
 
 # Link and run each suite (from project root for correct log paths)
-clang test/out/test_kvdb_basic.o test/out/sim_flash.o test/out/sim_fault.o \
-    test/out/test_framework.o test/out/sim_trace.o test/out/sim_dist.o \
-    test/out/sim_crypto.o test/out/rocketdb_kvdb.o test/out/rocketdb_tsdb.o \
-    -o test/out/test_kvdb_basic.exe
+clang tests/out/test_kvdb_basic.o tests/out/sim_flash.o tests/out/sim_fault.o \
+    tests/out/test_framework.o tests/out/sim_trace.o tests/out/sim_dist.o \
+    tests/out/sim_crypto.o tests/out/rocketdb_kvdb.o tests/out/rocketdb_tsdb.o \
+    -o tests/out/test_kvdb_basic.exe
 
-./test/out/test_kvdb_basic.exe   # Trace log -> test/out/<timestamp>-kvdb_basic.log
+./tests/out/test_kvdb_basic.exe   # Trace log -> tests/out/<timestamp>-kvdb_basic.log
 ```
 
 ### 10.2 Log Files
 
-Each test suite produces a timestamped trace log in `test/out/<YYMMDD-HHMMSS>-<name>.log`. Log path is relative to the working directory — run executables from the project root.
+Each test suite produces a timestamped trace log in `tests/out/<YYMMDD-HHMMSS>-<name>.log`. Log path is relative to the working directory — run executables from the project root.
 
 ### 10.3 Selecting Verbosity
 
@@ -480,7 +480,7 @@ test_config_t config = {
 
 ```bash
 # Run a specific test case
-./test/out/test_kvdb_basic.exe --filter "kv_max_boundaries"
+./tests/out/test_kvdb_basic.exe --filter "kv_max_boundaries"
 
 # Stop on first failure
 # (set .stop_on_fail = 1 in config)

@@ -13,7 +13,7 @@ if exist "D:\Programs\LLVM\bin\clang.exe" set CC=D:\Programs\LLVM\bin\clang.exe
 set CFLAGS=-Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS
 set INCLUDES=-Isrc -Itest\sim
 set OUTPUT_DIR=test\out
-set BASE_SRCS=src/rocketdb_kvdb.c src/rocketdb_tsdb.c test\sim\test_framework.c test\sim\sim_flash.c test\sim\sim_fault.c test\sim\sim_crypto.c test\sim\sim_dist.c test\sim\sim_trace.c
+set BASE_SRCS=src/rocketdb_kvdb.c src/rocketdb_tsdb.c tests\sim\test_framework.c tests\sim\sim_flash.c tests\sim\sim_fault.c tests\sim\sim_crypto.c tests\sim\sim_dist.c tests\sim\sim_trace.c
 
 set SUITE=%1
 set ACTION=%2
@@ -53,7 +53,7 @@ set FAIL=0
 
 for %%t in (%TESTS%) do (
     set TARGET=%OUTPUT_DIR%\%%t.exe
-    set SRCS=%BASE_SRCS% test\sim\%%t.c
+    set SRCS=%BASE_SRCS% tests\sim\%%t.c
     set EXTRA=
     if "%%t"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
 

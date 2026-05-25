@@ -45,25 +45,25 @@ The sections below are updated as fixes and validation complete.
 - Key-length architecture update on 2026-05-25: KVDB `RDB_MAX_KEY_LEN` is now
   constrained to 1..32 bytes in code, scripts, tests, and design documents.
 - `build\run_all_tests.bat test`: passed 8/8. Latest key-limit run summary:
-  `test\out\260525-233210-SUMMARY.log`.
+  `tests\out\260525-233210-SUMMARY.log`.
 - `build\build.bat all test`: passed 8/8. Latest key-limit run summary:
-  `test\out\260525-233320-SUMMARY.log`.
+  `tests\out\260525-233320-SUMMARY.log`.
 - `build\build_kvdb_all.bat test`: passed 3/3.
 - `build\build_tsdb_all.bat test`: passed 2/2.
 - CMake/CTest Debug with LLVM clang: configure, build, and 10/10 tests passed
   in `cmake-build-codex-key32`.
-- `build\build_perf.bat run`: passed, result `test\perf\results_20260525_233303.csv`.
-- `test\perf\run_benchmark.bat`: passed, result `test\perf\results_20260525_233310.csv`.
+- `build\build_perf.bat run`: passed, result `tests\perf\results_20260525_233303.csv`.
+- `tests\perf\run_benchmark.bat`: passed, result `tests\perf\results_20260525_233310.csv`.
 
 Previous validation before the key-limit architecture update:
 
-- `build\run_all_tests.bat test`: passed 8/8. Latest clean run summary: `test\out\260525-231706-SUMMARY.log`.
+- `build\run_all_tests.bat test`: passed 8/8. Latest clean run summary: `tests\out\260525-231706-SUMMARY.log`.
 - `build\build.bat all test`: passed 8/8.
 - `build\build_kvdb_all.bat test`: passed 3/3.
 - `build\build_tsdb_all.bat test`: passed 2/2.
 - CMake/CTest Debug with LLVM clang: configure, build, and 10/10 tests passed in `cmake-build-codex`.
-- `build\build_perf.bat run`: passed, result `test\perf\results_20260525_231750.csv`.
-- `test\perf\run_benchmark.bat`: passed, result `test\perf\results_20260525_231802.csv`.
+- `build\build_perf.bat run`: passed, result `tests\perf\results_20260525_231750.csv`.
+- `tests\perf\run_benchmark.bat`: passed, result `tests\perf\results_20260525_231802.csv`.
 
 Cloud-server, Docker, Kubernetes, and local-client-to-cloud data interaction
 validation were intentionally not executed in this round per user scope. No

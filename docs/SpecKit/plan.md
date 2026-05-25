@@ -12,9 +12,9 @@
 
 ### 任务
 1. **统一输出目录**
-   - 创建 `test/out/` 目录
+   - 创建 `tests/out/` 目录
    - 迁移所有编译产物、可执行文件、测试日志到统一目录
-   - 更新 `.gitignore` 排除 `test/out/`
+   - 更新 `.gitignore` 排除 `tests/out/`
 
 2. **创建构建脚本**
    - 编写 `build.bat`（Windows），参考 bitarray 项目
@@ -27,13 +27,13 @@
    - 统一测试报告格式和位置
 
 4. **清理历史文件**
-   - 迁移根目录的历史测试报告到 `test/out/`
+   - 迁移根目录的历史测试报告到 `tests/out/`
    - 清理分散的临时文件
 
 **交付物**
 - [x] 学习 bitarray 项目结构和测试方法（已完成，2026-02-25）
 - [x] 更新 SpecKit 文档以反映输出目录规划（已完成，2026-02-25）
-- [ ] 创建 test/out/ 目录
+- [ ] 创建 tests/out/ 目录
 - [ ] 编写 build.bat 和 Makefile
 - [ ] 迁移历史测试报告
 - [ ] 更新 tests/sim/README.md
@@ -42,7 +42,7 @@
 - ✅ 所有输出文件统一管理，便于版本控制
 - ✅ 标准化的构建和测试流程
 - ✅ CI/CD 友好的目录结构
-- ✅ 简化的清理命令（删除整个 test/out/）
+- ✅ 简化的清理命令（删除整个 tests/out/）
 
 ---
 
@@ -102,7 +102,7 @@
      - GC victim 选择详情
      - erase counts per sector
      - TSDB head/tail positions, time_base, total_count
-   - 输出到 `test/out/test_log_YYYYMMDD_HHMMSS.log`
+   - 输出到 `tests/out/test_log_YYYYMMDD_HHMMSS.log`
 
 4. **测试用例执行器**（test_plan.md 4.2.2）
    - 20 个具体测试用例（TC-KV-01~09, TC-TS-01~07, TC-X-01~04）

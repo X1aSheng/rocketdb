@@ -1523,7 +1523,7 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | 编号 | 检查项 | 通过条件 |
 |------|--------|---------|
 | B-01 | CMake 默认配置 | `BUILD_EXAMPLES=ON` 时，缺失示例不影响核心库和测试构建 |
-| B-02 | CTest 注册 | 7 个 `test/sim/test_*.c` 均注册为独立测试 |
+| B-02 | CTest 注册 | 7 个 `tests/sim/test_*.c` 均注册为独立测试 |
 | B-03 | Windows Clang 链接 | 不使用 freestanding 链接规则，host-side 测试能链接 CRT |
 | B-04 | bat 字符集 | 脚本仅使用 ASCII 控制文本，避免 cmd 编码误解析 |
 | B-05 | 日志命名 | 时间戳使用 `yyyyMMdd_HHmmss`，不依赖系统区域格式 |

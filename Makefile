@@ -13,34 +13,34 @@
 
 CC      = clang
 CFLAGS  = -Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS
-INCLUDES = -Isrc -Itest/sim
+INCLUDES = -Isrc -Itests/sim
 LDFLAGS =
 # Add -lm on platforms that need it (Linux, macOS; Windows UCRT doesn't)
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
 ifneq ($(UNAME_S),Windows)
     LDFLAGS += -lm
 endif
-OUTPUT_DIR = test/out
+OUTPUT_DIR = tests/out
 
 # Engine sources
 ENGINE_SRCS = src/rocketdb_kvdb.c src/rocketdb_tsdb.c
 
 # Sim library sources (shared objects)
-SIM_SRCS = test/sim/test_framework.c \
-           test/sim/sim_flash.c \
-           test/sim/sim_fault.c \
-           test/sim/sim_dist.c \
-           test/sim/sim_crypto.c \
-           test/sim/sim_trace.c
+SIM_SRCS = tests/sim/test_framework.c \
+           tests/sim/sim_flash.c \
+           tests/sim/sim_fault.c \
+           tests/sim/sim_dist.c \
+           tests/sim/sim_crypto.c \
+           tests/sim/sim_trace.c
 
 # All test source files
-TEST_SRCS = test/sim/test_kvdb_basic.c \
-            test/sim/test_kvdb_stress.c \
-            test/sim/test_tsdb_basic.c \
-            test/sim/test_tsdb_stress.c \
-            test/sim/test_integration.c \
-            test/sim/test_example.c \
-            test/sim/test_fault_injection.c
+TEST_SRCS = tests/sim/test_kvdb_basic.c \
+            tests/sim/test_kvdb_stress.c \
+            tests/sim/test_tsdb_basic.c \
+            tests/sim/test_tsdb_stress.c \
+            tests/sim/test_integration.c \
+            tests/sim/test_example.c \
+            tests/sim/test_fault_injection.c
 
 # Compute object files (flat, no subdirs)
 ENGINE_OBJS = $(addprefix $(OUTPUT_DIR)/,$(notdir $(ENGINE_SRCS:.c=.o)))
@@ -54,7 +54,7 @@ TEST_EXES = $(TEST_OBJS:.o=.exe)
 COMMON_OBJS = $(SIM_OBJS)
 
 # Vpath so make can find sources in subdirs
-VPATH = src:test/sim
+VPATH = src:tests/sim
 
 # Default target
 all: $(OUTPUT_DIR) $(TEST_EXES)
@@ -192,7 +192,7 @@ help:
 	@echo Targets:
 	@echo   all      Build all test executables (default)
 	@echo   test     Build and run all tests
-	@echo   clean    Remove test/out/
+	@echo   clean    Remove tests/out/
 	@echo   rebuild  Clean then build
 	@echo   help     Show this help
 	@echo.

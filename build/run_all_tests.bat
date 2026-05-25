@@ -19,7 +19,7 @@ REM All 8 test executables (in run order: basic first, then stress, then cache, 
 set TESTS=test_kvdb_basic test_kvdb_stress test_kvdb_cache test_tsdb_basic test_tsdb_stress test_integration test_fault_injection test_example
 
 REM Common source files needed by all tests
-set BASE_SRCS=src/rocketdb_kvdb.c src/rocketdb_tsdb.c test\sim\test_framework.c test\sim\sim_flash.c test\sim\sim_fault.c test\sim\sim_crypto.c test\sim\sim_dist.c test\sim\sim_trace.c
+set BASE_SRCS=src/rocketdb_kvdb.c src/rocketdb_tsdb.c tests\sim\test_framework.c tests\sim\sim_flash.c tests\sim\sim_fault.c tests\sim\sim_crypto.c tests\sim\sim_dist.c tests\sim\sim_trace.c
 
 set ACTION=%1
 if "%ACTION%"=="" set ACTION=test
@@ -118,7 +118,7 @@ REM ============================================================================
 :compile_only
 set TEST_NAME=%~1
 set TARGET=%OUTPUT_DIR%\%TEST_NAME%.exe
-set SRCS=%BASE_SRCS% test\sim\%TEST_NAME%.c
+set SRCS=%BASE_SRCS% tests\sim\%TEST_NAME%.c
 set EXTRA=
 if "%TEST_NAME%"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
 
@@ -143,7 +143,7 @@ set TARGET=%OUTPUT_DIR%\%TEST_NAME%.exe
 set LOG_FILE=%OUTPUT_DIR%\!TS!-%TEST_NAME%.log
 
 REM Compile
-set SRCS=%BASE_SRCS% test\sim\%TEST_NAME%.c
+set SRCS=%BASE_SRCS% tests\sim\%TEST_NAME%.c
 set EXTRA=
 if "%TEST_NAME%"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
 %CC% %CFLAGS% %EXTRA% %INCLUDES% -o %TARGET% %SRCS% 2>"%LOG_FILE%.build_err"

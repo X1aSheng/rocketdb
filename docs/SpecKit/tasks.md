@@ -12,10 +12,10 @@
 | T-006 | 编写初步测试报告（v0.0.1 概念验证） | 2026-02-15 | 3 份测试报告 |
 | T-007 | 学习 bitarray 项目结构和测试方法 | 2026-02-25 | 统一输出目录、构建脚本规范 |
 | T-008 | 规划 RocketDB 输出目录统一化 | 2026-02-25 | 参考 bitarray 经验 |
-| T-009 | 创建 `build.bat`（对标 bitarray） | 2026-02-25 | clang，输出到 test\out\ |
+| T-009 | 创建 `build.bat`（对标 bitarray） | 2026-02-25 | clang，输出到 tests\out\ |
 | T-010 | 创建 `Makefile`（增量编译） | 2026-02-25 | VPATH 扁平化 .o |
-| T-011 | 修复 `test/sim/rocketdb.h` 旧文件名引用 | 2026-02-25 | 指向 `../../rocketdb.h` |
-| T-012 | 修复 `test/sim/sim_runner.c` 输出路径 | 2026-02-25 | 改为 `test\out\` |
+| T-011 | 修复 `tests/sim/rocketdb.h` 旧文件名引用 | 2026-02-25 | 指向 `../../rocketdb.h` |
+| T-012 | 修复 `tests/sim/sim_runner.c` 输出路径 | 2026-02-25 | 改为 `tests\out\` |
 | T-013 | 修复 `rocketdb_kvdb.c` unused-parameter warning | 2026-02-25 | `(void)src_sec` |
 | T-014 | 验证编译测试：0 warning，全部用例通过 | 2026-02-25 | KVDB GC×100, TSDB×200条 |
 
@@ -25,13 +25,13 @@
 
 | 任务 ID | 优先级 | 任务描述 | 估计工作量 | 依赖 | 状态 |
 |--------|--------|--------|----------|------|------|
-| T-050 | P0 | 创建统一输出目录 test/out/ | 0.5h | 无 | ✅ 完成 |
+| T-050 | P0 | 创建统一输出目录 tests/out/ | 0.5h | 无 | ✅ 完成 |
 | T-051 | P0 | 编写 build.bat（参考 bitarray） | 2h | T-050 | ✅ 完成 |
 | T-052 | P0 | 编写 Makefile（参考 bitarray） | 2h | T-050 | ✅ 完成 |
 | T-053 | P0 | 更新 tests/sim/README.md 输出路径 | 1h | T-050 | 📋 待完成 |
 | T-054 | P0 | 修复 sim_runner.c / rocketdb.h 路径 | 1h | T-050 | ✅ 完成 |
 | T-055 | P0 | 验证编译：0 warning，测试全部通过 | — | T-054 | ✅ 完成 |
-| T-056 | P1 | 更新 .gitignore 排除 test/out/ | 0.5h | T-050 | 📋 待完成 |
+| T-056 | P1 | 更新 .gitignore 排除 tests/out/ | 0.5h | T-050 | 📋 待完成 |
 
 ### 第一阶段：基线规格固化
 
@@ -54,7 +54,7 @@
 | T-203 | P0 | 编写测试框架主循环 skeleton | 6h | T-202 | - |
 | T-204 | P0 | 实现故障注入接口（掉电/CRC损坏/擦除失败） | 8h | T-203 | test_plan.md 4.1 |
 | T-205 | P1 | 实现数据分布生成器（key/value长度分布） | 4h | T-204 | test_plan.md 4.2.1 |
-| T-206 | P1 | 集成 CI 驱动脚本（输出到 test/out/） | 4h | T-205 | - |
+| T-206 | P1 | 集成 CI 驱动脚本（输出到 tests/out/） | 4h | T-205 | - |
 
 ### 第三阶段：覆盖率导航测试（基于 test_plan.md 4.2.2 节）
 

@@ -115,7 +115,7 @@ RocketDB 是针对资源受限嵌入式系统的**双模 Flash 存储引擎**，
 | TSDB 核心 API | ✅ 完成 | append/query/rotation |
 | TSDB Epoch | ✅ 完成 | 时间戳回绕防护 |
 | 构建脚本 | 📋 计划中 | 参考 bitarray 创建 |
-| 输出目录 | 📋 计划中 | 统一到 test/out/ |
+| 输出目录 | 📋 计划中 | 统一到 tests/out/ |
 | 自动化测试 | ⚠️ 部分 | 缺 GC/Recovery 完整覆盖 |
 | 压力测试 | ❌ 未做 | 无 100+ GC 循环验证 |
 
