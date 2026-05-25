@@ -25,9 +25,10 @@ echo   build  - Compile KVDB tests only
 echo   clean  - Remove KVDB build artifacts
 echo   help   - Show this help
 echo.
-echo KVDB test suites (2):
+echo KVDB test suites (3):
 echo   test_kvdb_basic   - KVDB set/get/update/delete, write_gran, seq_wrap, mixed_len, corrupt, capacity
 echo   test_kvdb_stress  - KVDB GC stress, iterator under GC, power-loss, corrupt sector recovery
+echo   test_kvdb_cache   - KVDB key-to-address cache, collision stress, TSDB safety fixes
 echo.
 goto end
 

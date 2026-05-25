@@ -56,8 +56,8 @@ static rdb_flash_ops_t g_ops = {
 static rdb_err_t trace_ts_append(rdb_tsdb_t *db, uint32_t ts,
                                   const void *data, uint16_t dlen)
 {
-    trace_event(&g_trace, "  [TS-APPEND] ts=%lu dlen=%u",
-                (unsigned long)ts, (unsigned)dlen);
+    trace_event(&g_trace, "  [TS-APPEND] time=%u dlen=%u",
+                (unsigned)ts, (unsigned)dlen);
     return rdb_tsdb_append(db, ts, (const uint8_t *)data, dlen);
 }
 

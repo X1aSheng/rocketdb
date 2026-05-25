@@ -2,7 +2,7 @@
 REM =============================================================================
 REM RocketDB - Comprehensive Test Runner
 REM =============================================================================
-REM Purpose: Build and run ALL 7 test suites with timestamped logs and summary
+REM Purpose: Build and run ALL 8 test suites with timestamped logs and summary
 REM Usage:   run_all_tests.bat [build|test|clean|help]
 REM =============================================================================
 
@@ -15,8 +15,8 @@ set CFLAGS=-Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS
 set INCLUDES=-Isrc -Itest\sim
 set OUTPUT_DIR=test\out
 
-REM All 7 test executables (in run order: basic first, then stress, then integration/demo)
-set TESTS=test_kvdb_basic test_kvdb_stress test_tsdb_basic test_tsdb_stress test_integration test_fault_injection test_example
+REM All 8 test executables (in run order: basic first, then stress, then cache, then integration/demo)
+set TESTS=test_kvdb_basic test_kvdb_stress test_kvdb_cache test_tsdb_basic test_tsdb_stress test_integration test_fault_injection test_example
 
 REM Common source files needed by all tests
 set BASE_SRCS=src/rocketdb_kvdb.c src/rocketdb_tsdb.c test\sim\test_framework.c test\sim\sim_flash.c test\sim\sim_fault.c test\sim\sim_crypto.c test\sim\sim_dist.c test\sim\sim_trace.c
@@ -119,8 +119,10 @@ REM ============================================================================
 set TEST_NAME=%~1
 set TARGET=%OUTPUT_DIR%\%TEST_NAME%.exe
 set SRCS=%BASE_SRCS% test\sim\%TEST_NAME%.c
+set EXTRA=
+if "%TEST_NAME%"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
 
-%CC% %CFLAGS% %INCLUDES% -o %TARGET% %SRCS% 2>nul
+%CC% %CFLAGS% %EXTRA% %INCLUDES% -o %TARGET% %SRCS% 2>nul
 if errorlevel 1 (
     echo   [BUILD FAIL] %TEST_NAME%
 ) else (
@@ -142,7 +144,9 @@ set LOG_FILE=%OUTPUT_DIR%\!TS!-%TEST_NAME%.log
 
 REM Compile
 set SRCS=%BASE_SRCS% test\sim\%TEST_NAME%.c
-%CC% %CFLAGS% %INCLUDES% -o %TARGET% %SRCS% 2>"%LOG_FILE%.build_err"
+set EXTRA=
+if "%TEST_NAME%"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
+%CC% %CFLAGS% %EXTRA% %INCLUDES% -o %TARGET% %SRCS% 2>"%LOG_FILE%.build_err"
 if errorlevel 1 (
     echo   [FAIL] %TEST_NAME% - compile error
     type "%LOG_FILE%.build_err"
@@ -192,14 +196,15 @@ echo ================================================
 echo.
 echo Usage: run_all_tests.bat [test^|build^|clean^|help]
 echo.
-echo   test   - Compile and run all 7 test suites (default)
+echo   test   - Compile and run all 8 test suites (default)
 echo   build  - Compile all test suites only (no run)
 echo   clean  - Remove all test outputs
 echo   help   - Show this help
 echo.
-echo Test suites (7 total):
+echo Test suites (8 total):
 echo   test_kvdb_basic        KVDB basic functionality
 echo   test_kvdb_stress       KVDB stress + GC + power-loss
+echo   test_kvdb_cache        KVDB key cache + TSDB safety fixes
 echo   test_tsdb_basic        TSDB append/query/epoch
 echo   test_tsdb_stress       TSDB rotation stress + CRC + fault
 echo   test_integration       KVDB+TSDB combined + mixed workload

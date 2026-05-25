@@ -816,6 +816,126 @@ static int rdb_dedup_track(rdb_dedup_set_t* ds, uint16_t hash,
     return RDB_DEDUP_FULL;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  KV Cache — key-to-address lookup cache
+ *
+ *  Based on the same fingerprint scheme as rdb_dedup_set_t.
+ *  Eliminates O(N x M) full-table scans for repeated get/set on the same
+ *  keys.  Disabled at compile time when RDB_KV_CACHE_SIZE == 0.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#if RDB_KV_CACHE_SIZE > 0
+
+/** @brief Compute a slot index from a key hash. */
+static inline uint8_t kv_cache_idx(uint16_t hash) {
+    return (uint8_t)(hash % RDB_KV_CACHE_SIZE);
+}
+
+/**
+ * @brief Look up a key in the cache.
+ *
+ * Linear-probes from the home slot.  Returns the flash address on
+ * match, or RDB_ADDR_INVALID on miss / full table / disabled cache.
+ */
+static uint32_t kv_cache_lookup(rdb_kvdb_t* db, const char* key, uint8_t kl) {
+    uint16_t hash = rdb_hash16(key, kl);
+    uint8_t  idx = kv_cache_idx(hash);
+    uint8_t  start = idx;
+
+    do {
+        rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
+        if (sl->klen == 0)
+            return RDB_ADDR_INVALID;  /* empty slot — definite miss */
+        if (sl->hash == hash && sl->klen == kl) {
+            uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
+            if (memcmp(sl->prefix, key, pl) == 0)
+                return sl->addr;  /* hit */
+        }
+        idx = (uint8_t)((idx + 1u) % RDB_KV_CACHE_SIZE);
+    } while (idx != start);
+
+    return RDB_ADDR_INVALID;  /* full table — miss */
+}
+
+/**
+ * @brief Insert (or update) a cache entry for a key.
+ *
+ * If an existing entry with the same fingerprint is found it is
+ * updated in-place; otherwise a new empty slot is populated.
+ * On a full cache table the insertion is silently dropped (the next
+ * find_latest() will re-populate it on miss).
+ */
+static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
+    uint32_t addr) {
+    uint16_t hash = rdb_hash16(key, kl);
+    uint8_t  idx = kv_cache_idx(hash);
+    uint8_t  start = idx;
+
+    do {
+        rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
+        if (sl->klen == 0) {
+            /* Empty slot — insert */
+            sl->hash = hash;
+            sl->klen = kl;
+            {
+                uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
+                memcpy(sl->prefix, key, pl);
+            }
+            sl->addr = addr;
+            return;
+        }
+        if (sl->hash == hash && sl->klen == kl) {
+            uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
+            if (memcmp(sl->prefix, key, pl) == 0) {
+                sl->addr = addr;  /* update */
+                return;
+            }
+        }
+        idx = (uint8_t)((idx + 1u) % RDB_KV_CACHE_SIZE);
+    } while (idx != start);
+    /* Table full — silently drop */
+}
+
+/**
+ * @brief Invalidate (remove) a cache entry for a key.
+ *
+ * Sets the slot's klen to 0, marking it as empty.  This is safe to
+ * call even if the key is not in the cache.
+ */
+static void kv_cache_invalidate(rdb_kvdb_t* db, const char* key, uint8_t kl) {
+    uint16_t hash = rdb_hash16(key, kl);
+    uint8_t  idx = kv_cache_idx(hash);
+    uint8_t  start = idx;
+
+    do {
+        rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
+        if (sl->klen == 0)
+            return;
+        if (sl->hash == hash && sl->klen == kl) {
+            uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
+            if (memcmp(sl->prefix, key, pl) == 0) {
+                sl->klen = 0;  /* invalidate */
+                return;
+            }
+        }
+        idx = (uint8_t)((idx + 1u) % RDB_KV_CACHE_SIZE);
+    } while (idx != start);
+}
+
+/** @brief Reset all cache entries. */
+static void kv_cache_flush(rdb_kvdb_t* db) {
+    memset(&db->cache, 0, sizeof(db->cache));
+}
+
+#else  /* RDB_KV_CACHE_SIZE == 0 — compile out all cache calls */
+
+#define kv_cache_lookup(db, key, kl)   RDB_ADDR_INVALID
+#define kv_cache_insert(db, key, kl, addr)  ((void)0)
+#define kv_cache_invalidate(db, key, kl)     ((void)0)
+#define kv_cache_flush(db)                   ((void)0)
+
+#endif /* RDB_KV_CACHE_SIZE */
+
 /**
  * @brief Scan callback for fixup_stale (newest-first dedup pass).
  *
@@ -849,6 +969,7 @@ static int fixup_cb(rdb_kvdb_t* db, uint8_t s,
         if (mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
         db->sectors[s].garbage_bytes += ri->rsz;
+        kv_cache_invalidate(db, (const char*)kb, ri->key_len);
         fx->dead_count++;
         return RDB_ITER_CONTINUE;
     }
@@ -862,6 +983,7 @@ static int fixup_cb(rdb_kvdb_t* db, uint8_t s,
             if (mark_dead(db, ri->addr) != 0)
                 db->stats.flash_errors++;
             db->sectors[s].garbage_bytes += ri->rsz;
+            kv_cache_invalidate(db, (const char*)kb, ri->key_len);
             fx->dead_count++;
         }
     }
@@ -931,6 +1053,7 @@ static int dedup_mark_cb(rdb_kvdb_t* db, uint8_t s,
     if (r == RDB_DEDUP_SEEN) {
         if (mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
+        kv_cache_invalidate(db, (const char*)kb, ri->key_len);
     } else if (r == RDB_DEDUP_FULL) {
         /* Hash set full — fall back to authoritative find_latest */
         find_ctx_t fc;
@@ -938,6 +1061,7 @@ static int dedup_mark_cb(rdb_kvdb_t* db, uint8_t s,
         if (fc.found && fc.best_addr != ri->addr) {
             if (mark_dead(db, ri->addr) != 0)
                 db->stats.flash_errors++;
+            kv_cache_invalidate(db, (const char*)kb, ri->key_len);
         }
     }
     /* RDB_DEDUP_NEW: first encounter — keep this copy */
@@ -1196,7 +1320,8 @@ static uint32_t gc_avail(rdb_kvdb_t* db, uint8_t victim) {
  */
 static int migrate_one(rdb_kvdb_t* db, uint8_t src_sec,
     const kv_rec_info_t* ri,
-    uint16_t             orig_data_crc) {
+    uint16_t             orig_data_crc,
+    uint32_t*            out_addr) {
     (void)src_sec; /* reserved for future use (e.g. cross-sector trace) */
     uint32_t rsz = ri->rsz;
     uint32_t g = wr_gran(db);
@@ -1225,39 +1350,64 @@ static int migrate_one(rdb_kvdb_t* db, uint8_t src_sec,
     nh.data_crc = orig_data_crc;
     nh._pad1 = 0xFFFF;
 
-    /* Write record header */
-    if (fl_write(db, dst, &nh, sizeof(nh)) != 0)
-        return -1;
+    if (rsz <= RDB_STACK_BUF_SIZE) {
+        /* Small record: assemble header + key + value in one stack
+           buffer and write as a single flash operation (same merge
+           optimisation as rdb_kvdb_set). */
+        uint8_t mbuf[RDB_STACK_BUF_SIZE];
+        memcpy(mbuf, &nh, KV_REC_SZ);
 
-    /* Copy key + value payload from source to destination */
-    {
-        uint32_t src_pos = ri->addr + KV_REC_SZ;
-        uint32_t dst_pos = dst + KV_REC_SZ;
+        /* Read key + value payload from source into the merge buffer */
         uint32_t total = ka + va;
-        uint8_t  buf[RDB_STACK_BUF_SIZE];
+        if (fl_read(db, ri->addr + KV_REC_SZ, mbuf + KV_REC_SZ, total) != 0)
+            return -1;
 
-        while (total) {
-            uint32_t ch = RDB_MIN(total, sizeof(buf));
-            if (fl_read(db, src_pos, buf, ch) != 0)
-                return -1;
-            if (fl_write(db, dst_pos, buf, ch) != 0)
-                return -1;
-            src_pos += ch;
-            dst_pos += ch;
-            total -= ch;
+        if (fl_write(db, dst, mbuf, rsz) != 0)
+            return -1;
+
+        /* Commit: WRITING → VALID */
+        uint8_t v = RDB_STATE_VALID;
+        if (fl_write(db, dst + 1, &v, 1) != 0) {
+            db->sectors[db->active_sec].write_off += rsz;
+            return -1;
+        }
+    } else {
+        /* Large record: multi-step write */
+
+        /* Write record header */
+        if (fl_write(db, dst, &nh, sizeof(nh)) != 0)
+            return -1;
+
+        /* Copy key + value payload from source to destination */
+        {
+            uint32_t src_pos = ri->addr + KV_REC_SZ;
+            uint32_t dst_pos = dst + KV_REC_SZ;
+            uint32_t total = ka + va;
+            uint8_t  buf[RDB_STACK_BUF_SIZE];
+
+            while (total) {
+                uint32_t ch = RDB_MIN(total, sizeof(buf));
+                if (fl_read(db, src_pos, buf, ch) != 0)
+                    return -1;
+                if (fl_write(db, dst_pos, buf, ch) != 0)
+                    return -1;
+                src_pos += ch;
+                dst_pos += ch;
+                total -= ch;
+            }
+        }
+
+        /* Commit: WRITING → VALID */
+        uint8_t v = RDB_STATE_VALID;
+        if (fl_write(db, dst + 1, &v, 1) != 0) {
+            db->sectors[db->active_sec].write_off += rsz;
+            return -1;
         }
     }
 
-    /* Commit: WRITING → VALID */
-    uint8_t v = RDB_STATE_VALID;
-    if (fl_write(db, dst + 1, &v, 1) != 0) {
-        /* Advance write_off past the partially-written record to avoid
-           NOR 1→0 violation on the next write to the same location. */
-        db->sectors[db->active_sec].write_off += rsz;
-        return -1;
-    }
-
     db->sectors[db->active_sec].write_off += rsz;
+    if (out_addr)
+        *out_addr = dst;
     return 0;
 }
 
@@ -1327,10 +1477,16 @@ static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s,
     }
 
     /* Migrate the record to the active sector */
-    if (migrate_one(db, s, ri, rh.data_crc) != 0) {
+    uint32_t new_addr = RDB_ADDR_INVALID;
+    if (migrate_one(db, s, ri, rh.data_crc, &new_addr) != 0) {
         gc->err = 1;
         return RDB_ITER_STOP;
     }
+
+    /* Cache the record at its new address; invalidate the old entry.
+       The key fingerprint is already in kb from the flash read above. */
+    kv_cache_invalidate(db, (const char*)kb, ri->key_len);
+    kv_cache_insert(db, (const char*)kb, ri->key_len, new_addr);
 
     /* Mark source record dead after successful migration.
        If mark_dead fails, retry once after a yield.  A persistent
@@ -2034,6 +2190,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
     }
 
     db->iter_gen = 0;
+    kv_cache_flush(db);
     db->initialized = 1;
     return RDB_OK;
 }
@@ -2114,6 +2271,7 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
     db->write_off = data_start(db);
     db->live_bytes = 0;
     db->iter_gen = 0;
+    kv_cache_flush(db);
     db->initialized = 1;
     memset(&db->stats, 0, sizeof(db->stats));
 
@@ -2343,6 +2501,9 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
     db->write_off = db->sectors[db->active_sec].write_off;
     db->live_bytes += rsz;
 
+    /* Cache the new record's address for fast future lookups */
+    kv_cache_insert(db, key, kl, wa);
+
     /* Step 5 [K-4/K-5 fix]: invalidate old copy using refreshed fc.
        The old record was located by the re-find in Step 2b, so its
        address is current even if GC moved it. */
@@ -2399,16 +2560,49 @@ rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
 
     fl_lock(db);
 
+    uint32_t best_addr;
+    uint8_t  found = 0;
+
+    /* Try the key cache first (fast path) */
+    uint32_t cached = kv_cache_lookup(db, key, kl);
+    if (cached != RDB_ADDR_INVALID) {
+        rdb_kv_record_hdr_t rh;
+        if (fl_read(db, cached, &rh, sizeof(rh)) == 0 &&
+            rh.state == RDB_STATE_VALID &&
+            rh.key_len == kl) {
+            /* Verify CRC — cache hit may be stale */
+            uint16_t calc;
+            if (data_crc_flash(db, cached, rh.key_len, rh.val_len, &calc) == 0 &&
+                calc == rh.data_crc) {
+                /* Verify key bytes match (cache may collide on hash+prefix) */
+                uint8_t kb[RDB_STACK_BUF_SIZE];
+                if (fl_read(db, cached + KV_REC_SZ, kb, kl) == 0 &&
+                    memcmp(kb, key, kl) == 0) {
+                    best_addr = cached;
+                    found = 1;
+                    goto read_value;
+                }
+            }
+        }
+        /* Cache entry is stale — invalidate and fall through to scan */
+        kv_cache_invalidate(db, key, kl);
+    }
+
     find_ctx_t fc;
     find_latest(db, key, kl, &fc);
     if (!fc.found) {
         fl_unlock(db);
         return RDB_ERR_NOT_FOUND;
     }
+    best_addr = fc.best_addr;
 
+    /* Populate cache for next access */
+    kv_cache_insert(db, key, kl, fc.best_addr);
+
+read_value:
     /* Read the record header for val_len and data_crc */
     rdb_kv_record_hdr_t rh;
-    if (fl_read(db, fc.best_addr, &rh, sizeof(rh)) != 0) {
+    if (fl_read(db, best_addr, &rh, sizeof(rh)) != 0) {
         db->stats.flash_errors++;
         fl_unlock(db);
         return RDB_ERR_FLASH;
@@ -2417,23 +2611,25 @@ rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
     if (out_len)
         *out_len = rh.val_len;
 
-    /* Verify data integrity */
-    uint16_t calc;
-    if (data_crc_flash(db, fc.best_addr, rh.key_len, rh.val_len, &calc) != 0) {
-        db->stats.flash_errors++;
-        fl_unlock(db);
-        return RDB_ERR_FLASH;
-    }
-    if (calc != rh.data_crc) {
-        db->stats.crc_errors++;
-        fl_unlock(db);
-        return RDB_ERR_CRC;
+    /* Verify data integrity (if we came via cache, already verified) */
+    if (!found) {
+        uint16_t calc;
+        if (data_crc_flash(db, best_addr, rh.key_len, rh.val_len, &calc) != 0) {
+            db->stats.flash_errors++;
+            fl_unlock(db);
+            return RDB_ERR_FLASH;
+        }
+        if (calc != rh.data_crc) {
+            db->stats.crc_errors++;
+            fl_unlock(db);
+            return RDB_ERR_CRC;
+        }
     }
 
     /* Read value data */
     uint32_t g = wr_gran(db);
     uint32_t ka = RDB_ALIGN_UP(rh.key_len, g);
-    uint32_t va = fc.best_addr + KV_REC_SZ + ka; /* Value flash address */
+    uint32_t va = best_addr + KV_REC_SZ + ka; /* Value flash address */
     uint16_t rd = (uint16_t)RDB_MIN(buf_len, rh.val_len);
 
     if (buf && rd > 0) {
@@ -2525,6 +2721,9 @@ rdb_err_t rdb_kvdb_delete(rdb_kvdb_t* db, const char* key) {
             off += rsz;
         }
     }
+
+    if (found)
+        kv_cache_invalidate(db, key, kl);
 
     db->stats.delete_ops++;
     db->iter_gen++;

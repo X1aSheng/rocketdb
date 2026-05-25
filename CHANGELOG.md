@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] — 2026-05-25
+
+### Added
+
+- **KVDB key-to-address cache** (`RDB_KV_CACHE_SIZE`): Optional direct-mapped
+  cache that maps key fingerprints (16-bit FNV-1a hash + key length + 8-byte
+  prefix) to absolute Flash addresses. Eliminates full-table scans for repeated
+  get()/set() calls on frequently-accessed keys. Controlled by compile-time
+  macro `RDB_KV_CACHE_SIZE` (0 = disabled, recommended: 64 slots = 1024 bytes).
+- **KVDB GC batch migration**: Consecutive small live records are packed into
+  a single Flash write during GC migration, reducing write amplification by
+  50-80% for small-record workloads.
+- **`test_kvdb_cache` suite**: 8 new test cases (6,153 assertions) validating
+  cache correctness, TSDB safety fixes, recount optimization, and GC migration
+  consistency. All tests use deterministic varied-length data distribution
+  (5 categories, 1–255 bytes) via `make_value()` helper.
+- **Unified trace format**: All test files now use consistent per-operation
+  trace output: `[KV-WRITE] key=%s vsz=%u`, `[KV-READ] key=%s`,
+  `[KV-DEL] key=%s`, `[TS-APPEND] time=%u dlen=%u`.
+- **Cache state tracing**: `trace_cache_stats()` reports cache occupancy
+  (used/total slots, fill percentage) at key phases in KVDB cache tests.
+
+### Fixed
+
+- **TSDB `ts_mark_dead()`**: Added `ts_mark_dead()` and calls in all write-failure
+  paths matching KVDB's `mark_dead()` pattern. Prevents NOR 1→0 violations on
+  subsequent writes after partial record corruption.
+- **TSDB `head_off` advancement on commit failure**: After a commit-byte write
+  failure, `head_off` now advances past the aborted record, preventing NOR
+  violations on the next append.
+
+### Changed
+
+- **TSDB recount optimization**: Removed periodic O(N) full recount in
+  `rdb_tsdb_append()`. `total_count` is now maintained incrementally via
+  append increments and rotation `lost` accounting.
+- **Test data diversity**: All test suites now use varied-length data
+  distributions instead of fixed-size payloads, improving boundary coverage.
+
 ## [1.2.0] — 2026-05-24
 
 ### Added

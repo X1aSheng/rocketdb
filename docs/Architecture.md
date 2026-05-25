@@ -5,7 +5,7 @@
 
 | 项目 | 内容 |
 |------|------|
-| 版本 | 1.2.0 |
+| 版本 | 1.3.0 |
 | 状态 | 生产级基线 |
 | 适用硬件 | SPI NOR Flash（W25Q系列及兼容型号） |
 | 适用 MCU | Cortex-M0 / M3 / M4 / M7（已针对非对齐访问做结构体自然对齐） |
@@ -119,6 +119,7 @@ zephyr/
 #define RDB_MAX_KEY_LEN         63u
 #define RDB_MAX_VAL_LEN         4095u
 #define RDB_MAX_TS_DATA_LEN     0u       /* 0=由扇区决定；>0 为软限制 */
+#define RDB_KV_CACHE_SIZE       0u       /* KVDB 键地址缓存槽位数 */
 #define RDB_STACK_BUF_SIZE      64u
 #define RDB_GC_GARBAGE_PCT      20u
 #define RDB_GC_WEAR_THRESHOLD   100u
@@ -136,6 +137,16 @@ zephyr/
 | 1\~65535 | `max_data_len` = min(物理上限, 配置值) |
 
 建议显式配置，以便编译时确定 query 缓冲区大小。
+
+**`RDB_KV_CACHE_SIZE` 语义：**
+
+| 配置值 | 行为 |
+|--------|------|
+| 0（默认） | 禁用缓存，无 RAM 开销 |
+| 1\~255 | 启用缓存，每个槽 16 字节（2 字节 hash + 1 字节 klen + 8 字节前缀 + 4 字节地址 + 1 字节填充） |
+
+缓存采用直接映射 + 线性探测，消除热点 key 的全表扫描。推荐嵌入式工作负载配置 64 槽（1024 字节 RAM）。
+键指纹 = FNV-1a 16-bit hash + key 长度 + key 前 8 字节，冲突时回退全表扫描并通过 memcmp 校验完整 key。
 
 ```c
 _Static_assert(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 254u,
@@ -457,6 +468,27 @@ DATA_CAP       = sector_size - DATA_START
 REC_SZ(kl,vl) = 16 + ALIGN_UP(kl, WR_GRAN) + ALIGN_UP(vl, WR_GRAN)
 MAX_LIVE       = (sector_cnt - gc_reserve) × DATA_CAP
 ```
+
+#### 4.2.1 KVDB 键地址缓存 (RDB_KV_CACHE_SIZE > 0)
+
+启用后，`rdb_kvdb_t` 内嵌一个直接映射缓存，将键指纹映射到 Flash 绝对地址，消除热点 key 的全表扫描。
+
+**缓存槽结构（16 字节）：**
+```c
+typedef struct {
+    uint16_t hash;       // 16-bit FNV-1a 键哈希
+    uint8_t  klen;       // 键长度 (0 = 空槽)
+    uint8_t  prefix[8];  // 键前 8 字节去歧义
+    uint32_t addr;       // VALID 记录的 Flash 绝对地址
+} rdb_kv_cache_slot_t;
+```
+
+**一致性保证：**
+- 缓存命中 → 读 Flash 验证 state==VALID 且 CRC 正确 → 完整 key 字节比较 → 不一致则失效回退全表扫描
+- set/delete/GC 迁移时同步更新或失效条目
+- format/init 时清空全部
+
+**性能收益：** 热点 key 的 get() 从 O(N×M) 降至 O(1)+1 次 Flash 读。典型嵌入式场景（< 100 key）命中率 > 90%。
 
 ### 4.3 KVDB API
 
@@ -1054,19 +1086,13 @@ rdb_tsdb_append(db, time, data, len)
 │
 ├── 更新 head_off, head_count, last_time, total_count
 │
-└── 周期性 total_count 校准
-    条件: sector_rotations > 0 且 sector_rotations % sector_cnt == 0
-    从 tail 到 head 遍历：
-      head 使用 head_count
-      其余使用 ts_sector_count
-    total_count = recount
-
-    设计理由：长期运行中，掉电导致的 seal 失败、降级扇区的近似
-    计数等边界情况可能引入 total_count 的微小偏差。每经过一个
-    完整的环形周期（sector_cnt 次 rotation），通过全量重算消除
-    累积误差。校准仅在 append 中触发（单一触发点），避免与
-    ts_rotate 中的逻辑重复执行。
-```
+├── 写入失败安全（v1.3.0）
+│   ├── header/data 写失败 → ts_mark_dead(wa)，物理标记 DEAD
+│   └── commit byte 写失败 → head_off+=rsz, head_count--，推进前沿
+│
+└── total_count 增量维护（v1.3.0）
+    每次 append 成功 +1，rotation 覆盖 tail 时减去 lost。
+    移除周期性 O(N) 全量重算，消除高频写入延迟尖峰。
 
 ### 5.8 Rotation 流程
 

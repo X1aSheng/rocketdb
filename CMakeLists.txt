@@ -216,6 +216,7 @@ if(BUILD_TESTS)
         test_integration
         test_fault_injection
         test_example
+        test_kvdb_cache
     )
 
     foreach(test_name IN LISTS ROCKETDB_TESTS)
@@ -234,6 +235,9 @@ if(BUILD_TESTS)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     endforeach()
+
+    # test_kvdb_cache enables the KV key cache for cache-specific test coverage
+    target_compile_definitions(test_kvdb_cache PRIVATE RDB_KV_CACHE_SIZE=64)
 
     # Keep example smoke coverage when examples are present.
     if(BUILD_EXAMPLES AND TARGET example_kvdb_basic)

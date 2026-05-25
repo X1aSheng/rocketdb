@@ -116,6 +116,41 @@ extern "C" {
 #endif
 
 /**
+ * @brief KVDB key-to-address cache size (number of slots).
+ *
+ * A direct-mapped cache with linear probing that stores key fingerprints
+ * mapped to absolute flash addresses.  Eliminates full-table scans on
+ * repeated get()/set() calls for frequently-accessed keys.
+ *
+ * Set to 0 to disable the cache entirely (zero RAM cost).
+ * Recommended: 64 slots (1,024 bytes) for a typical embedded workload.
+ */
+#ifndef RDB_KV_CACHE_SIZE
+#define RDB_KV_CACHE_SIZE 0u
+#endif
+
+/** @brief Key fingerprint slot for the KV cache.
+ *
+ * Each slot stores a key fingerprint (hash + length + 8-byte prefix) and
+ * the absolute flash address of the VALID record.  The fingerprint format
+ * is identical to the one used by rdb_dedup_set_t for collision detection. */
+typedef struct {
+    uint16_t hash;       /**< Full 16-bit key hash (FNV-1a folded)     */
+    uint8_t  klen;       /**< Key length in bytes (0 = empty slot)     */
+    uint8_t  prefix[8];  /**< First 8 key bytes for disambiguation     */
+    uint32_t addr;       /**< Absolute flash address of VALID record   */
+} rdb_kv_cache_slot_t;
+
+/** @brief KVDB key-to-address cache (embedded in rdb_kvdb_t).
+ *
+ * The total RAM cost is RDB_KV_CACHE_SIZE * 16 bytes.  With the
+ * default of 0, the cache is a zero-element flexible array and costs
+ * nothing.  Use at least 64 slots for production workloads. */
+typedef struct {
+    rdb_kv_cache_slot_t slots[RDB_KV_CACHE_SIZE];
+} rdb_kv_cache_t;
+
+/**
  * @brief GC Phase 2 scored selection garbage percentage threshold.
  *
  * Sectors with garbage% below this threshold are not considered as
@@ -629,6 +664,7 @@ typedef struct {
     uint32_t               live_bytes;  /**< Total bytes occupied by VALID records      */
     uint32_t               write_off;   /**< Current write offset in active sector      */
     uint32_t               iter_gen;    /**< Iterator generation (detects modification) */
+    rdb_kv_cache_t         cache;       /**< Key-to-address cache (disabled if size=0)  */
     rdb_kv_stats_t         stats;       /**< Runtime statistics                         */
 } rdb_kvdb_t;
 

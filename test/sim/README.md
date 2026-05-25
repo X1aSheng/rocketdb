@@ -4,7 +4,7 @@
 
 The RocketDB test system verifies correctness, reliability, and durability of a dual-mode embedded Flash storage engine under conditions that closely mirror real NOR Flash hardware behavior.
 
-**Version**: v1.1.2 | **Language**: C99 | **Flash Model**: W25Q128-compatible NOR
+**Version**: v1.3.0 | **Language**: C99 | **Flash Model**: W25Q128-compatible NOR
 
 ---
 
@@ -14,9 +14,9 @@ The RocketDB test system verifies correctness, reliability, and durability of a 
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Test Executables (7)                      │
+│                    Test Executables (8)                      │
 │  kvdb_basic  tsdb_basic  kvdb_stress  tsdb_stress           │
-│  integration  fault_injection  example                      │
+│  integration  fault_injection  example  kvdb_cache           │
 ├─────────────────────────────────────────────────────────────┤
 │                 Test Framework                               │
 │  test_framework.c/h — assertion engine, reporting, runner    │
@@ -349,6 +349,28 @@ Validates that every fault type is correctly detected and propagated through the
 ### 8.7 Test Suite: `test_example` (2 cases, 27 assertions)
 
 Minimal smoke test demonstrating test framework usage. Verifies the framework's basic assertion macros and reporting.
+
+---
+
+### 8.8 Test Suite: `test_kvdb_cache` (8 cases, 6,153 assertions)
+
+New-feature validation suite covering KVDB key-to-address cache, TSDB safety fixes, and recount optimization. All tests exercise varied-length data via `make_value()` with 5 deterministic categories (tiny 1-4B / small 8-32B / medium 64-128B / large 200-255B / max 250-255B).
+
+| Test | Section | Focus |
+|------|---------|-------|
+| `kv_cache_write_read_delete` | KVDB-Cache | 200 keys x 5 length categories, write/read/delete with cache hit verification |
+| `kv_cache_hot_key_update` | KVDB-Cache | Hot-key 500 updates with cycling value sizes, cache occupancy trace |
+| `kv_cache_gc_stress` | KVDB-GC | 120 keys x 5 GC rounds, varied-length stress with cache state tracing |
+| `ts_append_query_ring` | TSDB-Recount | 2000 appends across 32-sector ring (1-32B payloads) |
+| `init_format_large_sectors` | Init | Large-sector init/format verification (KV 64 + TS 32 sectors) |
+| `ts_safety_recover_faults` | TSDB-Safety | Write-fault recovery: mark_dead + head_off advancement |
+| `kv_cache_gc_migration` | KVDB-GC | 100 keys GC migration with cache consistency after migration |
+| `kv_cache_collision_stress` | KVDB-Cache | 100-key collision stress (conditional: `RDB_KV_CACHE_SIZE > 0`) |
+
+**Trace output format** is unified across all test files:
+- `[KV-WRITE] key=%s vsz=%u` / `[KV-READ] key=%s` / `[KV-DEL] key=%s`
+- `[TS-APPEND] time=%u dlen=%u`
+- `[CACHE]` -- cache occupancy reporting at key test phases
 
 ---
 

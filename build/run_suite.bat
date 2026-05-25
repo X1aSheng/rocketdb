@@ -22,7 +22,7 @@ if "%ACTION%"=="" set ACTION=test
 REM cd to project root (script is in build\)
 cd /d "%~dp0.."
 
-if "%SUITE%"=="kvdb" set TESTS=test_kvdb_basic test_kvdb_stress
+if "%SUITE%"=="kvdb" set TESTS=test_kvdb_basic test_kvdb_stress test_kvdb_cache
 if "%SUITE%"=="tsdb" set TESTS=test_tsdb_basic test_tsdb_stress
 if "%TESTS%"=="" (
     echo [ERROR] Unknown suite: %SUITE%
@@ -54,9 +54,11 @@ set FAIL=0
 for %%t in (%TESTS%) do (
     set TARGET=%OUTPUT_DIR%\%%t.exe
     set SRCS=%BASE_SRCS% test\sim\%%t.c
+    set EXTRA=
+    if "%%t"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
 
     echo [%%t] Building...
-    %CC% %CFLAGS% %INCLUDES% -o !TARGET! !SRCS! 2>nul
+    %CC% %CFLAGS% !EXTRA! %INCLUDES% -o !TARGET! !SRCS! 2>nul
     if errorlevel 1 (
         echo [%%t] Compile FAILED
         set /a FAIL+=1

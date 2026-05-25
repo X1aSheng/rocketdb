@@ -75,9 +75,9 @@ echo Usage:
 echo   build.bat [module] [action]
 echo.
 echo Modules:
-echo   kvdb        - KVDB test suites (2 tests)
+echo   kvdb        - KVDB test suites (3 tests)
 echo   tsdb        - TSDB test suites (2 tests)
-echo   all         - All test suites (7 tests, default)
+echo   all         - All test suites (8 tests, default)
 echo   perf        - Performance benchmarks
 echo   help        - Show this help
 echo.

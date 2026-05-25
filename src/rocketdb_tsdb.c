@@ -487,6 +487,19 @@ static int ts_seal(rdb_tsdb_t* db, uint8_t s,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  ts_mark_dead — Mark a TSDB record DEAD
+ *
+ *  Writes RDB_STATE_DEAD (0xFC) to the state byte at addr+1.
+ *  This is a NOR-safe 1→0 transition (0xFF or 0xFE → 0xFC).
+ *  Mirrors KVDB's mark_dead() at rocketdb_kvdb.c:457.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int ts_mark_dead(const rdb_tsdb_t* db, uint32_t addr) {
+    uint8_t st = RDB_STATE_DEAD;
+    return twr_f(db, addr + 1, &st, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Scan sector records — generic forward scanner with callback
  *
  *  Walks the record chain within a sector starting at tds(), invoking
@@ -1237,6 +1250,8 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
 
         if (twr_f(db, wa, mbuf, rsz) != 0) {
             db->stats.flash_errors++;
+            if (ts_mark_dead(db, wa) != 0)
+                db->stats.flash_errors++;
             tunlock(db);
             return RDB_ERR_FLASH;
         }
@@ -1246,6 +1261,8 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
         /* Write record header */
         if (twr_f(db, wa, &rh, sizeof(rh)) != 0) {
             db->stats.flash_errors++;
+            if (ts_mark_dead(db, wa) != 0)
+                db->stats.flash_errors++;
             tunlock(db);
             return RDB_ERR_FLASH;
         }
@@ -1273,6 +1290,8 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
 
                 if (twr_f(db, wpos, buf, ch) != 0) {
                     db->stats.flash_errors++;
+                    if (ts_mark_dead(db, wa) != 0)
+                        db->stats.flash_errors++;
                     tunlock(db);
                     return RDB_ERR_FLASH;
                 }
@@ -1289,6 +1308,11 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
         uint8_t v = RDB_STATE_VALID;
         if (twr_f(db, wa + 1, &v, 1) != 0) {
             db->stats.flash_errors++;
+            /* Advance head_off past the abandoned record so the next
+               append() starts in clean erased space.  The WRITING record
+               will be recovered (promoted/demoted) by ts_scan() on next
+               init.  Mirrors KVDB K-4/K-5 fix at rocketdb_kvdb.c:2331. */
+            db->head_off += rsz;
             tunlock(db);
             return RDB_ERR_FLASH;
         }
@@ -1301,31 +1325,12 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
     db->total_count++;
     db->stats.write_ops++;
 
-    /* ── [T-8 fix] Periodic total_count reconciliation ──
-       Every full ring cycle (sector_rotations is a multiple of
-       sector_cnt), re-derive total_count from actual sector data
-       to eliminate accumulated drift from edge-case bookkeeping
-       errors.  Uses ts_scan() in read-only mode to avoid
-       unexpected flash writes during an append operation. */
-    if (db->stats.sector_rotations > 0 &&
-        (db->stats.sector_rotations % db->sector_cnt) == 0) {
-        uint32_t recount = 0;
-        uint8_t  s = db->tail_sec;
-        for (uint8_t i = 0; i < db->sector_cnt; i++) {
-            if (s == db->head_sec) {
-                recount += db->head_count;
-                break;
-            }
-            rdb_ts_sector_hdr_t h;
-            if (trd(db, tsa(db, s), &h, sizeof(h)) == 0) {
-                uint32_t max_off = (h.end_off != 0xFFFFu) ? h.end_off
-                                                          : db->sector_size;
-                recount += ts_scan(db, s, h.time_base, max_off, NULL, NULL, RDB_FALSE);
-            }
-            s = tnext(db, s);
-        }
-        db->total_count = recount;
-    }
+    /* ── [T-8 fix] total_count is maintained incrementally:
+       - Append path: total_count++ on each successful append
+       - ts_rotate(): subtracts lost count when overwriting tail sector
+       - init path: full recount at boot (Phase 4)
+       No periodic full recount is needed; the incremental bookkeeping
+       combined with init-time reconciliation is sufficient. */
 
     tunlock(db);
     return RDB_OK;
