@@ -805,7 +805,7 @@ typedef struct {
  *
  *  Suggested implementations:
  *    - CRC-16/MODBUS (polynomial 0xA001 reflected, init 0xFFFF)
- *    - DJB2 or FNV-1a truncated to 16 bits for hash
+ *    - FNV-1a folded to 16 bits for hash
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /**

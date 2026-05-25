@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   limit, the adapter stores/enforces `write_gran`, checks `device_is_ready()`,
   uses the same FNV-1a folded hash as the simulator, and no longer references a
   missing shell source file unless it exists.
+- **Bare-metal interface template sync**: `interface/` now exposes a
+  RocketDB-compatible `rocketdb_interface_ops` table, bridges `rdb_crc16()`,
+  `rdb_crc16_cont()`, and `rdb_hash16()`, uses FNV-1a folded hashing, and
+  documents W25QXX 256-byte page-program splitting.
 - **KVDB large value writes**: Large values are now streamed as aligned chunks
   with `0xFF` tail padding, so HALs that enforce `write_gran` never receive a
   short final write.

@@ -51,6 +51,9 @@ Required external primitives (implemented in the interface template):
 - `rdb_hash16()` — 16-bit FNV-1a folded key hash
 - `rdb_flash_ops_t` — Flash read / write / erase callbacks (with `void *ctx`)
 
+The template also exports `rocketdb_interface_ops`, which can be assigned to
+`rdb_partition_t.ops` after the hardware-specific flash functions are filled in.
+
 #### Zephyr OS
 
 Add RocketDB as a Zephyr module (see `zephyr/module.yml`):

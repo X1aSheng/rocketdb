@@ -23,7 +23,7 @@
  *
  * @file      rocketdb_interface_template.c
  * @brief     RocketDB interface template source file
- * @version   1.1.0
+ * @version   1.2.0
  * @author    XiaSheng
  * @date      2015-05-04
  *
@@ -39,7 +39,8 @@
 /* ── W25QXX SPI Flash Command Reference ────────────────────────────────────
  * When implementing for W25QXX series SPI NOR Flash, use these command
  * opcodes. Every erase/write must be preceded by WREN (0x06), and the
- * caller must poll RDSR1 (0x05) until BUSY (bit 0) clears.
+ * implementation must poll RDSR1 (0x05) until BUSY (bit 0) clears.
+ * Page Program must be split at 256-byte page boundaries.
  *
  *   #define W25Q_CMD_WREN        0x06  // Write Enable
  *   #define W25Q_CMD_WRDI        0x04  // Write Disable
@@ -84,6 +85,9 @@ int rocketdb_interface_flash_read(void *ctx, uint32_t addr, uint8_t* buf, size_t
  *            - 0 success
  *            - non-zero write failed
  * @note      Implement flash write for your hardware here.
+ *            For W25QXX, split Page Program operations so no command crosses
+ *            a 256-byte page boundary.  Preserve NOR 1->0 semantics and return
+ *            non-zero if the target range was not erased enough for the write.
  */
 int rocketdb_interface_flash_write(void *ctx, uint32_t addr, const uint8_t* buf, size_t len)
 {
@@ -147,11 +151,15 @@ void rocketdb_interface_flash_yield(void *ctx)
  * @param[in] data pointer to data buffer
  * @param[in] len  number of bytes
  * @return    16-bit CRC value
- * @note      Implement CRC-16/CCITT for your hardware here.
+ * @note      Implement CRC-16/MODBUS for your hardware here.
+ *            rdb_crc16(NULL, 0) must return the initial seed 0xFFFF.
  */
 uint16_t rocketdb_interface_crc16(const void* data, size_t len)
 {
     /* TODO: Implement CRC-16/MODBUS for your hardware */
+    if (data == NULL && len == 0)
+        return 0xFFFF;
+
     uint16_t crc = 0xFFFF;
     const uint8_t* p = (const uint8_t*)data;
     for (size_t i = 0; i < len; i++)
@@ -169,7 +177,7 @@ uint16_t rocketdb_interface_crc16(const void* data, size_t len)
  * @param[in] data pointer to next data block
  * @param[in] len  number of bytes
  * @return    updated 16-bit CRC value
- * @note      Implement CRC-16/CCITT continuation for your hardware here.
+ * @note      Implement CRC-16/MODBUS continuation for your hardware here.
  */
 uint16_t rocketdb_interface_crc16_cont(uint16_t crc, const void* data, size_t len)
 {
@@ -190,19 +198,49 @@ uint16_t rocketdb_interface_crc16_cont(uint16_t crc, const void* data, size_t le
  * @param[in] len  key length in bytes
  * @return    16-bit hash value
  * @note      Implement a hash function for your hardware here.
- *            DJB2 is provided as a default implementation.
+ *            RocketDB uses FNV-1a folded to 16 bits.  Keep this identical
+ *            across bare-metal, simulator, and Zephyr builds so existing
+ *            flash contents remain portable.
  */
 uint16_t rocketdb_interface_hash16(const void* data, size_t len)
 {
-    /* TODO: Implement hash function for your hardware */
-    uint16_t h = 5381;
+    /* TODO: Replace with a hardware-accelerated equivalent if available */
+    uint32_t h = 2166136261u;
     const uint8_t* p = (const uint8_t*)data;
     for (size_t i = 0; i < len; i++)
     {
-        h = ((h << 5) + h) ^ p[i];
+        h ^= p[i];
+        h *= 16777619u;
     }
-    return h;
+    return (uint16_t)(h ^ (h >> 16));
 }
+
+/* Symbols consumed by RocketDB core.  Applications may either compile this
+ * template as-is after filling in the flash operations, or provide equivalent
+ * rdb_* functions elsewhere. */
+uint16_t rdb_crc16(const void* data, size_t len)
+{
+    return rocketdb_interface_crc16(data, len);
+}
+
+uint16_t rdb_crc16_cont(uint16_t crc, const void* data, size_t len)
+{
+    return rocketdb_interface_crc16_cont(crc, data, len);
+}
+
+uint16_t rdb_hash16(const void* data, size_t len)
+{
+    return rocketdb_interface_hash16(data, len);
+}
+
+const rdb_flash_ops_t rocketdb_interface_ops = {
+    .read   = rocketdb_interface_flash_read,
+    .write  = rocketdb_interface_flash_write,
+    .erase  = rocketdb_interface_flash_erase,
+    .lock   = rocketdb_interface_flash_lock,
+    .unlock = rocketdb_interface_flash_unlock,
+    .yield  = rocketdb_interface_flash_yield,
+};
 
 /**
  * @brief     Debug print output

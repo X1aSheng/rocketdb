@@ -39,6 +39,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "rocketdb.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -136,9 +137,16 @@ uint16_t rocketdb_interface_crc16_cont(uint16_t crc, const void* data, size_t le
  * @param[in] len  key length in bytes
  * @return    16-bit hash value
  * @note      Used for KVDB fast-reject lookup.
- *            DJB2 or similar distribution is recommended.
+ *            Must match RocketDB's FNV-1a folded 16-bit hash.
  */
 uint16_t rocketdb_interface_hash16(const void* data, size_t len);
+
+/**
+ * @brief     RocketDB-compatible flash ops table for this interface template.
+ * @note      Assign this table to rdb_partition_t.ops and set
+ *            rdb_partition_t.flash_ctx to your hardware context pointer.
+ */
+extern const rdb_flash_ops_t rocketdb_interface_ops;
 
 /**
  * @brief     Debug print output
