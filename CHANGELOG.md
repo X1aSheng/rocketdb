@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Regression coverage for review fixes**: Added tests for KVDB large
+  non-aligned values across 1/2/4/8-byte write granularities, long cache-hit
+  key verification with `RDB_MAX_KEY_LEN=254`, de-dup fingerprint collisions,
+  TSDB unsupported write granularities, and cross-epoch query scanning.
 - **KVDB key-to-address cache** (`RDB_KV_CACHE_SIZE`): Optional direct-mapped
   cache that maps key fingerprints (16-bit FNV-1a hash + key length + 8-byte
   prefix) to absolute Flash addresses. Eliminates full-table scans for repeated
@@ -31,6 +35,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **KVDB large value writes**: Large values are now streamed as aligned chunks
+  with `0xFF` tail padding, so HALs that enforce `write_gran` never receive a
+  short final write.
+- **KVDB cache long-key verification**: Cache-hit validation now reads keys
+  into an `RDB_MAX_KEY_LEN` buffer instead of `RDB_STACK_BUF_SIZE`.
+- **KVDB de-dup collisions**: Init/GC de-dup now verifies the full key when
+  hash, length, and prefix collide, preventing accidental deletion of distinct
+  keys.
+- **KVDB max key length scan**: `strkey_len()` uses `size_t` loop state so the
+  documented 254-byte key limit cannot wrap an 8-bit counter.
+- **TSDB write granularity contract**: `rdb_tsdb_init()` and
+  `rdb_tsdb_format()` reject `write_gran > 1` until the 2-byte seal protocol is
+  redesigned for wider program units.
+- **TSDB cross-epoch query**: Range query no longer stops globally at the first
+  timestamp greater than `to`, preserving data after epoch/time resets.
+- **Windows/C99 portability**: Compile-time assertions now use a portable macro
+  and disabled KV cache builds avoid zero-length arrays.
 - **TSDB `ts_mark_dead()`**: Added `ts_mark_dead()` and calls in all write-failure
   paths matching KVDB's `mark_dead()` pattern. Prevents NOR 1→0 violations on
   subsequent writes after partial record corruption.

@@ -260,7 +260,8 @@ typedef struct {
 - `sector_size ≥ 4096` 且为 2 的幂
 - `total_size` 为 `sector_size` 整数倍
 - KVDB：扇区数 ∈ \[3, 255\]；TSDB：扇区数 ∈ \[2, 255\]
-- `write_gran` ∈ {0, 1, 2, 3}
+- KVDB `write_gran` ∈ {0, 1, 2, 3}
+- TSDB 当前 `write_gran` ∈ {0, 1}；`write_gran > 1` 在 init/format 阶段返回 `RDB_ERR_PARAM`
 
 ### 2.6 用户实现的外部函数
 
@@ -627,11 +628,10 @@ rdb_kvdb_set(key, val, len)
 │   │    header + key + val 合并到栈缓冲区一次写入
 │   │
 │   │  大记录（rsz > RDB_STACK_BUF_SIZE）：
-│   │    header → key(+0xFF padding) → val(分块写入) → val padding
+│   │    header → key(+0xFF padding) → val(+0xFF padding, 对齐分块写入)
 │   │
-│   │    val padding 使用循环写入（每次最多 8 字节），确保任意
-│   │    write_gran 下对齐填充完整。不使用固定缓冲区一次写入，
-│   │    避免 padding 长度超出缓冲区时截断。
+│   │    value 流式写入时按 write_gran 取对齐 chunk，最后一块合并
+│   │    真实数据和 0xFF padding，HAL 永远不会收到非粒度对齐尾块。
 │   │
 │   │  任何写入失败 → mark_dead(wa) → ERR_FLASH
 │   │
@@ -1541,7 +1541,7 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | KVDB init fixup_stale 复杂度 | 最坏 O(N²)，32KB 可接受 | 大分区需索引优化 |
 | KVDB delete 不触发 GC | 删除后空间不立即回收 | 后续 set 自动触发，或手动 gc |
 | KVDB 查找无索引 | O(N) 线性扫描 | 大分区需引入索引机制 |
-| TSDB wg≥2 未作为主支持目标 | 20B 扇区头、提交字节和部分 HAL 粒度组合需额外验证 | 生产使用前保持 wg=0/1，或重新设计头部布局 |
+| TSDB wg≥2 未作为主支持目标 | 20B 扇区头、2B seal 字段和部分 HAL 粒度组合不兼容 | 当前 init/format 明确拒绝；生产使用前保持 wg=0/1，或重新设计头部布局 |
 | header CRC 覆盖有限 | KVDB sector header CRC 不覆盖全部历史/磨损语义 | erase_cnt 采用 RAM/Flash max 策略，关键字段用静态断言约束 |
 | uint32 序列比较理论边界 | 超过 2^31 差值时 wrap-safe 比较会翻转 | 典型 NOR 寿命内不可达；超长寿命场景需格式迁移到 64 位 |
 | 查询线性扫描 | TSDB range query、KVDB get 在大分区下延迟增长 | 未来增加索引/游标；当前通过分区规划控制规模 |

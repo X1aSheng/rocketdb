@@ -26,7 +26,9 @@ RocketDB is a zero-allocation, dual-mode Flash storage engine for resource-const
 
 `/examples` includes RocketDB usage sample code (KVDB, TSDB, STM32F4).
 
-`/test` includes the simulation test framework and comprehensive test suites (7 suites, 39,000+ assertions).
+`/test` includes the simulation test framework and comprehensive test suites
+(8 batch suites plus CTest examples, 40,000+ assertions depending on build
+configuration).
 
 `/docs` includes design manual, API reference, integration guides, and troubleshooting.
 
@@ -107,6 +109,17 @@ rdb_tsdb_append(&ts, 1001, data, 16);
 /* Query range: timestamps 500 .. 2000 */
 rdb_tsdb_query(&ts, 500, 2000, callback, user_data);
 ```
+
+#### Flash write granularity
+
+KVDB supports `write_gran = 0..3` (1/2/4/8-byte program alignment) and
+pads large values in aligned chunks. TSDB currently supports `write_gran = 0`
+and `1`; `rdb_tsdb_init()` and `rdb_tsdb_format()` reject `write_gran > 1`
+because the current sector seal protocol commits 2-byte fields.
+
+W25QXX-class SPI NOR parts should normally use `write_gran = 0`. The HAL
+`write()` callback must still split page-program commands at 256-byte page
+boundaries and preserve NOR 1-to-0 programming semantics.
 
 ### Document
 

@@ -287,9 +287,9 @@ void rocketdb_w25q_init(void) {
 | 读取（1B-∞） | ~40MHz SPI | — | 不需要 |
 
 **RocketDB 实际负载**：
-- KVDB set：小记录通常一次合并写入；大 value 以 `RDB_STACK_BUF_SIZE` 分块写入
+- KVDB set：小记录通常一次合并写入；大 value 以 `RDB_STACK_BUF_SIZE` 分块写入，最后一块也会合并 0xFF padding 后保持 `write_gran` 对齐
 - GC 迁移：批量读写，每扇区最多 1 次擦除
-- TSDB append：小记录通常一次合并写入；大 data 以 `RDB_STACK_BUF_SIZE` 分块写入
+- TSDB append：小记录通常一次合并写入；大 data 以 `RDB_STACK_BUF_SIZE` 分块写入；当前 TSDB 仅支持 `write_gran=0/1`
 - 扇区轮转：1 次擦除
 
 HAL 仍需按 W25QXX 256B 页边界拆分，因为 64B 分块也可能从页尾附近开始。
@@ -331,3 +331,6 @@ static void flash_unlock(void) {
 W25QXX 支持单字节写入（页编程可在页内写入任意 ≤256 字节的数据）。
 设置 `write_gran = 0`（1 字节粒度）。不要使用 `write_gran = 1`
 （2 字节粒度），因为 W25QXX 无此对齐要求且会浪费空间。
+
+KVDB 可用于验证 1/2/4/8 字节抽象写粒度；TSDB 当前 seal 协议提交 2 字节字段，
+因此 `write_gran > 1` 会在 `rdb_tsdb_init()`/`rdb_tsdb_format()` 中被拒绝。
