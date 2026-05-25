@@ -203,7 +203,52 @@ TEST_CASE(kv_write_gran_matrix, "KVDB", "Write granularity matrix 1/2/4/8B")
         TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "WG", out, sizeof(out), &out_len));
         TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(v2));
         TEST_ASSERT_MEM_EQ(out, v2, sizeof(v2));
+
+        uint8_t large[257];
+        uint8_t large_out[257];
+        for (uint16_t i = 0; i < sizeof(large); i++)
+            large[i] = (uint8_t)(0x40u + (i & 0x3Fu));
+        memset(large_out, 0, sizeof(large_out));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, "WG_LARGE", large, (uint16_t)sizeof(large)));
+        out_len = 0;
+        TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "WG_LARGE", large_out,
+                                        (uint16_t)sizeof(large_out), &out_len));
+        TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(large));
+        TEST_ASSERT_MEM_EQ(large_out, large, sizeof(large));
     }
+    return 0;
+}
+
+TEST_CASE(kv_dedup_fingerprint_collision, "KVDB",
+          "Dedup keeps distinct keys with matching hash prefix")
+{
+    (void)ctx;
+    TEST_ASSERT_RDB_OK(kv_reset(DEFAULT_WG));
+
+    const char *k1 = "samepref00009d";
+    const char *k2 = "samepref000190";
+    const uint8_t v1[] = { 0x11, 0x22, 0x33 };
+    const uint8_t v2[] = { 0x44, 0x55, 0x66, 0x77 };
+
+    TEST_ASSERT_EQ(rdb_hash16(k1, strlen(k1)), rdb_hash16(k2, strlen(k2)));
+    TEST_ASSERT_EQ(strlen(k1), strlen(k2));
+    TEST_ASSERT_EQ(memcmp(k1, k2, 8), 0);
+
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, k1, v1, (uint16_t)sizeof(v1)));
+    TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, k2, v2, (uint16_t)sizeof(v2)));
+    TEST_ASSERT_RDB_OK(rdb_kvdb_init(&g_db, &g_part, g_meta));
+
+    uint8_t out[8];
+    uint16_t out_len = 0;
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, k1, out, sizeof(out), &out_len));
+    TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(v1));
+    TEST_ASSERT_MEM_EQ(out, v1, sizeof(v1));
+
+    memset(out, 0, sizeof(out));
+    out_len = 0;
+    TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, k2, out, sizeof(out), &out_len));
+    TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(v2));
+    TEST_ASSERT_MEM_EQ(out, v2, sizeof(v2));
     return 0;
 }
 
@@ -582,6 +627,7 @@ int main(void)
     test_register_case(s, &test_case_kv_delete_exists);
     test_register_case(s, &test_case_kv_get_too_large);
     test_register_case(s, &test_case_kv_write_gran_matrix);
+    test_register_case(s, &test_case_kv_dedup_fingerprint_collision);
     test_register_case(s, &test_case_kv_seq_wrap_recovery);
     test_register_case(s, &test_case_kv_mixed_lengths);
     test_register_case(s, &test_case_kv_corrupt_header_skip);

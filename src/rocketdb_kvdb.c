@@ -205,14 +205,14 @@ static inline uint32_t sec_addr(const rdb_kvdb_t* db, uint8_t s) {
  *                -1 if not null-terminated within bounds.
  */
 static int strkey_len(const char* key, uint8_t* out_len) {
-    uint8_t limit = (uint8_t)(RDB_MAX_KEY_LEN + 1u);
-    for (uint8_t i = 0; i <= limit; i++) {
+    size_t limit = (size_t)RDB_MAX_KEY_LEN + 1u;
+    for (size_t i = 0; i <= limit; i++) {
         if (key[i] == '\0') {
-            if (i < 1 || i > (uint8_t)RDB_MAX_KEY_LEN) {
-                *out_len = i;
+            if (i < 1u || i > (size_t)RDB_MAX_KEY_LEN) {
+                *out_len = (uint8_t)RDB_MIN(i, (size_t)RDB_MAX_KEY_LEN);
                 return 1;   /* empty or too long */
             }
-            *out_len = i;
+            *out_len = (uint8_t)i;
             return 0;
         }
     }
@@ -753,6 +753,7 @@ typedef struct {
     uint16_t hash;         /**< Full key hash for collision detection     */
     uint8_t  klen;         /**< Key length for fast mismatch rejection    */
     uint8_t  prefix[8];    /**< First 8 key bytes for disambiguation      */
+    uint32_t addr;         /**< Address of tracked newest record          */
     uint8_t  occupied;     /**< 1 if this slot is in use                  */
 } rdb_dedup_slot_t;
 
@@ -782,8 +783,8 @@ static void rdb_dedup_init(rdb_dedup_set_t* ds) {
  * @param klen  Key length in bytes.
  * @return      RDB_DEDUP_NEW, RDB_DEDUP_SEEN, or RDB_DEDUP_FULL.
  */
-static int rdb_dedup_track(rdb_dedup_set_t* ds, uint16_t hash,
-    const uint8_t* key, uint8_t klen) {
+static int rdb_dedup_track(rdb_dedup_set_t* ds, rdb_kvdb_t* db,
+    uint16_t hash, const uint8_t* key, uint8_t klen, uint32_t addr) {
     if (ds->overflow)
         return RDB_DEDUP_FULL;
 
@@ -799,6 +800,7 @@ static int rdb_dedup_track(rdb_dedup_set_t* ds, uint16_t hash,
                 uint8_t pl = RDB_MIN(klen, (uint8_t)sizeof(sl->prefix));
                 memcpy(sl->prefix, key, pl);
             }
+            sl->addr = addr;
             sl->occupied = 1;
             return RDB_DEDUP_NEW;
         }
@@ -806,7 +808,11 @@ static int rdb_dedup_track(rdb_dedup_set_t* ds, uint16_t hash,
         if (sl->hash == hash && sl->klen == klen) {
             uint8_t pl = RDB_MIN(klen, (uint8_t)sizeof(sl->prefix));
             if (memcmp(sl->prefix, key, pl) == 0) {
-                return RDB_DEDUP_SEEN;
+                uint8_t old_key[RDB_MAX_KEY_LEN];
+                if (fl_read(db, sl->addr + KV_REC_SZ, old_key, klen) != 0)
+                    return RDB_DEDUP_FULL;
+                if (memcmp(old_key, key, klen) == 0)
+                    return RDB_DEDUP_SEEN;
             }
         }
         idx = (uint8_t)((idx + 1u) % RDB_DEDUP_SLOTS);
@@ -960,7 +966,7 @@ static int fixup_cb(rdb_kvdb_t* db, uint8_t s,
     if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
         return RDB_ITER_CONTINUE;
 
-    int r = rdb_dedup_track(fx->ds, ri->key_hash, kb, ri->key_len);
+    int r = rdb_dedup_track(fx->ds, db, ri->key_hash, kb, ri->key_len, ri->addr);
     if (r == RDB_DEDUP_NEW)
         return RDB_ITER_CONTINUE;
 
@@ -1049,7 +1055,7 @@ static int dedup_mark_cb(rdb_kvdb_t* db, uint8_t s,
     if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
         return RDB_ITER_CONTINUE;
 
-    int r = rdb_dedup_track(ds, ri->key_hash, kb, ri->key_len);
+    int r = rdb_dedup_track(ds, db, ri->key_hash, kb, ri->key_len, ri->addr);
     if (r == RDB_DEDUP_SEEN) {
         if (mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
@@ -2433,18 +2439,32 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
             }
         }
 
-        /* Write value data in streaming chunks */
+        /* Write value data plus alignment padding in streaming chunks */
         if (len > 0) {
+            uint32_t       max_chunk = RDB_STACK_BUF_SIZE;
+            uint32_t       rem = va;
+            uint32_t       data_pos = 0;
             uint32_t       wpos = wa + KV_REC_SZ + ka;
             const uint8_t* vp = (const uint8_t*)val;
-            uint32_t       rem = len;
             uint8_t        buf[RDB_STACK_BUF_SIZE];
 
+            max_chunk -= max_chunk % g;
+            if (max_chunk == 0)
+                max_chunk = g;
+
             while (rem) {
-                uint32_t ch = RDB_MIN(rem, (uint32_t)RDB_STACK_BUF_SIZE);
-                memcpy(buf, vp, ch);
-                vp += ch;
+                uint32_t ch = RDB_MIN(rem, max_chunk);
+                uint32_t data_ch = 0;
+
+                if (data_pos < len) {
+                    data_ch = RDB_MIN(ch, (uint32_t)len - data_pos);
+                    memcpy(buf, vp + data_pos, data_ch);
+                }
+                if (data_ch < ch)
+                    memset(buf + data_ch, 0xFF, ch - data_ch);
+
                 rem -= ch;
+                data_pos += data_ch;
 
                 if (fl_write(db, wpos, buf, ch) != 0) {
                     db->stats.flash_errors++;
@@ -2454,29 +2474,6 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
                     return RDB_ERR_FLASH;
                 }
                 wpos += ch;
-            }
-
-            /* [K-4-pad fix]: value alignment padding — loop in chunks.
-               Writes 0xFF padding bytes to fill the gap between the
-               actual value end and the granularity-aligned boundary. */
-            if (va > len) {
-                uint32_t pad_rem = va - len;
-                uint32_t pad_pos = wa + KV_REC_SZ + ka + len;
-                uint8_t  ff[8];
-                memset(ff, 0xFF, sizeof(ff));
-
-                while (pad_rem > 0) {
-                    uint32_t pw = RDB_MIN(pad_rem, (uint32_t)sizeof(ff));
-                    if (fl_write(db, pad_pos, ff, pw) != 0) {
-                        /* Padding failure is non-fatal for data integrity
-                           (padding bytes are beyond val_len, only affect
-                           alignment).  Log but do not abort. */
-                        db->stats.flash_errors++;
-                        break;
-                    }
-                    pad_pos += pw;
-                    pad_rem -= pw;
-                }
             }
         }
     }
@@ -2575,7 +2572,7 @@ rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
             if (data_crc_flash(db, cached, rh.key_len, rh.val_len, &calc) == 0 &&
                 calc == rh.data_crc) {
                 /* Verify key bytes match (cache may collide on hash+prefix) */
-                uint8_t kb[RDB_STACK_BUF_SIZE];
+                uint8_t kb[RDB_MAX_KEY_LEN];
                 if (fl_read(db, cached + KV_REC_SZ, kb, kl) == 0 &&
                     memcmp(kb, key, kl) == 0) {
                     best_addr = cached;

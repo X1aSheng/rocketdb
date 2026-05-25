@@ -784,6 +784,41 @@ static int kv_cache_collision_stress(void *ctx) {
 }
 #endif /* RDB_KV_CACHE_SIZE > 0 */
 
+static int kv_cache_long_key_hit(void *ctx) {
+    (void)ctx;
+    if (kv_setup() != 0) return -1;
+
+#if RDB_KV_CACHE_SIZE > 0 && RDB_MAX_KEY_LEN > RDB_STACK_BUF_SIZE
+    char key[RDB_MAX_KEY_LEN + 1u];
+    uint8_t val[32];
+    uint8_t out[32];
+    uint16_t out_len = 0;
+    uint32_t klen = RDB_STACK_BUF_SIZE + 17u;
+
+    if (klen > RDB_MAX_KEY_LEN)
+        klen = RDB_MAX_KEY_LEN;
+    for (uint32_t i = 0; i < klen; i++)
+        key[i] = (char)('a' + (i % 26u));
+    key[klen] = '\0';
+    for (uint16_t i = 0; i < sizeof(val); i++)
+        val[i] = (uint8_t)(0xA0u + i);
+
+    TEST_ASSERT_RDB_OK(trace_kv_set(key, val, (uint16_t)sizeof(val)));
+    TEST_ASSERT_RDB_OK(trace_kv_get(key, out, sizeof(out), &out_len));
+    TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(val));
+    TEST_ASSERT_MEM_EQ(out, val, sizeof(val));
+
+    memset(out, 0, sizeof(out));
+    out_len = 0;
+    TEST_ASSERT_RDB_OK(trace_kv_get(key, out, sizeof(out), &out_len));
+    TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(val));
+    TEST_ASSERT_MEM_EQ(out, val, sizeof(val));
+#else
+    trace_event(&g_trace, "[kv-cache-long-key] skipped by compile-time limits");
+#endif
+    return 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Post-test hooks for sector summaries
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -828,6 +863,8 @@ static test_case_t g_cases[] = {
     { "kv_cache_collision_stress", "KVDB cache: 100-key collision stress, varied values",
       kv_cache_collision_stress, "KVDB-Cache", 1, NULL },
 #endif
+    { "kv_cache_long_key_hit", "KVDB cache: cache-hit verification with long key",
+      kv_cache_long_key_hit, "KVDB-Cache", 1, NULL },
 };
 
 int main(int argc, char **argv) {

@@ -120,7 +120,7 @@ set TEST_NAME=%~1
 set TARGET=%OUTPUT_DIR%\%TEST_NAME%.exe
 set SRCS=%BASE_SRCS% test\sim\%TEST_NAME%.c
 set EXTRA=
-if "%TEST_NAME%"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
+if "%TEST_NAME%"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64 -DRDB_MAX_KEY_LEN=254
 
 %CC% %CFLAGS% %EXTRA% %INCLUDES% -o %TARGET% %SRCS% 2>nul
 if errorlevel 1 (
@@ -145,7 +145,7 @@ set LOG_FILE=%OUTPUT_DIR%\!TS!-%TEST_NAME%.log
 REM Compile
 set SRCS=%BASE_SRCS% test\sim\%TEST_NAME%.c
 set EXTRA=
-if "%TEST_NAME%"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
+if "%TEST_NAME%"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64 -DRDB_MAX_KEY_LEN=254
 %CC% %CFLAGS% %EXTRA% %INCLUDES% -o %TARGET% %SRCS% 2>"%LOG_FILE%.build_err"
 if errorlevel 1 (
     echo   [FAIL] %TEST_NAME% - compile error
