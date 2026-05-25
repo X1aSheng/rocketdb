@@ -83,7 +83,7 @@ extern "C" {
  *  ┌─────────────────────────┬─────────┬──────────────────────────────────┐
  *  │ Macro                   │ Default │ Description                      │
  *  ├─────────────────────────┼─────────┼──────────────────────────────────┤
- *  │ RDB_MAX_KEY_LEN         │   63    │ Max key length (1..254 bytes)    │
+ *  │ RDB_MAX_KEY_LEN         │   32    │ Max key length (1..32 bytes)     │
  *  │ RDB_MAX_VAL_LEN         │  4095   │ Max value length per record      │
  *  │ RDB_MAX_TS_DATA_LEN     │    0    │ Max TSDB data len (0=physical)   │
  *  │ RDB_STACK_BUF_SIZE      │   64    │ Stack buffer for merged writes   │
@@ -96,9 +96,9 @@ extern "C" {
  *  └─────────────────────────┴─────────┴──────────────────────────────────┘
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** @brief Maximum key length in bytes.  Valid range: 1..254. */
+/** @brief Maximum key length in bytes.  Valid range: 1..32. */
 #ifndef RDB_MAX_KEY_LEN
-#define RDB_MAX_KEY_LEN 63u
+#define RDB_MAX_KEY_LEN 32u
 #endif
 
 /** @brief Maximum value length in bytes per KV record. */
@@ -213,8 +213,8 @@ typedef struct {
 #endif
 
 /* Compile-time validation */
-RDB_STATIC_ASSERT(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 254u,
-    "RDB_MAX_KEY_LEN must be 1..254");
+RDB_STATIC_ASSERT(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 32u,
+    "RDB_MAX_KEY_LEN must be 1..32");
 RDB_STATIC_ASSERT(RDB_STACK_BUF_SIZE >= 32u,
     "RDB_STACK_BUF_SIZE must be >= 32 (record header + minimum payload)");
 
@@ -528,7 +528,7 @@ typedef struct {
 typedef struct {
     uint8_t  magic;    /**< @brief Record identification magic        */
     uint8_t  state;    /**< @brief Record state machine value         */
-    uint8_t  key_len;  /**< @brief Key length in bytes (1..254)       */
+    uint8_t  key_len;  /**< @brief Key length in bytes (1..32)        */
     uint8_t  _pad0;    /**< @brief Reserved, must be 0xFF             */
     uint16_t val_len;  /**< @brief Value length in bytes              */
     uint16_t key_hash; /**< @brief 16-bit hash for fast key matching  */

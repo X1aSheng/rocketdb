@@ -58,7 +58,7 @@ CHIP_ERASE        0xC7/0x60 全片擦除
 
 ```c
 #define RDB_MIN_SECTOR_SIZE  4096u
-#define RDB_MAX_KEY_LEN      63u
+#define RDB_MAX_KEY_LEN      32u
 #define RDB_MAX_VAL_LEN      4095u
 #define RDB_MAX_SECTORS      255u
 

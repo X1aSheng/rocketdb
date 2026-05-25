@@ -97,7 +97,7 @@ Test Date: YYYY-MM-DD_HH:mm:ss
 ### 核心配置宏
 
 ```c
-#define RDB_MAX_KEY_LEN         63u       /* 1~254，KVDB key 最大长度 */
+#define RDB_MAX_KEY_LEN         32u       /* 1~32，KVDB key 最大长度 */
 #define RDB_MAX_VAL_LEN         4095u     /* 0~65535，KVDB value 最大长度 */
 #define RDB_MAX_TS_DATA_LEN     0u        /* 0=由扇区决定；>0=软限制 */
 #define RDB_STACK_BUF_SIZE      64u       /* 栈缓冲大小，用于小记录合并写入 */
@@ -130,18 +130,14 @@ Test Date: YYYY-MM-DD_HH:mm:ss
 ### 编译时断言
 
 ```c
-_Static_assert(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 254u,
-               "RDB_MAX_KEY_LEN must be 1..254");
+_Static_assert(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 32u,
+               "RDB_MAX_KEY_LEN must be 1..32");
 _Static_assert(RDB_MAX_VAL_LEN >= 0u && RDB_MAX_VAL_LEN <= 65535u,
                "RDB_MAX_VAL_LEN must be 0..65535");
 _Static_assert(sizeof(rdb_kv_sector_hdr_t) == 16u, "KV sector header size");
 _Static_assert(sizeof(rdb_kv_record_hdr_t) == 16u, "KV record header size");
 _Static_assert(sizeof(rdb_ts_sector_hdr_t) == 20u, "TS sector header size");
 _Static_assert(sizeof(rdb_ts_record_hdr_t) == 12u, "TS record header size");
-```
-               "RDB_MAX_KEY_LEN must be 1..254");
-_Static_assert(RDB_MAX_VAL_LEN >= 0u && RDB_MAX_VAL_LEN <= 65535u,
-               "RDB_MAX_VAL_LEN must be 0..65535");
 ```
 
 ## 公共错误码

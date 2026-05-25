@@ -154,12 +154,12 @@ max_val(key_len) = data_cap - 16 - ALIGN_UP(key_len, gran)
 |-----------|------------|-----------|-------------|
 | 1 B | 1 B | 4063 B | 4080 B |
 | 2 B ("MK") | 2 B | 4062 B | 4080 B |
-| 63 B (max) | 63 B | 4001 B | 4080 B |
+| 32 B (max) | 32 B | 4032 B | 4080 B |
 
 **Key insight**: `RDB_MAX_VAL_LEN = 4095` is a compile-time API limit, not the actual writable maximum. The actual max is always less due to:
 - Sector header: 16 B
 - Record header: 16 B
-- Key bytes (aligned): 1 – 63 B
+- Key bytes (aligned): 1 – 32 B
 - Value alignment waste: 0 – `(gran - 1)` B
 
 ### 4.2 TSDB Sector Geometry

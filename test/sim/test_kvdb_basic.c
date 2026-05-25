@@ -482,7 +482,7 @@ TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
 
     trace_kvdb_geometry(&g_trace, &g_db);
 
-    /* ── Max key length (63) ── */
+    /* ── Max key length (32 by architecture default) ── */
     {
         char mk[RDB_MAX_KEY_LEN + 2];
         memset(mk, 'K', RDB_MAX_KEY_LEN);

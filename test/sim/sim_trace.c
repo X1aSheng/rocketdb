@@ -401,7 +401,7 @@ void trace_kvdb_geometry(trace_ctx_t *t, const rdb_kvdb_t *db)
     fprintf(t->fp, "│ %5s %8s %10s %13s │\n",
             "─────", "────────", "───────", "──────");
 
-    uint8_t kl_samples[] = { 1, 2, 63 };
+    uint8_t kl_samples[] = { 1, 2, RDB_MAX_KEY_LEN };
     for (int i = 0; i < 3; i++) {
         uint16_t kl = kl_samples[i];
         uint32_t ka = RDB_ALIGN_UP(kl, gran);

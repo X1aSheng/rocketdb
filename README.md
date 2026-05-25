@@ -117,6 +117,10 @@ pads large values in aligned chunks. TSDB currently supports `write_gran = 0`
 and `1`; `rdb_tsdb_init()` and `rdb_tsdb_format()` reject `write_gran > 1`
 because the current sector seal protocol commits 2-byte fields.
 
+KVDB key length is architecturally limited to 32 bytes. Keep keys short,
+stable, and enumerable; map longer application paths or JSON-style names to
+short keys before storing them.
+
 W25QXX-class SPI NOR parts should normally use `write_gran = 0`. The HAL
 `write()` callback must still split page-program commands at 256-byte page
 boundaries and preserve NOR 1-to-0 programming semantics.

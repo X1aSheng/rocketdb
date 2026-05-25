@@ -112,7 +112,7 @@ g:\c-module\rocketdb\SpecKit\
 - 外部函数：crc16/crc16_cont/hash16
 
 **编译时配置：**
-- RDB_MAX_KEY_LEN (1~254)
+- RDB_MAX_KEY_LEN (1~32)
 - RDB_MAX_VAL_LEN (0~65535)
 - RDB_GC_GARBAGE_PCT (20%)
 - RDB_GC_WEAR_THRESHOLD (100)

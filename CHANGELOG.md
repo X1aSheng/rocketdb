@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Regression coverage for review fixes**: Added tests for KVDB large
-  non-aligned values across 1/2/4/8-byte write granularities, long cache-hit
-  key verification with `RDB_MAX_KEY_LEN=254`, de-dup fingerprint collisions,
+  non-aligned values across 1/2/4/8-byte write granularities, max-key cache-hit
+  verification at the 32-byte architecture limit, de-dup fingerprint collisions,
   TSDB unsupported write granularities, and cross-epoch query scanning.
 - **KVDB key-to-address cache** (`RDB_KV_CACHE_SIZE`): Optional direct-mapped
   cache that maps key fingerprints (16-bit FNV-1a hash + key length + 8-byte
@@ -44,7 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hash, length, and prefix collide, preventing accidental deletion of distinct
   keys.
 - **KVDB max key length scan**: `strkey_len()` uses `size_t` loop state so the
-  documented 254-byte key limit cannot wrap an 8-bit counter.
+  bounded key scan remains safe at the 32-byte architecture limit.
+- **KVDB key-length architecture limit**: `RDB_MAX_KEY_LEN` now defaults to 32
+  and compile-time validation rejects larger values. Embedded applications
+  should map long paths or dynamic names to short keys before storage.
 - **TSDB write granularity contract**: `rdb_tsdb_init()` and
   `rdb_tsdb_format()` reject `write_gran > 1` until the 2-byte seal protocol is
   redesigned for wider program units.
@@ -198,7 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **TC-X-02 max boundary tests**: KVDB (key=63, val=4095) and TSDB (max_data_len)
+- **TC-X-02 max boundary tests**: KVDB (key=32, val=4095) and TSDB (max_data_len)
   boundary verification with correct TOO_LARGE error expectations.
 - **TC-X-03 capacity accounting test**: Cross-check `max_live`, `space_info`, and
   actual usage across mixed set/delete workloads.

@@ -116,7 +116,7 @@ zephyr/
 ### 2.1 编译时配置
 
 ```c
-#define RDB_MAX_KEY_LEN         63u
+#define RDB_MAX_KEY_LEN         32u
 #define RDB_MAX_VAL_LEN         4095u
 #define RDB_MAX_TS_DATA_LEN     0u       /* 0=由扇区决定；>0 为软限制 */
 #define RDB_KV_CACHE_SIZE       0u       /* KVDB 键地址缓存槽位数 */
@@ -149,9 +149,13 @@ zephyr/
 键指纹 = FNV-1a 16-bit hash + key 长度 + key 前 8 字节，冲突时回退全表扫描并通过 memcmp 校验完整 key。
 
 ```c
-_Static_assert(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 254u,
-               "RDB_MAX_KEY_LEN must be 1..254");
+_Static_assert(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 32u,
+               "RDB_MAX_KEY_LEN must be 1..32");
 ```
+
+KVDB key 是嵌入式配置项标识符，不是文件路径或 JSON 字段路径。架构上限制
+`RDB_MAX_KEY_LEN <= 32`，应用层若需要更长的层级名称，应映射为短 key 或枚举 ID
+后再写入 KVDB。该约束用于稳定 Flash 占用、扫描成本、GC 迁移成本和栈缓冲边界。
 
 ### 2.2 错误码
 
@@ -1413,7 +1417,7 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | R-10 | ts_classify 降级 | count+end_off 有效但 CRC 不匹配 → ACTIVE |
 | R-11 | delta 溢出检查 | uint32_t，独立于 head_count |
 | R-12 | ts_data_crc | int 返回 + uint16_t* 输出 |
-| R-13 | MAX_KEY_LEN 断言 | ≤ 254 |
+| R-13 | MAX_KEY_LEN 断言 | ≤ 32 |
 | R-14 | reset_epoch | 封存 + rotate + last_time=0 |
 | R-15 | ERR_TIME_EXHAUSTED | last_time ≥ TIME_MAX 时阻止 |
 | R-16 | 对齐填充 | 0xFF |

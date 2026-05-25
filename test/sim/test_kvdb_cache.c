@@ -784,19 +784,17 @@ static int kv_cache_collision_stress(void *ctx) {
 }
 #endif /* RDB_KV_CACHE_SIZE > 0 */
 
-static int kv_cache_long_key_hit(void *ctx) {
+static int kv_cache_max_key_hit(void *ctx) {
     (void)ctx;
     if (kv_setup() != 0) return -1;
 
-#if RDB_KV_CACHE_SIZE > 0 && RDB_MAX_KEY_LEN > RDB_STACK_BUF_SIZE
+#if RDB_KV_CACHE_SIZE > 0
     char key[RDB_MAX_KEY_LEN + 1u];
     uint8_t val[32];
     uint8_t out[32];
     uint16_t out_len = 0;
-    uint32_t klen = RDB_STACK_BUF_SIZE + 17u;
+    uint32_t klen = RDB_MAX_KEY_LEN;
 
-    if (klen > RDB_MAX_KEY_LEN)
-        klen = RDB_MAX_KEY_LEN;
     for (uint32_t i = 0; i < klen; i++)
         key[i] = (char)('a' + (i % 26u));
     key[klen] = '\0';
@@ -814,7 +812,7 @@ static int kv_cache_long_key_hit(void *ctx) {
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(val));
     TEST_ASSERT_MEM_EQ(out, val, sizeof(val));
 #else
-    trace_event(&g_trace, "[kv-cache-long-key] skipped by compile-time limits");
+    trace_event(&g_trace, "[kv-cache-max-key] skipped because cache is disabled");
 #endif
     return 0;
 }
@@ -863,8 +861,8 @@ static test_case_t g_cases[] = {
     { "kv_cache_collision_stress", "KVDB cache: 100-key collision stress, varied values",
       kv_cache_collision_stress, "KVDB-Cache", 1, NULL },
 #endif
-    { "kv_cache_long_key_hit", "KVDB cache: cache-hit verification with long key",
-      kv_cache_long_key_hit, "KVDB-Cache", 1, NULL },
+    { "kv_cache_max_key_hit", "KVDB cache: cache-hit verification with 32-byte max key",
+      kv_cache_max_key_hit, "KVDB-Cache", 1, NULL },
 };
 
 int main(int argc, char **argv) {
