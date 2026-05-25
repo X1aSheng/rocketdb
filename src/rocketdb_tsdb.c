@@ -731,7 +731,7 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
         return RDB_ERR_PARAM;
     if (part->total_size % part->sector_size)
         return RDB_ERR_PARAM;
-    if (part->write_gran > 3)
+    if (part->write_gran > 1)
         return RDB_ERR_PARAM;
 
     uint32_t scnt = part->total_size / part->sector_size;
@@ -1060,6 +1060,8 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 
 rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
     if (!db || !db->part)
+        return RDB_ERR_PARAM;
+    if (db->part->write_gran > 1)
         return RDB_ERR_PARAM;
 
     /* Validate sector count */
@@ -1477,7 +1479,7 @@ static int ts_qcb(rdb_tsdb_t* db, const ts_rec_t* r, void* arg) {
 
     /* Time range filter */
     if (r->time > q->to)
-        return RDB_ITER_STOP; /* Past end → done  */
+        return RDB_ITER_CONTINUE; /* Later sectors may belong to another epoch */
     if (r->time < q->from)
         return RDB_ITER_CONTINUE; /* Before start     */
 

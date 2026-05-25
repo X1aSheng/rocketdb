@@ -217,6 +217,26 @@ TEST_CASE(ts_epoch_query_integrity, "TSDB", "Epoch reset keeps query integrity")
     return 0;
 }
 
+TEST_CASE(ts_query_does_not_stop_across_epoch, "TSDB",
+          "Query keeps scanning after out-of-range old epoch")
+{
+    (void)ctx;
+    TEST_ASSERT_RDB_OK(ts_reset());
+
+    uint8_t old_data = 0xA1;
+    uint8_t new_data = 0xB2;
+    TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 1000, &old_data, 1));
+    TEST_ASSERT_RDB_OK(rdb_tsdb_reset_epoch(&g_db));
+    TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 10, &new_data, 1));
+
+    ts_count_ctx_t qctx = { 0 };
+    TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_db, 1, 100, ts_count_cb, &qctx));
+    TEST_ASSERT_EQ(qctx.count, 1u);
+    TEST_ASSERT_EQ(qctx.first_time, 10u);
+    TEST_ASSERT_EQ(qctx.last_time, 10u);
+    return 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  T-314: recount jitter control
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -290,6 +310,22 @@ TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
         TEST_ASSERT_RDB_OK(rdb_tsdb_get_latest(&g_db, &lt, lb, sizeof(lb), &ll));
         TEST_ASSERT_EQ(ll, (uint16_t)sizeof(data));
         TEST_ASSERT_GE(lt, time - 1u);
+    }
+
+    for (uint8_t wg = 2; wg <= 3; wg++) {
+        if (sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE,
+                           SECTOR_SIZE, PAGE_SIZE, wg) != 0)
+            TEST_ASSERT(0);
+        g_part = (rdb_partition_t) {
+            .name = "TSDB", .base_addr = 0, .total_size = TSDB_PART_SIZE,
+            .sector_size = SECTOR_SIZE, .write_gran = wg, .ops = &g_ops
+        };
+        memset(&g_db, 0, sizeof(g_db));
+        g_db.part = &g_part;
+        g_db.erase_cnts = g_ec;
+        g_db.sector_cnt = (uint8_t)TS_SECTOR_CNT;
+        TEST_ASSERT_RDB_ERR(rdb_tsdb_format(&g_db), RDB_ERR_PARAM);
+        TEST_ASSERT_RDB_ERR(rdb_tsdb_init(&g_db, &g_part, g_ec), RDB_ERR_PARAM);
     }
     return 0;
 }
@@ -403,6 +439,7 @@ int main(void)
     test_suite_t *s = test_get_default_suite();
     test_register_case(s, &test_case_ts_basic_append_query);
     test_register_case(s, &test_case_ts_epoch_query_integrity);
+    test_register_case(s, &test_case_ts_query_does_not_stop_across_epoch);
     test_register_case(s, &test_case_ts_recount_jitter);
     test_register_case(s, &test_case_ts_write_gran_matrix);
     test_register_case(s, &test_case_ts_max_boundaries);
