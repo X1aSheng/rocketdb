@@ -142,12 +142,12 @@ static void flash_yield(void *ctx)
 }
 
 static const rdb_flash_ops_t flash_ops = {
-    flash_read,
-    flash_write,
-    flash_erase,
-    flash_lock,
-    flash_unlock,
-    flash_yield,
+    .read = flash_read,
+    .write = flash_write,
+    .erase = flash_erase,
+    .lock = flash_lock,
+    .unlock = flash_unlock,
+    .yield = flash_yield,
 };
 
 static int require_ok(rdb_err_t status, const char *step)
@@ -167,8 +167,9 @@ static void fill_partition(rdb_partition_t *part)
     part->base_addr = 0u;
     part->total_size = EXAMPLE_FLASH_SIZE;
     part->sector_size = EXAMPLE_SECTOR_SIZE;
-    part->write_gran = 1u;
+    part->write_gran = 0u;
     part->ops = &flash_ops;
+    part->flash_ctx = NULL;
 }
 
 static rdb_err_t open_clean_kvdb(rdb_kvdb_t *db,
@@ -198,7 +199,7 @@ static int print_kv_pairs(rdb_kvdb_t *db)
 {
     rdb_kv_iter_t it;
     rdb_err_t status;
-    char key[32];
+    char key[RDB_MAX_KEY_LEN + 1u];
     char value[48];
     uint16_t key_len;
     uint16_t value_len;
@@ -253,8 +254,9 @@ int main(void)
     memset(&loaded_config, 0, sizeof(loaded_config));
     fill_partition(&part);
 
-    strcpy(config.wifi_ssid, "rocket-lab");
-    strcpy(config.wifi_password, "change-me-before-flight");
+    snprintf(config.wifi_ssid, sizeof(config.wifi_ssid), "%s", "rocket-lab");
+    snprintf(config.wifi_password, sizeof(config.wifi_password), "%s",
+             "change-me-before-flight");
     config.boot_count = 7u;
     config.retry_limit = 3u;
 

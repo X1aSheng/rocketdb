@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   RocketDB-compatible `rocketdb_interface_ops` table, bridges `rdb_crc16()`,
   `rdb_crc16_cont()`, and `rdb_hash16()`, uses FNV-1a folded hashing, and
   documents W25QXX 256-byte page-program splitting.
+- **Examples sync**: Example partitions now explicitly set `flash_ctx`, use
+  designated flash ops initializers, default to W25QXX-friendly
+  `write_gran=0`, and size KVDB iterator key buffers from `RDB_MAX_KEY_LEN`.
 - **KVDB large value writes**: Large values are now streamed as aligned chunks
   with `0xFF` tail padding, so HALs that enforce `write_gran` never receive a
   short final write.

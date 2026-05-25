@@ -151,12 +151,12 @@ static void flash_yield(void *ctx)
 }
 
 static const rdb_flash_ops_t flash_ops = {
-    flash_read,
-    flash_write,
-    flash_erase,
-    flash_lock,
-    flash_unlock,
-    flash_yield,
+    .read = flash_read,
+    .write = flash_write,
+    .erase = flash_erase,
+    .lock = flash_lock,
+    .unlock = flash_unlock,
+    .yield = flash_yield,
 };
 
 static int require_ok(rdb_err_t status, const char *step)
@@ -176,8 +176,9 @@ static void fill_partition(rdb_partition_t *part)
     part->base_addr = 0u;
     part->total_size = EXAMPLE_FLASH_SIZE;
     part->sector_size = EXAMPLE_SECTOR_SIZE;
-    part->write_gran = 1u;
+    part->write_gran = 0u;
     part->ops = &flash_ops;
+    part->flash_ctx = NULL;
 }
 
 static rdb_err_t open_clean_tsdb(rdb_tsdb_t *db,
