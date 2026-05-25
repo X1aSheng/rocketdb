@@ -26,6 +26,6 @@ zephyr_compile_definitions(
   RDB_GC_WEAR_THRESHOLD=${CONFIG_ROCKETDB_GC_WEAR_THRESHOLD}
 )
 
-if(CONFIG_ROCKETDB_SHELL)
+if(CONFIG_ROCKETDB_SHELL AND EXISTS "${CMAKE_CURRENT_LIST_DIR}/rocketdb_shell.c")
   zephyr_library_sources(rocketdb_shell.c)
 endif()

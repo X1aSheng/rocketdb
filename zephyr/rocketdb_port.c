@@ -4,7 +4,7 @@
  * Provides:
  *   - rdb_flash_ops_t backed by Zephyr flash API
  *   - rdb_crc16 / rdb_crc16_cont (CRC-16/MODBUS)
- *   - rdb_hash16 (DJB2, 16-bit)
+ *   - rdb_hash16 (FNV-1a folded to 16-bit)
  *   - Per-instance context factory (rocketdb_partition_init)
  *
  * CRC note:
@@ -16,6 +16,7 @@
  */
 
 #include "rocketdb_port.h"
+#include <errno.h>
 #include <string.h>
 
 /* ═══════════════════════════════════════════════════════════
@@ -30,32 +31,54 @@ static int rdb_zephyr_read(void *ctx, uint32_t addr,
 			   uint8_t *buf, size_t len)
 {
 	struct rocketdb_flash_ctx *c = (struct rocketdb_flash_ctx *)ctx;
-	return flash_read(c->dev, c->offset + (off_t)addr, buf, len);
+
+	if (!c || !c->dev || !device_is_ready(c->dev))
+		return -ENODEV;
+
+	return flash_read(c->dev, (off_t)c->offset + (off_t)addr, buf, len);
 }
 
 static int rdb_zephyr_write(void *ctx, uint32_t addr,
 			    const uint8_t *buf, size_t len)
 {
 	struct rocketdb_flash_ctx *c = (struct rocketdb_flash_ctx *)ctx;
-	return flash_write(c->dev, c->offset + (off_t)addr, buf, len);
+	uint32_t gran;
+
+	if (!c || !c->dev || !device_is_ready(c->dev))
+		return -ENODEV;
+	if (c->write_gran > 3u)
+		return -EINVAL;
+	gran = 1u << c->write_gran;
+	if (((addr | (uint32_t)len) & (gran - 1u)) != 0u)
+		return -EINVAL;
+
+	return flash_write(c->dev, (off_t)c->offset + (off_t)addr, buf, len);
 }
 
 static int rdb_zephyr_erase(void *ctx, uint32_t addr)
 {
 	struct rocketdb_flash_ctx *c = (struct rocketdb_flash_ctx *)ctx;
-	return flash_erase(c->dev, c->offset + (off_t)addr, c->sec_size);
+
+	if (!c || !c->dev || !device_is_ready(c->dev))
+		return -ENODEV;
+	if ((addr % c->sec_size) != 0u)
+		return -EINVAL;
+
+	return flash_erase(c->dev, (off_t)c->offset + (off_t)addr, c->sec_size);
 }
 
 static void rdb_zephyr_lock(void *ctx)
 {
 	struct rocketdb_flash_ctx *c = (struct rocketdb_flash_ctx *)ctx;
-	k_mutex_lock(&c->mutex, K_FOREVER);
+	if (c)
+		k_mutex_lock(&c->mutex, K_FOREVER);
 }
 
 static void rdb_zephyr_unlock(void *ctx)
 {
 	struct rocketdb_flash_ctx *c = (struct rocketdb_flash_ctx *)ctx;
-	k_mutex_unlock(&c->mutex);
+	if (c)
+		k_mutex_unlock(&c->mutex);
 }
 
 static void rdb_zephyr_yield(void *ctx)
@@ -90,6 +113,7 @@ void rocketdb_partition_init(rdb_partition_t           *part,
 	ctx->dev      = dev;
 	ctx->offset   = offset;
 	ctx->sec_size = sector_size;
+	ctx->write_gran = write_gran;
 
 	part->name        = name;
 	part->base_addr   = 0;   /* partition-relative addresses */
@@ -131,14 +155,16 @@ uint16_t rdb_crc16_cont(uint16_t crc, const void *data, size_t len)
 }
 
 /* ═══════════════════════════════════════════════════════════
- *  DJB2 16-bit hash for KVDB fast-reject lookup
+ *  FNV-1a folded to 16-bit for KVDB fast-reject lookup
  * ═══════════════════════════════════════════════════════════ */
 
 uint16_t rdb_hash16(const void *data, size_t len)
 {
-	uint16_t h = 5381;
+	uint32_t h = 2166136261u;
 	const uint8_t *p = (const uint8_t *)data;
-	for (size_t i = 0; i < len; i++)
-		h = ((h << 5) + h) ^ p[i];   /* h = h * 33 XOR byte */
-	return h;
+	for (size_t i = 0; i < len; i++) {
+		h ^= p[i];
+		h *= 16777619u;
+	}
+	return (uint16_t)(h ^ (h >> 16));
 }

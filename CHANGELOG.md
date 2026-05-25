@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Zephyr port interface sync**: Kconfig now enforces the 32-byte KVDB key
+  limit, the adapter stores/enforces `write_gran`, checks `device_is_ready()`,
+  uses the same FNV-1a folded hash as the simulator, and no longer references a
+  missing shell source file unless it exists.
 - **KVDB large value writes**: Large values are now streamed as aligned chunks
   with `0xFF` tail padding, so HALs that enforce `write_gran` never receive a
   short final write.
@@ -75,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Zephyr OS port layer** (`zephyr/`): Provides `rocketdb_port.c` with flash
-  ops backed by Zephyr's `flash_read/write/erase` API, CRC-16/MODBUS and DJB2
+  ops backed by Zephyr's `flash_read/write/erase` API, CRC-16/MODBUS and FNV-1a
   hash implementations, `rocketdb_partition_init()` factory, Kconfig options
   for all compile-time settings, CMakeLists.txt for Zephyr module build, and
   `module.yml` for Zephyr module auto-discovery.

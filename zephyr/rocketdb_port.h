@@ -28,6 +28,7 @@ struct rocketdb_flash_ctx {
 	const struct device *dev;       /* Zephyr flash device */
 	uint32_t             offset;    /* Partition base offset within the device */
 	uint32_t             sec_size;  /* Erase sector size (cached for erase op) */
+	uint8_t              write_gran;/* Write granularity exponent */
 	struct k_mutex       mutex;     /* Per-instance mutex */
 };
 

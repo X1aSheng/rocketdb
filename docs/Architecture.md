@@ -1306,8 +1306,12 @@ void storage_init(void)
 Zephyr 适配文件位于 `zephyr/rocketdb_port.c`，提供：
 - `rdb_flash_ops_t` 的 Zephyr flash API 实现
 - `rdb_crc16 / rdb_crc16_cont`（CRC-16/MODBUS）
-- `rdb_hash16`（DJB2）
+- `rdb_hash16`（FNV-1a folded to 16-bit，与仿真测试一致）
 - `rocketdb_partition_init()` 工厂函数
+
+Zephyr 适配层在 `write()` 回调中强制执行 `write_gran` 对齐，并在
+read/write/erase 前检查 flash device ready 状态；`CONFIG_ROCKETDB_MAX_KEY_LEN`
+与核心架构保持一致，范围为 1..32。
 
 ### 6.2 大记录 query_ex 缓冲
 

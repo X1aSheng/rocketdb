@@ -48,7 +48,7 @@ Reference `/interface` platform independent template and implement the Flash HAL
 
 Required external primitives (implemented in the interface template):
 - `rdb_crc16()` / `rdb_crc16_cont()` — CRC-16/MODBUS
-- `rdb_hash16()` — 16-bit key hash (DJB2 or similar)
+- `rdb_hash16()` — 16-bit FNV-1a folded key hash
 - `rdb_flash_ops_t` — Flash read / write / erase callbacks (with `void *ctx`)
 
 #### Zephyr OS

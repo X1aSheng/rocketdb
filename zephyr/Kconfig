@@ -25,10 +25,12 @@ config ROCKETDB_TSDB
 
 config ROCKETDB_MAX_KEY_LEN
 	int "Maximum KVDB key length (bytes)"
-	range 1 254
-	default 63
+	range 1 32
+	default 32
 	help
-	  Maximum key length for KVDB operations (1..254).
+	  Maximum key length for KVDB operations (1..32).
+	  RocketDB is designed for short embedded configuration keys.
+	  Map longer application paths to short keys before storage.
 
 config ROCKETDB_MAX_VAL_LEN
 	int "Maximum KVDB value length (bytes)"
@@ -72,8 +74,9 @@ config ROCKETDB_GC_WEAR_THRESHOLD
 config ROCKETDB_SHELL
 	bool "RocketDB shell commands"
 	depends on SHELL
+	default n
 	help
-	  Provides shell subcommands for inspecting and managing
-	  RocketDB instances at runtime.
+	  Reserved for future shell subcommands.  The current module does
+	  not ship a shell implementation file, so leave this disabled.
 
 endif # ROCKETDB
