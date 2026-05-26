@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Read(//d/Programs/LLVM/bin/**)",
+      "Read(//c/ProgramData/chocolatey/bin/**)",
+      "Read(//d/Programs/**)",
+      "Read(//mingw64/bin/**)",
+      "Read(//c/msys64/usr/bin/**)"
+    ],
+    "additionalDirectories": [
+      "G:\\rocketdb\\tests\\out"
+    ]
+  }
+}
