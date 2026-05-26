@@ -78,6 +78,21 @@ option(BUILD_TESTS "Build test suite" ON)
 option(BUILD_PERF "Build performance benchmark" OFF)
 option(ENABLE_DEBUG_LOGGING "Enable debug logging" OFF)
 
+set(ROCKETDB_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/out"
+    CACHE PATH "Directory for RocketDB build outputs")
+file(MAKE_DIRECTORY "${ROCKETDB_OUTPUT_DIR}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${ROCKETDB_OUTPUT_DIR}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${ROCKETDB_OUTPUT_DIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${ROCKETDB_OUTPUT_DIR}")
+set(CMAKE_PDB_OUTPUT_DIRECTORY "${ROCKETDB_OUTPUT_DIR}")
+foreach(_cfg Debug Release RelWithDebInfo MinSizeRel)
+    string(TOUPPER "${_cfg}" _cfg_upper)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${_cfg_upper} "${ROCKETDB_OUTPUT_DIR}")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${_cfg_upper} "${ROCKETDB_OUTPUT_DIR}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${_cfg_upper} "${ROCKETDB_OUTPUT_DIR}")
+    set(CMAKE_PDB_OUTPUT_DIRECTORY_${_cfg_upper} "${ROCKETDB_OUTPUT_DIR}")
+endforeach()
+
 if(BUILD_SHARED_LIBS)
     message(WARNING
         "BUILD_SHARED_LIBS is ignored. RocketDB builds static libraries because "
@@ -191,6 +206,7 @@ endif()
 if(BUILD_TESTS)
     enable_testing()
     message(STATUS "Testing enabled")
+    find_package(Python3 COMPONENTS Interpreter)
 
     add_library(rocketdb_sim_support STATIC
         tests/sim/test_framework.c
@@ -245,12 +261,26 @@ if(BUILD_TESTS)
         RDB_KV_CACHE_SIZE=64
     )
 
+    add_executable(test_rdbdump_dump
+        tests/sim/test_rdbdump_dump.c
+    )
+    target_link_libraries(test_rdbdump_dump PRIVATE rocketdb rocketdb_sim_support)
+    target_include_directories(test_rdbdump_dump PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sim
+    )
+    rocketdb_apply_warnings(test_rdbdump_dump)
+    rocketdb_apply_optimization(test_rdbdump_dump)
+
+    set(ROCKETDB_RDBDUMP_DEPS ${ROCKETDB_TESTS})
+
     # Keep example smoke coverage when examples are present.
     if(BUILD_EXAMPLES AND TARGET example_kvdb_basic)
         add_test(
             NAME KVDB_Basic_Example
             COMMAND example_kvdb_basic
         )
+        list(APPEND ROCKETDB_RDBDUMP_DEPS KVDB_Basic_Example)
     endif()
 
     if(BUILD_EXAMPLES AND TARGET example_tsdb_sensor)
@@ -258,6 +288,25 @@ if(BUILD_TESTS)
             NAME TSDB_Sensor_Example
             COMMAND example_tsdb_sensor
         )
+        list(APPEND ROCKETDB_RDBDUMP_DEPS TSDB_Sensor_Example)
+    endif()
+
+    if(Python3_Interpreter_FOUND)
+        add_test(
+            NAME rdbdump_offline_verify
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/rdbdump/verify_offline.py
+                --generator $<TARGET_FILE:test_rdbdump_dump>
+                --out ${ROCKETDB_OUTPUT_DIR}
+                --rdbdump ${CMAKE_CURRENT_SOURCE_DIR}/tools/rdbdump/rdbdump.py
+                --repo-root ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        set_tests_properties(rdbdump_offline_verify PROPERTIES
+            DEPENDS "${ROCKETDB_RDBDUMP_DEPS}"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+    else()
+        message(WARNING "Python3 not found; rdbdump_offline_verify CTest is disabled")
     endif()
 endif()
 
@@ -311,10 +360,10 @@ message(STATUS "Examples: ${BUILD_EXAMPLES}")
 message(STATUS "Tests: ${BUILD_TESTS}")
 message(STATUS "Performance benchmark: ${BUILD_PERF}")
 message(STATUS "Debug logging: ${ENABLE_DEBUG_LOGGING}")
+message(STATUS "Output directory: ${ROCKETDB_OUTPUT_DIR}")
 message(STATUS "========================================")
 message(STATUS "")
 message(STATUS "To build, run:")
-message(STATUS "  mkdir build && cd build")
-message(STATUS "  cmake ..")
-message(STATUS "  cmake --build . --config Release")
+message(STATUS "  cmake -S . -B cmake-build")
+message(STATUS "  cmake --build cmake-build --config Release")
 message(STATUS "")

@@ -25,6 +25,8 @@ echo   build  - Compile TSDB tests only
 echo   clean  - Remove TSDB build artifacts
 echo   help   - Show this help
 echo.
+echo Output: tests\out
+echo.
 echo TSDB test suites (2):
 echo   test_tsdb_basic   - TSDB append/query, epoch switch, recount, write_gran, max_boundaries
 echo   test_tsdb_stress  - TSDB rotation stress, append fail, CRC corruption, degraded epoch recovery

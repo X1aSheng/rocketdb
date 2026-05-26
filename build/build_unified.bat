@@ -20,10 +20,12 @@ echo ========================================
 echo.
 echo Usage: build_unified.bat [test^|build^|clean^|help]
 echo.
-echo   test   - Build and run all 8 test suites (default)
+echo   test   - Build and run all 8 test suites plus rdbdump verification (default)
 echo   build  - Build all test suites only
 echo   clean  - Remove all build artifacts
 echo   help   - Show this help
+echo.
+echo Output: tests\out
 echo.
 echo Test suites (8 total):
 echo   test_kvdb_basic        KVDB basic functionality

@@ -1,4 +1,5 @@
 ﻿#include "sim_flash.h"
+#include <stdio.h>
 #include <string.h>
 
 static int fault_hit(sim_fault_t *f, uint32_t *cnt, uint32_t hit_at)
@@ -163,4 +164,27 @@ void sim_flash_set_fault(sim_flash_t *f, uint32_t r, uint32_t w, uint32_t e)
     f->old_fault.read_fail_at = r;
     f->old_fault.write_fail_at = w;
     f->old_fault.erase_fail_at = e;
+}
+
+int sim_flash_save_file(const sim_flash_t *f, const char *path)
+{
+    if (!f || !f->mem || !path) return -1;
+
+    FILE *fp = fopen(path, "wb");
+    if (!fp) return -1;
+    size_t wrote = fwrite(f->mem, 1u, f->size, fp);
+    int close_rc = fclose(fp);
+    return (wrote == f->size && close_rc == 0) ? 0 : -1;
+}
+
+int sim_flash_load_file(sim_flash_t *f, const char *path)
+{
+    if (!f || !f->mem || !path) return -1;
+
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return -1;
+    size_t read_n = fread(f->mem, 1u, f->size, fp);
+    int extra = fgetc(fp);
+    int close_rc = fclose(fp);
+    return (read_n == f->size && extra == EOF && close_rc == 0) ? 0 : -1;
 }

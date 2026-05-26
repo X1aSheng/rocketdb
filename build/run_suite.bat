@@ -10,9 +10,10 @@ setlocal enabledelayedexpansion
 
 set CC=clang.exe
 if exist "D:\Programs\LLVM\bin\clang.exe" set CC=D:\Programs\LLVM\bin\clang.exe
+if not exist "%CC%" if exist "D:\Programs\w64devkit\bin\gcc.exe" set CC=D:\Programs\w64devkit\bin\gcc.exe
 set CFLAGS=-Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS
-set INCLUDES=-Isrc -Itest\sim
-set OUTPUT_DIR=test\out
+set INCLUDES=-Isrc -Itests\sim
+set OUTPUT_DIR=tests\out
 set BASE_SRCS=src/rocketdb_kvdb.c src/rocketdb_tsdb.c tests\sim\test_framework.c tests\sim\sim_flash.c tests\sim\sim_fault.c tests\sim\sim_crypto.c tests\sim\sim_dist.c tests\sim\sim_trace.c
 
 set SUITE=%1

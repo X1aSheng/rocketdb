@@ -86,6 +86,9 @@ echo   test        - Compile and run tests (default)
 echo   build       - Compile only
 echo   clean       - Remove build artifacts
 echo.
+echo Output:
+echo   All build/test/perf artifacts are written to tests\out
+echo.
 echo Examples:
 echo   build.bat                  # Build and run all tests
 echo   build.bat kvdb test        # Build and run KVDB tests

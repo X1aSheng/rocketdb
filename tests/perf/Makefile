@@ -4,43 +4,44 @@ CC := gcc
 CFLAGS := -O2 -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L
 LDFLAGS :=
 
-# Include paths
-INC := -I../../src -I../sim
+ROOT := ../..
+OUTPUT_DIR := ../out
+TARGET := $(OUTPUT_DIR)/benchmark
+INC := -I$(ROOT)/src -I$(ROOT)/tests/sim
+VPATH := $(ROOT)/src:$(ROOT)/tests/sim:.
 
-# Source files
-SRCS := ../../src/rocketdb_kvdb.c ../../src/rocketdb_tsdb.c \
-	../sim/sim_flash.c ../sim/sim_fault.c ../sim/sim_trace.c \
-	../sim/sim_crypto.c scenarios.c
-OBJS := $(SRCS:.c=.o)
-TARGET := benchmark
+OBJS := $(OUTPUT_DIR)/rocketdb_kvdb.o \
+	$(OUTPUT_DIR)/rocketdb_tsdb.o \
+	$(OUTPUT_DIR)/sim_flash.o \
+	$(OUTPUT_DIR)/sim_fault.o \
+	$(OUTPUT_DIR)/sim_trace.o \
+	$(OUTPUT_DIR)/sim_crypto.o \
+	$(OUTPUT_DIR)/scenarios.o
 
-# Default target
-all: $(TARGET)
+all: $(OUTPUT_DIR) $(TARGET)
 
-# Build executable
-$(TARGET): $(OBJS)
+$(OUTPUT_DIR):
+	mkdir -p "$(OUTPUT_DIR)"
+
+$(TARGET): $(OBJS) | $(OUTPUT_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-	@echo "✓ Built $(TARGET)"
+	@echo "Built $(TARGET)"
 
-# Compile C files
-%.o: %.c
+$(OUTPUT_DIR)/%.o: %.c | $(OUTPUT_DIR)
 	$(CC) $(CFLAGS) $(INC) -c -o $@ $<
 
-# Run benchmark
 run: $(TARGET)
 	@echo "========================================="
 	@echo " Running RocketDB Performance Benchmark"
 	@echo "========================================="
-	./$(TARGET) | tee results_`date +%Y%m%d_%H%M%S`.csv
+	./$(TARGET) | tee $(OUTPUT_DIR)/results_`date +%Y%m%d_%H%M%S`.csv
 
-# Clean build artifacts
 clean:
 	rm -f $(OBJS) $(TARGET)
-	@echo "✓ Cleaned build artifacts"
+	@echo "Cleaned build artifacts"
 
-# Clean all including results
 distclean: clean
-	rm -f results_*.txt results_*.csv
-	@echo "✓ Cleaned all artifacts and results"
+	rm -f $(OUTPUT_DIR)/results_*.txt $(OUTPUT_DIR)/results_*.csv
+	@echo "Cleaned all artifacts and results"
 
 .PHONY: all run clean distclean

@@ -37,6 +37,8 @@ int sim_flash_init(sim_flash_t *f, uint8_t *buf, uint32_t size,
 int sim_flash_read(sim_flash_t *f, uint32_t addr, uint8_t *buf, size_t len);
 int sim_flash_write(sim_flash_t *f, uint32_t addr, const uint8_t *buf, size_t len);
 int sim_flash_erase(sim_flash_t *f, uint32_t addr);
+int sim_flash_save_file(const sim_flash_t *f, const char *path);
+int sim_flash_load_file(sim_flash_t *f, const char *path);
 
 void sim_flash_reset_faults(sim_flash_t *f);
 void sim_flash_set_fault(sim_flash_t *f, uint32_t r, uint32_t w, uint32_t e);
