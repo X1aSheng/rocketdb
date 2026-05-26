@@ -1376,6 +1376,35 @@ if (rc == RDB_ERR_FULL) {
 | write_gran | HAL 必须拒绝未对齐写入。即使底层芯片允许 byte program，测试配置为 2/4/8B 时也要模拟目标平台约束。 |
 | 真实硬件 | 软件模拟不能覆盖电源斜率、片选毛刺、页编程边界、擦除中断后的不确定内容。生产前需做目标板断电测试。 |
 
+### 6.8 开发与测试工具链
+
+Windows 主机默认优先使用 LLVM/Clang，已安装路径为 `D:\Programs\LLVM`；当 Clang 不可用时回退到 GCC，已安装路径为 `D:\Programs\w64devkit`。批处理脚本从项目根目录运行，并将所有测试、性能和离线分析过程文件输出到 `tests/out`。CMake 也将可执行文件、静态库和 PDB 配置到 `tests/out`；`CMakeFiles`、`CMakeCache.txt` 等生成系统元数据仍保留在构建目录中。
+
+统一编译约束：
+
+| 项目 | 要求 |
+|------|------|
+| C 标准 | C99 |
+| 默认编译器 | `D:\Programs\LLVM\bin\clang.exe` |
+| 备用编译器 | `D:\Programs\w64devkit\bin\gcc.exe` |
+| 警告与兼容选项 | `-Wall -Wextra -std=c99 -D_CRT_SECURE_NO_WARNINGS` |
+| 测试 include | `-Isrc -Itests\sim` |
+| 输出目录 | `tests/out` |
+| CMake 输出变量 | `ROCKETDB_OUTPUT_DIR`，默认 `${PROJECT_SOURCE_DIR}/tests/out` |
+
+### 6.9 Flash 分区离线分析
+
+嵌入式设备可读出完整 KVDB/TSDB Flash 分区后，在上位机 PC 或服务器端使用 `tools/rdbdump` 识别、校验和导出数据。该工具直接解析 On-Flash 扇区头和记录头，支持原始可观察数据集与逻辑有效数据集两层输出。
+
+离线分析流程：
+
+1. 读取完整 Flash 分区为 `.bin` 原始镜像。
+2. 提供 manifest 描述 `kind`、`sector_size`、`write_gran`、`base_addr`、`total_size`。
+3. 执行 `rdbdump inspect/verify/export`。
+4. 输出 `observable_dataset.json/csv`、`valid_dataset.json/csv`、`summary.json`、`anomalies.json`。
+
+集成测试使用 `tests/sim/test_rdbdump_dump.c` 从模拟 Flash 保存确定性 KVDB/TSDB 镜像。`build/run_all_tests.bat test` 在基础测试后执行 rdbdump 校验，导出目录为 `tests/out/rdbdump_export/<YYMMDD-HHMMSS>/kvdb` 和 `tests/out/rdbdump_export/<YYMMDD-HHMMSS>/tsdb`。详细设计见 `docs/offline_flash_analysis.md`。
+
 ---
 
 ## 第七章 工具函数
@@ -1402,7 +1431,7 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | GC 与磨损 | gc_reserve+1 水位、will_free 虚拟垃圾、Phase 3 强制回收、Phase 4 静态磨损均衡、erase_cnt 单调 | 4.7、4.8、8.1 |
 | 并发与锁 | 公共 API 锁语义、iter_gen 失效检测、stats/space/wear 读取一致性 | 2.5、4.3、6.7、8.1 |
 | TSDB 查询 | 不按 time_base early break、跨 epoch 返回语义、降级 ACTIVE 参与 query/latest/oldest/time_range | 5.5、5.9、5.10 |
-| 测试有效性 | 7 套测试、44 用例、约 39,000 断言；GC/rotation ≥100；故障注入覆盖 6 类故障；seed 可追溯 | 8.2 |
+| 测试有效性 | 8 个基础测试套件 + rdbdump 离线验证；40,000+ 断言；GC/rotation ≥100；故障注入覆盖 6 类故障；seed 可追溯 | 8.2 |
 | 工程化 | CMake/CTest、bat、Makefile 都应构建真实测试套件；示例缺失不能破坏核心库构建 | 8.3 |
 
 ### 8.1 实现审核
@@ -1515,7 +1544,7 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | T-47 | 随机 workload seed | 日志记录 seed，失败可复现 |
 | T-48 | wear_heatmap | 验证 min/max/avg erase_count 分布，不使用永真断言 |
 | T-49 | write_gran=0/1/2/3 | KVDB 全矩阵；TSDB 明确当前支持范围 |
-| T-50 | CMake/CTest | 7 个测试目标注册且 100% 通过 |
+| T-50 | CMake/CTest | 8 个基础测试目标、示例 smoke test、rdbdump 离线验证均注册且 100% 通过 |
 | T-51 | Windows bat | `build\build.bat all build/test` 均成功，日志时间戳与 locale 无关 |
 
 ### 8.3 工程化审核
@@ -1523,11 +1552,12 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | 编号 | 检查项 | 通过条件 |
 |------|--------|---------|
 | B-01 | CMake 默认配置 | `BUILD_EXAMPLES=ON` 时，缺失示例不影响核心库和测试构建 |
-| B-02 | CTest 注册 | 7 个 `tests/sim/test_*.c` 均注册为独立测试 |
+| B-02 | CTest 注册 | 8 个基础测试、2 个示例 smoke test、`rdbdump_offline_verify` 均注册并通过 |
 | B-03 | Windows Clang 链接 | 不使用 freestanding 链接规则，host-side 测试能链接 CRT |
 | B-04 | bat 字符集 | 脚本仅使用 ASCII 控制文本，避免 cmd 编码误解析 |
 | B-05 | 日志命名 | 时间戳使用 `yyyyMMdd_HHmmss`，不依赖系统区域格式 |
 | B-06 | 文档同步 | README、test_plan、sim README、SpecKit 与当前 API/测试结果一致 |
+| B-07 | 离线分析闭环 | 全量测试后用模拟 Flash dump 执行 rdbdump verify/export，输出带时间戳的数据集 |
 
 ---
 

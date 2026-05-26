@@ -321,7 +321,7 @@ g:\c-module\rocketdb\SpecKit\
 ### 对于新开发者
 1. 阅读 [SpecKit.md](SpecKit.md) （5 分钟快速上手）
 2. 阅读 [Specify.md](specify.md) （学习 API）
-3. 查看 [design.md](../design.md) （深入理解）
+3. 查看 [Architecture.md](../Architecture.md) （深入理解当前实现）
 
 ### 对于任务执行者
 1. 参考 [Tasks.md](tasks.md) 的任务清单

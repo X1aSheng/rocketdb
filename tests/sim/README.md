@@ -444,11 +444,11 @@ New-feature validation suite covering KVDB key-to-address cache, TSDB safety fix
 cd g:/rocketdb
 
 clang -Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS \
-    -Isrc -Itest/sim -c src/rocketdb_kvdb.c -o tests/out/rocketdb_kvdb.o
+    -Isrc -Itests/sim -c src/rocketdb_kvdb.c -o tests/out/rocketdb_kvdb.o
 clang -Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS \
-    -Isrc -Itest/sim -c src/rocketdb_tsdb.c -o tests/out/rocketdb_tsdb.o
+    -Isrc -Itests/sim -c src/rocketdb_tsdb.c -o tests/out/rocketdb_tsdb.o
 clang -Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS \
-    -Isrc -Itest/sim -c tests/sim/sim_flash.c -o tests/out/sim_flash.o
+    -Isrc -Itests/sim -c tests/sim/sim_flash.c -o tests/out/sim_flash.o
 # ... (compile all sim_*.c and test_*.c similarly)
 
 # Link and run each suite (from project root for correct log paths)
@@ -463,6 +463,8 @@ clang tests/out/test_kvdb_basic.o tests/out/sim_flash.o tests/out/sim_fault.o \
 ### 10.2 Log Files
 
 Each test suite produces a timestamped trace log in `tests/out/<YYMMDD-HHMMSS>-<name>.log`. Log path is relative to the working directory — run executables from the project root.
+
+The full batch runner also generates deterministic KVDB/TSDB Flash dump fixtures, verifies them with `tools/rdbdump`, and exports timestamped offline-analysis datasets under `tests/out/rdbdump_export/<YYMMDD-HHMMSS>/`.
 
 ### 10.3 Selecting Verbosity
 

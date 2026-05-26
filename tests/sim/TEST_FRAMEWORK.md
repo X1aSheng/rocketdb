@@ -275,14 +275,14 @@ TEST_CASE(my_test, "KVDB", "Description")
 ```bat
 # 编译测试框架示例
 clang -std=c99 -Wall -Wextra -O2 ^
-    -I. -Itest/sim ^
+    -Isrc -Itests/sim ^
     -o tests/out/test_example.exe ^
     tests/sim/test_example.c ^
     tests/sim/test_framework.c ^
     tests/sim/sim_flash.c ^
     tests/sim/sim_crypto.c ^
-    rocketdb_kvdb.c ^
-    rocketdb_tsdb.c
+    src\rocketdb_kvdb.c ^
+    src\rocketdb_tsdb.c
 ```
 
 ### 使用 Makefile

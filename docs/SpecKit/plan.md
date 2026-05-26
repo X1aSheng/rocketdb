@@ -19,8 +19,8 @@
 2. **创建构建脚本**
    - 编写 `build.bat`（Windows），参考 bitarray 项目
    - 编写 `Makefile`（Unix/Linux），参考 bitarray 项目
-   - 支持命令：build, test, clean, rebuild
-   - 测试日志自动生成时间戳：`test_log_YYYYMMDD_HHMMSS.log`
+   - 支持命令：build, test, clean，以及 Makefile 的 rebuild
+   - 测试日志自动生成时间戳：`YYMMDD-HHMMSS-*.log`
 
 3. **更新测试文档**
    - 更新 `tests/sim/README.md` 说明新的输出路径
@@ -33,8 +33,8 @@
 **交付物**
 - [x] 学习 bitarray 项目结构和测试方法（已完成，2026-02-25）
 - [x] 更新 SpecKit 文档以反映输出目录规划（已完成，2026-02-25）
-- [ ] 创建 tests/out/ 目录
-- [ ] 编写 build.bat 和 Makefile
+- [x] 创建 tests/out/ 目录
+- [x] 编写 build 脚本、Makefile 和 CMake 输出配置
 - [ ] 迁移历史测试报告
 - [ ] 更新 tests/sim/README.md
 
@@ -102,7 +102,7 @@
      - GC victim 选择详情
      - erase counts per sector
      - TSDB head/tail positions, time_base, total_count
-   - 输出到 `tests/out/test_log_YYYYMMDD_HHMMSS.log`
+   - 输出到 `tests/out/YYMMDD-HHMMSS-*.log`
 
 4. **测试用例执行器**（test_plan.md 4.2.2）
    - 20 个具体测试用例（TC-KV-01~09, TC-TS-01~07, TC-X-01~04）
@@ -304,8 +304,8 @@ TSDB append():
 #### 5.2 文档完善
 - [ ] 更新 `clarify.md`（待确认问题及最终决策）
 - [ ] 更新 `analyze.md`（功能覆盖、已知缺口）
-- [ ] 编写 README.md（快速开始、完整示例）
-- [ ] 编写 TROUBLESHOOTING.md（常见故障排查）
+- [x] 更新 README.md（快速开始、构建/测试、离线分析入口）
+- [x] 故障排查说明分布在 README、test_plan、sim/perf README，并随实现更新
 
 #### 5.3 CI 友好性
 - [ ] Makefile/build.bat 输出标准化

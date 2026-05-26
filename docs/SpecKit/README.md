@@ -262,9 +262,9 @@ rocketdb/
 ├── rocketdb.h                   — 公共 API 声明
 ├── rocketdb_kvdb.c              — KVDB 实现
 ├── rocketdb_tsdb.c              — TSDB 实现
-├── design.md                    — 完整设计手册 (1391 行)
+├── Architecture.md              — 当前完整设计手册
 ├── test_plan.md                 — 测试计划
-├── test_request.txt             — 原始需求
+├── offline_flash_analysis.md    — 当前离线 Flash dump 分析说明
 │
 ├── SpecKit/                     ← 项目规范体系
 │   ├── README.md                ← 本文件

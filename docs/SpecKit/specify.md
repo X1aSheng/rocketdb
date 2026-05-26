@@ -13,7 +13,7 @@ RocketDB v0.0.2 是针对资源受限嵌入式系统的双模 Flash 存储引擎
 
 | 工具 | 要求 | 说明 |
 |------|------|------|
-| 编译器 | Clang ≥14 或 GCC ≥11 | `D:\Programs\LLVM\bin\clang.exe`（build.bat 默认） |
+| 编译器 | Clang ≥14 或 GCC ≥11 | 默认 `D:\Programs\LLVM\bin\clang.exe`，回退 `D:\Programs\w64devkit\bin\gcc.exe` |
 | 标准 | C99 | `-std=c99` |
 | 警告 | 全开 | `-Wall -Wextra` |
 | 优化 | `-O2 -g` | 测试时保留调试符号 |
@@ -22,25 +22,25 @@ RocketDB v0.0.2 是针对资源受限嵌入式系统的双模 Flash 存储引擎
 ### 源文件清单
 
 ```
-# 引擎源文件（项目根目录）
-rocketdb.h              公共头文件（含所有类型与 API 声明）
-rocketdb_kvdb.c         KVDB 引擎实现
-rocketdb_tsdb.c         TSDB 引擎实现
+# 引擎源文件
+src/rocketdb.h              公共头文件（含所有类型与 API 声明）
+src/rocketdb_kvdb.c         KVDB 引擎实现
+src/rocketdb_tsdb.c         TSDB 引擎实现
 
 # 测试 / 模拟层（tests/sim/）
 tests/sim/sim_flash.c    NOR Flash 模拟器（1→0 写入、故障注入）
 tests/sim/sim_flash.h
-tests/sim/sim_vectors.c  确定性测试向量生成器
-tests/sim/sim_vectors.h
 tests/sim/sim_crypto.c   CRC16 / Hash16 实现（外部依赖提供）
-tests/sim/sim_runner.c   测试主程序（main）
+tests/sim/test_*.c       8 个基础测试套件
+tests/sim/test_rdbdump_dump.c  离线 dump 夹具生成器
+tools/rdbdump/           PC/server 端离线 Flash dump 分析工具
 ```
 
 ### Include 路径
 
 ```
--I.          # rocketdb.h
--Itest/sim   # sim_flash.h, sim_vectors.h
+-Isrc
+-Itests/sim
 ```
 
 ### 输出目录结构
@@ -49,12 +49,13 @@ tests/sim/sim_runner.c   测试主程序（main）
 
 ```
 tests/out/
-├── sim_test.exe                  测试可执行文件
-├── *.o                           中间目标文件（Makefile 增量编译产生）
-├── sim_log.txt                   最近一次 sim 运行的控制台日志
-├── kv_vectors.bin                生成的 KVDB 测试向量（2000 条）
-├── ts_vectors.bin                生成的 TSDB 测试向量（2000 条）
-└── test_log_YYYYMMDD_HHMMSS.log  带时间戳的完整测试日志
+├── test_*.exe                    测试可执行文件
+├── *.o / *.lib / *.pdb           构建过程文件
+├── YYMMDD-HHMMSS-*.log           带时间戳的测试日志
+├── benchmark.exe                 性能基准
+├── results_*.csv                 性能结果
+├── rdbdump_*.bin/.json           模拟 Flash dump 与 manifest
+└── rdbdump_export/<TS>/          rdbdump 离线导出数据集
 ```
 
 > `tests/out/` 应加入 `.gitignore`，不纳入版本控制。
@@ -62,17 +63,16 @@ tests/out/
 ### 构建命令
 
 ```bat
-REM Windows — build.bat（推荐，无需 make）
-build.bat            REM 仅编译，生成 tests\out\sim_test.exe
-build.bat test       REM 编译 + 运行 + 生成带时间戳日志
-build.bat clean      REM 删除整个 tests\out\ 目录
-build.bat rebuild    REM clean 后重新编译
-build.bat help       REM 显示帮助
+REM Windows — build\build.bat（推荐，无需 make）
+build\build.bat all build     REM 编译所有测试和 rdbdump 夹具
+build\build.bat all test      REM 编译 + 运行基础套件 + rdbdump 校验
+build\build.bat all clean     REM 清理 tests\out 中的生成文件
+build\build.bat perf run      REM 性能基准
 ```
 
 ```makefile
 # Unix/Linux / Windows(make) — Makefile
-make           # 增量编译（.o 文件 → sim_test.exe）
+make           # 增量编译（.o 文件 → test_*.exe）
 make test      # 编译并运行测试
 make clean     # 删除 tests/out/
 make rebuild   # clean 后重新编译
@@ -80,17 +80,17 @@ make rebuild   # clean 后重新编译
 
 ### 测试日志格式
 
-`build.bat test` 在 `tests/out/` 目录生成 `test_log_YYYYMMDD_HHMMSS.log`，内容：
+`build\run_all_tests.bat test` 在 `tests/out/` 目录生成 `YYMMDD-HHMMSS-*.log`，内容：
 
 ```
 ==========================================
-RocketDB Sim Test Log
-Test Date: YYYY-MM-DD_HH:mm:ss
+RocketDB Test: test_name
+Timestamp: YYMMDD-HHMMSS
 ==========================================
-[来自 sim_test.exe 的全部 stdout/stderr]
+[来自 test_*.exe 或 rdbdump 离线验证的全部 stdout/stderr]
 ```
 
-测试可执行文件返回非零退出码时，`build.bat test` 同样以非零退出，便于 CI/CD 捕获失败。
+测试可执行文件或 rdbdump 校验返回非零退出码时，`build\run_all_tests.bat test` 同样以非零退出，便于 CI/CD 捕获失败。
 
 ## 编译时配置（来自 design.md 第二章）
 
@@ -376,12 +376,12 @@ size_t rdb_tsdb_ec_size(
 
 ```c
 typedef struct {
-    int  (*read)(uint32_t addr, uint8_t *buf, size_t len);
-    int  (*write)(uint32_t addr, const uint8_t *buf, size_t len);
-    int  (*erase)(uint32_t addr);
-    void (*lock)(void);
-    void (*unlock)(void);
-    void (*yield)(void);
+    int  (*read)(void *ctx, uint32_t addr, uint8_t *buf, size_t len);
+    int  (*write)(void *ctx, uint32_t addr, const uint8_t *buf, size_t len);
+    int  (*erase)(void *ctx, uint32_t addr);
+    void (*lock)(void *ctx);
+    void (*unlock)(void *ctx);
+    void (*yield)(void *ctx);
 } rdb_flash_ops_t;
 
 typedef struct {
@@ -391,6 +391,7 @@ typedef struct {
     uint32_t               sector_size;
     uint8_t                write_gran;    /* 0→1B, 1→2B, 2→4B, 3→8B */
     const rdb_flash_ops_t *ops;
+    void                  *flash_ctx;
 } rdb_partition_t;
 ```
 
@@ -446,7 +447,7 @@ rocketdb_tsdb.c      — TSDB 引擎实现
 
 ### 测试期望
 
-- 构建脚本：`build.bat`、`Makefile`
+- 构建脚本：`build/*.bat`、`Makefile`、`CMakeLists.txt`
 - 测试程序输出日志含时间戳及结果摘要
 - 覆盖 KVDB/TSDB 的基本操作、GC、recovery 场景
 
@@ -457,12 +458,11 @@ rocketdb_tsdb.c      — TSDB 引擎实现
 ```c
 #pragma pack(push, 1)
 typedef struct {
-    uint32_t magic;         /* offset 0   — 0x4B564442 ("KVDB") */
-    uint16_t hdr_crc;       /* offset 4   — 头部 CRC16 */
-    uint16_t _rsv1;         /* offset 6   — 0xFFFF */
-    uint32_t create_seq;    /* offset 8   — 扇区创建序列号（4B 对齐）*/
-    uint16_t erase_cnt;     /* offset 12  — 擦除计数 */
-    uint16_t _rsv2;         /* offset 14  — 0xFFFF */
+    uint32_t magic;         /* offset 0  — 0x4B564442 ("KVDB") */
+    uint16_t version;       /* offset 4  — 0x0001 */
+    uint16_t hdr_crc;       /* offset 6  — CRC16(bytes[0..5]) */
+    uint32_t erase_cnt;     /* offset 8  — 擦除计数 */
+    uint32_t create_seq;    /* offset 12 — 扇区创建序列号 */
 } rdb_kv_sector_hdr_t;     /* 16 bytes */
 #pragma pack(pop)
 ```
@@ -472,13 +472,15 @@ typedef struct {
 ```c
 #pragma pack(push, 1)
 typedef struct {
-    uint8_t  magic;         /* offset 0   — 0xAA */
+    uint8_t  magic;         /* offset 0  — 0xA5 */
     uint8_t  state;         /* offset 1   — 0xFF(WRITING), 0xFE(VALID), 0xFC(DEAD) */
     uint8_t  key_len;       /* offset 2   — key 实际长度 */
-    uint8_t  _pad1;         /* offset 3   — 0xFF */
-    uint32_t seq;           /* offset 4   — 记录全局序列号，递增（4B 对齐）*/
-    uint16_t val_len;       /* offset 8   — value 实际长度 */
-    uint16_t data_crc;      /* offset 10  — CRC16(key ∥ val) */
+    uint8_t  _pad0;         /* offset 3   — 0xFF */
+    uint16_t val_len;       /* offset 4   — value 实际长度 */
+    uint16_t key_hash;      /* offset 6   — key hash */
+    uint32_t seq;           /* offset 8   — 记录全局序列号 */
+    uint16_t data_crc;      /* offset 12  — CRC16(key ∥ val) */
+    uint16_t _pad1;         /* offset 14  — 0xFFFF */
 } rdb_kv_record_hdr_t;     /* 16 bytes */
 #pragma pack(pop)
 ```
@@ -494,13 +496,13 @@ total_size = 16 + ALIGN_UP(key_len, WR_GRAN) + ALIGN_UP(val_len, WR_GRAN)
 ```c
 #pragma pack(push, 1)
 typedef struct {
-    uint32_t magic;         /* offset 0   — 0x54534442 ("TSDB") */
-    uint16_t hdr_crc;       /* offset 4   — 头部 CRC16 */
-    uint16_t seq;           /* offset 6   — 扇区序列号（16-bit） */
-    uint32_t erase_cnt;     /* offset 8   — 擦除计数 */
-    uint32_t time_base;     /* offset 12  — 第一个 record 的时间戳基准 */
-    uint16_t count;         /* offset 16  — SEALED 后的记录数（0xFFFF = 未封存） */
-    uint16_t end_off;       /* offset 18  — SEALED 后的数据末尾偏移（0xFFFF = 未封存） */
+    uint32_t magic;         /* offset 0  — 0x54534442 ("TSDB") */
+    uint32_t erase_cnt;     /* offset 4  — 擦除计数 */
+    uint32_t time_base;     /* offset 8  — 第一个 record 的时间戳基准 */
+    uint16_t seq;           /* offset 12 — 扇区序列号 */
+    uint16_t count;         /* offset 14 — SEALED 后记录数（0xFFFF = 未封存） */
+    uint16_t end_off;       /* offset 16 — SEALED 后数据末尾偏移 */
+    uint16_t hdr_crc;       /* offset 18 — CRC16(bytes[0..17]) */
 } rdb_ts_sector_hdr_t;     /* 20 bytes */
 #pragma pack(pop)
 ```
@@ -510,11 +512,12 @@ typedef struct {
 ```c
 #pragma pack(push, 1)
 typedef struct {
-    uint8_t  magic;         /* offset 0   — 0xBB */
+    uint8_t  magic;         /* offset 0   — 0xB6 */
     uint8_t  state;         /* offset 1   — 0xFF(WRITING), 0xFE(VALID), 0xFC(DEAD) */
     uint16_t data_len;      /* offset 2   — data 实际长度 */
     uint32_t time_delta;    /* offset 4   — time - time_base（4B 对齐）*/
     uint16_t data_crc;      /* offset 8   — CRC16(data) */
+    uint16_t _pad;          /* offset 10  — 0xFFFF */
 } rdb_ts_record_hdr_t;     /* 12 bytes */
 #pragma pack(pop)
 ```

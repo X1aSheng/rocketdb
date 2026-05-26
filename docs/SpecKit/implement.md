@@ -6,9 +6,9 @@
 
 | 文件 | 大小 | 说明 | 状态 |
 |------|------|------|------|
-| `rocketdb.h` | ~1200 行 | 公共类型、常量、API 声明 | ✅ 完成 |
-| `rocketdb_kvdb.c` | ~1500 行 | KVDB 引擎核心实现 | ✅ 完成 |
-| `rocketdb_tsdb.c` | ~900 行 | TSDB 引擎核心实现 | ✅ 完成 |
+| `src/rocketdb.h` | ~1200 行 | 公共类型、常量、API 声明 | ✅ 完成 |
+| `src/rocketdb_kvdb.c` | ~1500 行 | KVDB 引擎核心实现 | ✅ 完成 |
+| `src/rocketdb_tsdb.c` | ~900 行 | TSDB 引擎核心实现 | ✅ 完成 |
 | `tests/sim/` | 多个 | 模拟 Flash 驱动层、测试向量 | ✅ 部分完成 |
 
 ### 已实现功能
@@ -51,70 +51,69 @@
 
 | 项目 | 状态 | 说明 |
 |------|------|------|
-| `build.bat` | ✅ 完成 | Windows 批处理编译脚本，输出到 `tests\out\` |
-| `Makefile` | ✅ 完成 | make 增量编译脚本，`.o` 文件统一到 `tests/out/` |
-| `tests/sim/sim_runner.c` | ✅ 修复 | 路径修复（`tests\out\`）、头文件修复（`rocketdb.h`）|
-| `tests/sim/rocketdb.h` | ✅ 修复 | 指向正确的 `../../rocketdb.h` |
+| `build/*.bat` | ✅ 完成 | Windows 批处理编译/测试/性能脚本，输出到 `tests\out\` |
+| `Makefile` | ✅ 完成 | make 增量编译脚本，`.o` 和可执行文件统一到 `tests/out/` |
+| `CMakeLists.txt` | ✅ 完成 | 可执行文件、静态库、PDB 输出到 `tests/out`，CTest 注册 11 项 |
 | `tests/sim/sim_flash.c` | ✅ 完成 | NOR Flash 模拟器（1→0 写入、故障注入）|
 | `tests/sim/sim_crypto.c` | ✅ 完成 | CRC16-MODBUS / Hash16 FNV 实现 |
-| `tests/sim/sim_vectors.c` | ✅ 完成 | 确定性测试向量生成器（LCG PRNG）|
+| `tests/sim/test_rdbdump_dump.c` | ✅ 完成 | 生成 KVDB/TSDB 原始 Flash dump 供 rdbdump 校验 |
+| `tools/rdbdump/` | ✅ 完成 | PC/server 端离线 Flash dump 解析、校验、导出 |
 | 测试日志 | ✅ 统一 | 全部输出到 `tests/out/`，带时间戳 |
 
-**构建验证状态（2026-02-25）**：`build.bat test` 已可完整编译并运行基础测试套件。
+**构建验证状态（当前）**：`build\run_all_tests.bat test`、CMake/CTest、性能构建均可完整运行。
 
 - ✅ **0 warning**，0 error（修复了 `migrate_one` 的 unused parameter warning）
 - ✅ KVDB 基础 set/get 通过
 - ✅ KVDB GC 压力：100 次 GC 循环，仅用 421 次写入循环
 - ✅ TSDB 基础 append/query：200 条记录全部找回
-- ✅ KV 测试向量生成：512KB（2000 条）
-- ✅ TS 测试向量生成：578KB（2000 条）
+- ✅ rdbdump 离线验证：生成 KVDB/TSDB 原始 Flash dump 并导出可观察/有效数据集
 
 **已编译源文件列表**：
 ```
-rocketdb_kvdb.c           KVDB 引擎
-rocketdb_tsdb.c           TSDB 引擎
+src/rocketdb_kvdb.c        KVDB 引擎
+src/rocketdb_tsdb.c        TSDB 引擎
 tests/sim/sim_flash.c      Flash 模拟器
-tests/sim/sim_vectors.c    向量生成器
 tests/sim/sim_crypto.c     CRC / Hash
-tests/sim/sim_runner.c     测试主程序
+tests/sim/test_*.c         基础测试套件
+tests/sim/test_rdbdump_dump.c  rdbdump 夹具生成器
 ```
 
 ## 输出目录规划
 
-基于 bitarray 项目经验，计划统一输出目录结构：
+当前统一输出目录结构：
 
 ```
-test/
+tests/
 └── out/                        # 统一输出目录
-    ├── sim_test.exe            # 测试可执行文件
-    ├── *.o                     # 编译目标文件
-    ├── test_log_*.log          # 测试日志（带时间戳）
-    ├── test_report_*.md        # 测试报告
-    ├── kv_vectors.bin          # KVDB 测试向量
-    └── ts_vectors.bin          # TSDB 测试向量
+    ├── test_*.exe              # 测试可执行文件
+    ├── *.o / *.lib / *.pdb     # 构建过程文件
+    ├── YYMMDD-HHMMSS-*.log     # 测试日志
+    ├── benchmark.exe           # 性能基准
+    ├── results_*.csv           # 性能结果
+    ├── rdbdump_*.bin/.json     # 模拟 Flash dump 与 manifest
+    └── rdbdump_export/<TS>/    # 离线分析导出数据集
 ```
 
 ### 输出目录用途
-- **可执行文件**：`sim_test.exe` - 模拟器测试程序
+- **可执行文件**：`test_*.exe`、`benchmark.exe`、`rocketdb_perf.exe`
 - **编译文件**：`*.o` - 目标文件，`clean` 时删除
-- **测试日志**：`test_log_YYYYMMDD_HHMMSS.log` - 包含完整测试输出和执行时间
-- **测试报告**：`test_report_YYYYMMDD_HHMMSS.md` - 结构化测试报告
-- **测试向量**：`*.bin` - 可重放的测试向量文件
+- **测试日志**：`YYMMDD-HHMMSS-*.log` - 包含完整测试输出和执行时间
+- **rdbdump 文件**：`rdbdump_*.bin/.json` 与 `rdbdump_export/<TS>/`
 
 ### 构建命令规划
 
 ```bash
 # 编译
-build.bat              # 或 make
+build\build.bat all build  # 或 make
 
 # 测试（自动生成带时间戳的日志）
-build.bat test         # 或 make test
+build\build.bat all test   # 或 make test
 
 # 清理（删除整个 tests/out/ 目录）
-build.bat clean        # 或 make clean
+build\build.bat all clean  # 或 make clean
 
 # 重新编译
-build.bat rebuild      # 或 make rebuild
+make rebuild
 ```
 
 ### 文件位置规范
@@ -251,10 +250,10 @@ if (count_erased(db) < gc_reserve + 1)
 ## 下一步实现目标
 
 ### 立即（项目结构优化）
-1. **统一输出目录**：创建 `tests/out/` 目录，迁移所有编译产物和测试输出。
-2. **创建构建脚本**：编写 `build.bat` 和 `Makefile`，参考 bitarray 项目。
-3. **统一测试日志格式**：所有测试输出到 `tests/out/test_log_YYYYMMDD_HHMMSS.log`。
-4. **更新测试文档**：在 tests/sim/README.md 中说明新的输出路径。
+1. **统一输出目录**：已完成，所有可控构建/测试/性能/rdbdump 产物输出到 `tests/out/`。
+2. **创建构建脚本**：已完成，覆盖 bat、Makefile、CMake。
+3. **统一测试日志格式**：已完成，使用 `YYMMDD-HHMMSS-*.log`。
+4. **更新测试文档**：已完成，见 `docs/test_plan.md`、`tests/sim/README.md`、`tests/perf/README.md`。
 
 ### 短期（v0.0.2 完善）
 1. **补齐自动化测试**：构建 executable test suite，覆盖所有 Phase recovery 场景。

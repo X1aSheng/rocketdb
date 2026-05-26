@@ -22,3 +22,5 @@ All vector files are little-endian and begin with `rdb_vec_hdr_t`.
 
 ## Usage
 These vectors can be replayed on embedded targets to reproduce workloads and validate functional behavior, GC behavior, and CRC handling.
+
+These files describe replayable workloads, not raw Flash partition dumps. For PC/server analysis of full KVDB or TSDB Flash images, use `tools/rdbdump`; see [offline_flash_analysis.md](../../docs/offline_flash_analysis.md).

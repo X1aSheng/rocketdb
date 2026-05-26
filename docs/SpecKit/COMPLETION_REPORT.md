@@ -90,7 +90,7 @@
 
 | 阶段 | 周期 | 工作 | 关键输出 |
 |------|------|------|---------|
-| 0️⃣ | 1 周 | 项目结构优化 | test/out 统一输出 |
+| 0️⃣ | 1 周 | 项目结构优化 | `tests/out` 统一输出 |
 | 1️⃣ | 1~2 周 | API 规格固化 | 签名对齐 100% |
 | 2️⃣ | 2~3 周 | 测试框架建设 | Flash 模拟器 + PRNG |
 | 3️⃣ | 3~4 周 | 路径覆盖 ≥80% | 20+ 测试用例 |
@@ -283,7 +283,7 @@
 - 🔗 [SpecKit.md](SpecKit.md) — 总导航
 - 📊 [PROJECT_STATUS.md](PROJECT_STATUS.md) — 全景分析
 - 📋 [SUMMARY.md](SUMMARY.md) — 工作总结
-- 📖 [../design.md](../design.md) — 原始设计手册
+- 📖 [../Architecture.md](../Architecture.md) — 当前设计手册
 - 📋 [../test_plan.md](../test_plan.md) — 原始测试计划
 
 ---

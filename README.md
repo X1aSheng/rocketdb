@@ -26,13 +26,14 @@ RocketDB is a zero-allocation, dual-mode Flash storage engine for resource-const
 
 `/examples` includes RocketDB usage sample code (KVDB, TSDB, STM32F4).
 
-`/test` includes the simulation test framework and comprehensive test suites
-(8 batch suites plus CTest examples, 40,000+ assertions depending on build
-configuration).
+`/tests` includes the simulation test framework, 8 host-side test suites,
+performance benchmarks, and generated output under `tests/out`.
 
 `/docs` includes design manual, API reference, integration guides, and troubleshooting.
 
 `/build` includes Windows build/test scripts and benchmark runners.
+
+`/tools/rdbdump` includes the offline Flash dump inspector/exporter for PC/server analysis.
 
 `/zephyr` includes Zephyr OS port layer (flash adapter, Kconfig, module.yml).
 
@@ -65,6 +66,29 @@ Add RocketDB as a Zephyr module (see `zephyr/module.yml`):
 
 All external primitives (`rdb_crc16`, `rdb_hash16`, flash ops) are provided
 by `zephyr/rocketdb_port.c`.  No additional HAL code is needed.
+
+### Build And Test
+
+Windows host builds use LLVM/Clang by default and fall back to GCC:
+
+- Default compiler: `D:\Programs\LLVM\bin\clang.exe`
+- Fallback compiler: `D:\Programs\w64devkit\bin\gcc.exe`
+
+All controllable build/test/performance/offline-analysis artifacts are written
+to `tests/out`.
+
+```bat
+build\build.bat all test
+build\build.bat kvdb test
+build\build.bat tsdb test
+build\build.bat perf run
+```
+
+```bash
+cmake -S . -B cmake-build -DBUILD_TESTS=ON -DBUILD_PERF=ON
+cmake --build cmake-build --config Debug
+ctest --test-dir cmake-build --output-on-failure
+```
 
 ### Usage
 
@@ -135,12 +159,14 @@ Online API reference: [rocketdb.h](src/rocketdb.h) (Doxygen-formatted comments t
 Offline documents:
 
 - [`docs/Architecture.md`](docs/Architecture.md) — Full architecture and design manual
-- [`docs/EXAMPLES.md`](docs/EXAMPLES.md) — 8 complete code examples
-- [`docs/HAL_REFERENCE.md`](docs/HAL_REFERENCE.md) — STM32 MCU integration guide
+- [`docs/README.md`](docs/README.md) — Documentation index
 - [`docs/W25QXX_GUIDE.md`](docs/W25QXX_GUIDE.md) — W25QXX SPI NOR Flash integration guide
-- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — Common problems and solutions
 - [`docs/test_plan.md`](docs/test_plan.md) — Test plan and coverage assessment
-- [`docs/CODE_REVIEW_CONSOLIDATED_260517.md`](docs/CODE_REVIEW_CONSOLIDATED_260517.md) — Consolidated legacy code-review status
+- [`docs/offline_flash_analysis.md`](docs/offline_flash_analysis.md) — Offline raw Flash dump analysis with `tools/rdbdump`
+- [`tests/sim/README.md`](tests/sim/README.md) — Simulation test methodology
+- [`tests/perf/README.md`](tests/perf/README.md) — Performance benchmark methodology
+
+After `build\run_all_tests.bat test`, simulator Flash images are verified by `rdbdump` and exported under `tests/out/rdbdump_export/<YYMMDD-HHMMSS>/`.
 
 Generate HTML API docs with Doxygen:
 

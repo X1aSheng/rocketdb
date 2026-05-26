@@ -4,7 +4,9 @@
 
 RocketDB 是针对资源受限嵌入式系统的**双模 Flash 存储引擎**，提供 KVDB（键值存储）和 TSDB（时序存储）两个核心引擎。
 
-本 SpecKit 是 RocketDB 从 v0.0.2 演进至 v1.0.0 生产级的完整项目管理体系，包括规格定义、实现现状、分阶段计划、任务跟踪、问题澄清、功能分析。
+本 SpecKit 是 RocketDB 从早期版本演进至当前生产级基线的项目管理体系，包括规格定义、实现现状、分阶段计划、任务跟踪、问题澄清、功能分析。
+
+> 当前构建、测试和离线分析状态以 `docs/Architecture.md`、`docs/test_plan.md`、`tests/sim/README.md`、`tests/perf/README.md` 和 `docs/offline_flash_analysis.md` 为准。本目录保留项目演进过程中的规格化材料，并已同步关键路径与当前工具链。
 
 ### 文档来源整合（2026-02-25 更新）
 
@@ -68,7 +70,7 @@ RocketDB 是针对资源受限嵌入式系统的**双模 Flash 存储引擎**，
 👉 按以下顺序阅读：
 1. [Specify](specify.md) — **必读**，API 参考
 2. [Constitution](constitution.md) — 理解设计约束
-3. [design.md](../design.md) — 完整技术细节（可选深读）
+3. [Architecture.md](../Architecture.md) — 完整技术细节（可选深读）
 
 ### 我是代码维护者 / 充分测试工程师
 
@@ -114,10 +116,10 @@ RocketDB 是针对资源受限嵌入式系统的**双模 Flash 存储引擎**，
 | KVDB Recovery | ✅ 完成 | Phase 1~4 恢复 |
 | TSDB 核心 API | ✅ 完成 | append/query/rotation |
 | TSDB Epoch | ✅ 完成 | 时间戳回绕防护 |
-| 构建脚本 | 📋 计划中 | 参考 bitarray 创建 |
-| 输出目录 | 📋 计划中 | 统一到 tests/out/ |
-| 自动化测试 | ⚠️ 部分 | 缺 GC/Recovery 完整覆盖 |
-| 压力测试 | ❌ 未做 | 无 100+ GC 循环验证 |
+| 构建脚本 | ✅ 完成 | bat / Makefile / CMake 均可用 |
+| 输出目录 | ✅ 完成 | 可控产物统一到 `tests/out/` |
+| 自动化测试 | ✅ 完成 | 8 个基础套件 + CTest + rdbdump |
+| 压力测试 | ✅ 完成 | GC/rotation ≥100 覆盖 |
 
 ### 已知缺口（From Analyze）
 | 优先级 | 缺口 | 计划修补 |
@@ -196,13 +198,15 @@ Step 4: 旧版本标记 DEAD (0xFC) ← 可选
 
 ```
 rocketdb/
-├── rocketdb.h              — 公共类型、API 声明
-├── rocketdb_kvdb.c         — KVDB 引擎实现 (~1500 行)
-├── rocketdb_tsdb.c         — TSDB 引擎实现 (~900 行)
-├── design.md               — 完整设计文档 (1391 行)
-├── test_plan.md            — 测试计划
-├── test_request.txt        — 原始需求
-├── SpecKit/                — 项目规范体系 (本目录)
+├── src/
+│   ├── rocketdb.h          — 公共类型、API 声明
+│   ├── rocketdb_kvdb.c     — KVDB 引擎实现
+│   └── rocketdb_tsdb.c     — TSDB 引擎实现
+├── docs/
+│   ├── Architecture.md     — 完整设计文档
+│   ├── test_plan.md        — 测试计划
+│   ├── offline_flash_analysis.md — 离线 Flash dump 分析
+│   └── SpecKit/            — 项目规范体系 (本目录)
 │   ├── SpecKit.md          — 本文档（导航）
 │   ├── constitution.md     — 宪法（不可变约束）
 │   ├── specify.md          — 规格（API 定义）
@@ -211,14 +215,16 @@ rocketdb/
 │   ├── tasks.md            — 任务（执行清单）
 │   ├── clarify.md          — 澄清（问题与决策）
 │   └── analyze.md          — 分析（覆盖与缺口）
-├── test/
-│   ├── out/                — 测试文件、日志、编译过程文件等
+├── tests/
+│   ├── out/                — 测试、构建、性能、rdbdump 输出
 │   ├── sim/                — Flash 模拟器与测试
 │   │   ├── sim_flash.h/.c
-│   │   ├── sim_runner.c
-│   │   ├── sim_vectors.c/.h
+│   │   ├── test_*.c
 │   │   └── ...
-└── build.bat / Makefile    — 构建脚本
+│   └── perf/               — 性能基准
+├── tools/rdbdump/          — 离线 Flash dump 解析工具
+├── build/                  — Windows 批处理入口
+└── Makefile / CMakeLists.txt
 ```
 
 ---

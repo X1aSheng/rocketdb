@@ -15,7 +15,7 @@
 | T-009 | 创建 `build.bat`（对标 bitarray） | 2026-02-25 | clang，输出到 tests\out\ |
 | T-010 | 创建 `Makefile`（增量编译） | 2026-02-25 | VPATH 扁平化 .o |
 | T-011 | 修复 `tests/sim/rocketdb.h` 旧文件名引用 | 2026-02-25 | 指向 `../../rocketdb.h` |
-| T-012 | 修复 `tests/sim/sim_runner.c` 输出路径 | 2026-02-25 | 改为 `tests\out\` |
+| T-012 | 统一 `tests/sim/test_*.c` 输出路径 | 2026-02-25 | 改为 `tests\out\` |
 | T-013 | 修复 `rocketdb_kvdb.c` unused-parameter warning | 2026-02-25 | `(void)src_sec` |
 | T-014 | 验证编译测试：0 warning，全部用例通过 | 2026-02-25 | KVDB GC×100, TSDB×200条 |
 
@@ -28,10 +28,10 @@
 | T-050 | P0 | 创建统一输出目录 tests/out/ | 0.5h | 无 | ✅ 完成 |
 | T-051 | P0 | 编写 build.bat（参考 bitarray） | 2h | T-050 | ✅ 完成 |
 | T-052 | P0 | 编写 Makefile（参考 bitarray） | 2h | T-050 | ✅ 完成 |
-| T-053 | P0 | 更新 tests/sim/README.md 输出路径 | 1h | T-050 | 📋 待完成 |
-| T-054 | P0 | 修复 sim_runner.c / rocketdb.h 路径 | 1h | T-050 | ✅ 完成 |
+| T-053 | P0 | 更新 tests/sim/README.md 输出路径 | 1h | T-050 | ✅ 完成 |
+| T-054 | P0 | 修复测试 include / rocketdb.h 路径 | 1h | T-050 | ✅ 完成 |
 | T-055 | P0 | 验证编译：0 warning，测试全部通过 | — | T-054 | ✅ 完成 |
-| T-056 | P1 | 更新 .gitignore 排除 tests/out/ | 0.5h | T-050 | 📋 待完成 |
+| T-056 | P1 | 更新 .gitignore 排除 tests/out/ 和 cmake-build/ | 0.5h | T-050 | ✅ 完成 |
 
 ### 第一阶段：基线规格固化
 
@@ -95,7 +95,7 @@
 | T-500 | P0 | 编写 `clarify.md` — 澄清问题与决策 | 6h | T-405 |
 | T-501 | P0 | 编写 `analyze.md` — 功能分析与缺口 | 8h | T-500 |
 | T-502 | P0 | 编写 README.md — 快速开始指南 | 6h | T-501 |
-| T-503 | P0 | 编写 TROUBLESHOOTING.md | 4h | T-502 |
+| T-503 | P0 | 编写/维护故障排查说明（当前分布在 README、test_plan、sim/perf README） | 4h | T-502 |
 | T-504 | P1 | 静态代码分析（cppcheck）并修复告警 | 6h | T-503 |
 | T-505 | P1 | 增强 GC Phase 4 等复杂逻辑的注释 | 6h | T-504 |
 | T-506 | P1 | 编写完整示例程序（KVDB + TSDB） | 12h | T-505 |

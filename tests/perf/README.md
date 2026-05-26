@@ -59,18 +59,20 @@ build\build_perf.bat run
 ### Linux/macOS
 
 ```bash
-cd test/perf
+cd tests/perf
 make clean
 make
 make run
 ```
 
+All generated benchmark binaries, object files, and result CSV files are written to `tests/out`.
+
 ### CMake
 
 ```bash
-cmake -S . -B cmake-build-perf -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_PERF=ON
-cmake --build cmake-build-perf
-./cmake-build-perf/rocketdb_perf
+cmake -S . -B cmake-build -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_PERF=ON
+cmake --build cmake-build
+./tests/out/rocketdb_perf
 ```
 
 ## Output Format
@@ -86,7 +88,7 @@ P-100 set (1000 samples)
   Avg: 0.856 us
   P95: 2.145 us
   Throughput: 1,167,883 ops/sec
-  CSV: results_20260514_212015.csv
+  CSV: tests/out/results_20260514_212015.csv
 ```
 
 ### CSV Output
@@ -97,7 +99,7 @@ The benchmark writes CSV rows with:
 - Min/Max/Avg/P95 metrics
 - Throughput data
 
-File naming: `results_YYYYMMDD_HHMMSS.csv`
+File naming: `tests/out/results_YYYYMMDD_HHMMSS.csv`
 
 ## Analyzing Results
 
@@ -105,10 +107,10 @@ File naming: `results_YYYYMMDD_HHMMSS.csv`
 
 ```bash
 # View latest results
-cat results_*.csv | head -20
+cat ../out/results_*.csv | head -20
 
 # Sort by operation type
-sort -t, -k2 results_*.csv
+sort -t, -k2 ../out/results_*.csv
 ```
 
 ### Detailed Performance Report
@@ -177,13 +179,13 @@ awk -F, 'NR>1 {print $2, $4 / prev[$2]; prev[$2]=$4}' \
 ### Build Issues
 
 **"gcc: command not found"**
-- Install MinGW/Cygwin on Windows
+- On Windows, use the project default LLVM install at `D:\Programs\LLVM` or fallback GCC at `D:\Programs\w64devkit`
 - On Linux: `apt-get install build-essential`
 - On macOS: `xcode-select --install`
 
 **"Undefined reference to sim_flash_*"**
-- Ensure `../sim/sim_flash.c` exists
-- Check include paths with `-I../sim`
+- Ensure `tests/sim/sim_flash.c` is included
+- Check include paths with `-Itests/sim`
 
 ### Runtime Issues
 
