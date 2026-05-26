@@ -62,7 +62,12 @@ static int ensure_dir(const char *path)
 static void make_path(char *dst, size_t dst_len, const char *dir, const char *name)
 {
     size_t n = strlen(dir);
-    const char *sep = (n > 0 && (dir[n - 1] == '\\' || dir[n - 1] == '/')) ? "" : "\\";
+#ifdef _WIN32
+    const char *default_sep = "\\";
+#else
+    const char *default_sep = "/";
+#endif
+    const char *sep = (n > 0 && (dir[n - 1] == '\\' || dir[n - 1] == '/')) ? "" : default_sep;
     snprintf(dst, dst_len, "%s%s%s", dir, sep, name);
 }
 
@@ -189,7 +194,12 @@ static int generate_tsdb(const char *out_dir)
 
 int main(int argc, char **argv)
 {
-    const char *out_dir = (argc > 1) ? argv[1] : "tests\\out";
+#ifdef _WIN32
+    const char *default_out_dir = "tests\\out";
+#else
+    const char *default_out_dir = "tests/out";
+#endif
+    const char *out_dir = (argc > 1) ? argv[1] : default_out_dir;
     if (ensure_dir(out_dir) != 0) {
         fprintf(stderr, "failed to create output dir: %s\n", out_dir);
         return 1;
