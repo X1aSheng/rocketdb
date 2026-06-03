@@ -23,7 +23,8 @@ ifneq ($(UNAME_S),Windows)
     LDFLAGS += -lm
 endif
 OUTPUT_DIR = tests/out
-PYTHON ?= python
+# Prefer python3; fall back to python.  Ubuntu 26.04 ships python3 only.
+PYTHON ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python)
 RDBDUMP_EXPORT_DIR = $(OUTPUT_DIR)/rdbdump_export/$(shell date +%y%m%d-%H%M%S)
 
 # Engine sources

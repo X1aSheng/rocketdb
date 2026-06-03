@@ -1,0 +1,86 @@
+# RocketDB — Ubuntu-based Docker build
+#
+# Uses Ubuntu 26.04 base for faster package installation on Ubuntu cloud hosts.
+# Build stage compiles the engine, tests, and server gateway.
+# Runtime stage is the same Ubuntu base with only the binaries.
+#
+# Usage:
+#   docker build -f Dockerfile.ubuntu -t rocketdb:ubuntu .
+#   docker run --rm -p 8080:8080 rocketdb:ubuntu
+
+# ── Stage 1: Build ───────────────────────────────────────────────────────────
+FROM ubuntu:26.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y -qq \
+    clang make python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Copy all sources (keeping layer count minimal)
+COPY CHANGELOG.md CMakeLists.txt CONTRIBUTING.md Doxyfile LICENSE Makefile README.md ./
+COPY src/ src/
+COPY interface/ interface/
+COPY examples/ examples/
+COPY tests/ tests/
+COPY tools/ tools/
+COPY deploy/ deploy/
+
+# Compile the server gateway
+RUN mkdir -p tests/out && \
+    clang -Wall -Wextra -std=c99 -O2 -g \
+    -Isrc -Itests/sim \
+    -o tests/out/rocketdb_server \
+    deploy/server/rdb_server.c \
+    src/rocketdb_kvdb.c src/rocketdb_tsdb.c \
+    tests/sim/sim_flash.c tests/sim/sim_fault.c \
+    tests/sim/sim_crypto.c tests/sim/sim_trace.c
+
+# Compile full test suite
+RUN for t in test_kvdb_basic test_kvdb_stress test_tsdb_basic test_tsdb_stress \
+    test_kvdb_cache test_integration test_example test_fault_injection; do \
+    clang -Wall -Wextra -std=c99 -O2 -g \
+    -Isrc -Itests/sim \
+    -o tests/out/$t \
+    src/rocketdb_kvdb.c src/rocketdb_tsdb.c \
+    tests/sim/test_framework.c tests/sim/sim_flash.c \
+    tests/sim/sim_fault.c tests/sim/sim_crypto.c \
+    tests/sim/sim_dist.c tests/sim/sim_trace.c \
+    tests/sim/$t.c; \
+    done
+
+# Compile the rdbdump fixture generator
+RUN clang -Wall -Wextra -std=c99 -O2 -g \
+    -Isrc -Itests/sim \
+    -o tests/out/test_rdbdump_dump \
+    src/rocketdb_kvdb.c src/rocketdb_tsdb.c \
+    tests/sim/sim_flash.c tests/sim/sim_fault.c \
+    tests/sim/sim_crypto.c tests/sim/sim_trace.c \
+    tests/sim/test_rdbdump_dump.c
+
+# Compile the client (runs on host, bundled for convenience)
+RUN clang -Wall -Wextra -std=c99 -O2 -g \
+    -Isrc -Itests/sim \
+    -o tests/out/rocketdb_client \
+    deploy/client/rdb_client.c
+
+# ── Stage 2: Runtime ─────────────────────────────────────────────────────────
+FROM ubuntu:26.04
+
+RUN apt-get update -qq && apt-get install -y -qq \
+    python3 netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /src/tests/out/rocketdb_server /usr/local/bin/rocketdbd
+COPY --from=builder /src/tests/out/rocketdb_client /usr/local/bin/rocketdb
+COPY --from=builder /src/tests/out/test_* /usr/local/bin/
+COPY --from=builder /src/tools/rdbdump/rdbdump.py /usr/local/bin/rdbdump.py
+
+EXPOSE 8080
+
+# Health check: use nc to send STATS command
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+    CMD echo "STATS" | nc -q 1 127.0.0.1 8080 | grep -q "KVDB" || exit 1
+
+CMD ["rocketdbd", "-p", "8080"]
