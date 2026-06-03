@@ -152,6 +152,28 @@ W25QXX-class SPI NOR parts should normally use `write_gran = 0`. The HAL
 `write()` callback must still split page-program commands at 256-byte page
 boundaries and preserve NOR 1-to-0 programming semantics.
 
+### Docker / Kubernetes Deployment
+
+RocketDB includes a TCP server gateway for cloud deployment validation:
+
+```bash
+# Build Docker image
+docker build -t rocketdb .
+
+# Run server
+docker run --rm -p 8080:8080 rocketdb
+
+# Connect with client (from another terminal)
+clang -Isrc -o rdb_client deploy/client/rdb_client.c
+./rdb_client -h 127.0.0.1 -p 8080
+
+# Deploy to Kubernetes
+kubectl apply -f k8s/rocketdb.yaml
+```
+
+See [`deploy/README.md`](deploy/README.md) for full deployment documentation,
+protocol specification, and client usage.
+
 ### Document
 
 Online API reference: [rocketdb.h](src/rocketdb.h) (Doxygen-formatted comments throughout).

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] — 2026-06-03
+
+### Fixed
+
+- **sim_crypto.c CRC-16 NULL seed guard**: Added explicit `data==NULL && len==0`
+  check matching the Zephyr and interface template implementations for portable
+  seed retrieval (`rdb_crc16(NULL, 0)` returns `0xFFFF`).
+- **Windows batch compiler discovery**: Batch scripts now search standard
+  `C:\Program Files\LLVM\bin` and PATH before dev-specific `D:\Programs` paths,
+  enabling CI runners to find `clang.exe` without environment-specific overrides.
+
+### Added
+
+- **Docker multi-stage build**: `Dockerfile` builds engine, tests, and TCP server
+  gateway on Alpine Linux with a minimal runtime stage.
+- **TCP server gateway** (`deploy/server/rdb_server.c`): Exposes KVDB/TSDB
+  operations over a simple text-based TCP protocol for cloud validation.
+  Runs in Docker, uses the simulator flash backend.
+- **TCP client** (`deploy/client/rdb_client.c`): Cross-platform (Windows/Linux)
+  interactive client for connecting to a remote RocketDB server.
+- **Kubernetes deployment** (`k8s/rocketdb.yaml`): Namespace, Deployment,
+  and Service manifests for orchestrated deployment.
+- **CMakePresets.json**: Pre-configured build presets (debug, release, debug-win,
+  minimal) with matching build and test presets.
+- **CI build caching**: GitHub Actions `actions/cache@v4` step for the CMake
+  build directory across matrix variants.
+
+### Changed
+
+- **`.gitignore`**: Added `*.orig`, `*.bak`, `*.save` editor backup patterns.
+
+---
+
 ## [1.3.0] — 2026-05-25
 
 ### Added
