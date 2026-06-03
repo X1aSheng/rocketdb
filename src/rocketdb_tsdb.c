@@ -1281,6 +1281,7 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
 
             while (rem > 0) {
                 uint32_t ch = RDB_MIN(rem, max_chunk);
+                RDB_PAGE_CLAMP(ch, wpos);
 
                 uint32_t data_rem = (len > data_pos) ? (uint32_t)len - data_pos : 0;
                 uint32_t data_ch = RDB_MIN(ch, data_rem);

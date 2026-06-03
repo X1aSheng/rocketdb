@@ -609,9 +609,10 @@ typedef struct {
 /**
  * @brief Scan callback for find_latest.
  *
- * For each VALID record that matches the target key length and hash,
- * reads the key from flash and compares.  Keeps the record with the
- * highest sequence number.
+ * With newest-sector-first scan order, the first VALID match is guaranteed
+ * to have the highest sequence number (write_seq is globally monotonic,
+ * and create_seq maps to write_seq at sector creation time).  Stop
+ * immediately — no need to continue scanning.
  */
 static int find_cb(rdb_kvdb_t* db, uint8_t s,
     const kv_rec_info_t* ri, void* arg) {
@@ -632,19 +633,26 @@ static int find_cb(rdb_kvdb_t* db, uint8_t s,
     if (memcmp(kb, fc->key, fc->kl) != 0)
         return RDB_ITER_CONTINUE;
 
-    /* Update best match if this record has a higher sequence number */
-    if (!fc->found || RDB_SEQ_GT(ri->seq, fc->best_seq)) {
-        fc->best_addr = ri->addr;
-        fc->best_seq = ri->seq;
-        fc->best_rsz = ri->rsz;
-        fc->best_sec = s;
-        fc->found = 1;
-    }
-    return RDB_ITER_CONTINUE;
+    /* First match in newest-sector-first order IS the latest.
+     * No need to keep scanning for a higher seq. */
+    fc->best_addr = ri->addr;
+    fc->best_seq = ri->seq;
+    fc->best_rsz = ri->rsz;
+    fc->best_sec = s;
+    fc->found = 1;
+    return RDB_ITER_STOP;
 }
 
 /**
  * @brief Find the latest VALID record for a given key across all sectors.
+ *
+ * Scans sectors in **newest-first order** (descending create_seq):
+ *   1. Active sector first — guaranteed highest create_seq.
+ *   2. Remaining non-erased sectors sorted by create_seq descending.
+ *
+ * With this order, the first matching VALID record is the latest copy
+ * (write_seq is globally monotonic).  The scan callback stops on first
+ * match, eliminating wasteful full-table scans.
  *
  * @param db   Database handle.
  * @param key  Key string (not null-terminated in flash, length-prefixed).
@@ -662,11 +670,48 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
     fc->best_sec = 0;
     fc->found = 0;
 
+    /* ── Phase 1: scan active sector first (highest create_seq) ── */
+    if (db->active_sec < db->sector_cnt &&
+        db->sectors[db->active_sec].status != RDB_SEC_ERASED &&
+        db->sectors[db->active_sec].status != RDB_SEC_CORRUPT) {
+        scan_sector(db, db->active_sec, find_cb, fc, RDB_FALSE);
+        if (fc->found)
+            return;
+    }
+
+    /* ── Phase 2: sort remaining non-erased sectors by create_seq desc ── */
+    uint8_t order[RDB_MAX_SECTORS];
+    uint8_t cnt = 0;
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
+        if (s == db->active_sec)
+            continue;
         if (db->sectors[s].status == RDB_SEC_ERASED ||
             db->sectors[s].status == RDB_SEC_CORRUPT)
             continue;
-        scan_sector(db, s, find_cb, fc, RDB_FALSE);
+        order[cnt++] = s;
+    }
+    if (cnt == 0)
+        return;
+
+    /* Insertion sort — descending by create_seq (newest first).
+       N ≤ 255, O(N²) worst case but tiny constant and cache-friendly. */
+    for (uint8_t i = 1; i < cnt; i++) {
+        uint8_t ks = order[i];
+        uint8_t j = i;
+        while (j > 0 && RDB_SEQ_GT(db->sectors[order[j - 1]].create_seq,
+                                     db->sectors[ks].create_seq)) {
+            order[j] = order[j - 1];
+            j--;
+        }
+        order[j] = ks;
+    }
+    /* order[0] = oldest, order[cnt-1] = newest */
+
+    /* Scan from newest to oldest; stop on first match */
+    for (int16_t i = (int16_t)(cnt - 1); i >= 0; i--) {
+        scan_sector(db, order[(uint16_t)i], find_cb, fc, RDB_FALSE);
+        if (fc->found)
+            return;
     }
 }
 
@@ -1393,6 +1438,7 @@ static int migrate_one(rdb_kvdb_t* db, uint8_t src_sec,
 
             while (total) {
                 uint32_t ch = RDB_MIN(total, sizeof(buf));
+                RDB_PAGE_CLAMP(ch, dst_pos);
                 if (fl_read(db, src_pos, buf, ch) != 0)
                     return -1;
                 if (fl_write(db, dst_pos, buf, ch) != 0)
@@ -2454,6 +2500,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
 
             while (rem) {
                 uint32_t ch = RDB_MIN(rem, max_chunk);
+                RDB_PAGE_CLAMP(ch, wpos);
                 uint32_t data_ch = 0;
 
                 if (data_pos < len) {

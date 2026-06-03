@@ -128,6 +128,43 @@ extern "C" {
 #endif
 
 /**
+ * @brief Flash physical page size in bytes, or 0 for no page-boundary
+ *        restriction.
+ *
+ * When > 0, the engine ensures that no single write operation crosses
+ * a page_size boundary in the flash address space.  This allows HAL
+ * drivers (e.g. W25QXX) to use the maximum Page Program length without
+ * needing to split at page boundaries themselves.
+ *
+ * W25QXX-series parts use 256-byte pages:
+ *   #define RDB_FLASH_PAGE_SIZE 256u
+ *
+ * Must be a power of 2 when > 0.
+ */
+#ifndef RDB_FLASH_PAGE_SIZE
+#define RDB_FLASH_PAGE_SIZE 0u
+#endif
+
+/**
+ * @brief Clamp `*io_chunk` to stay within the current flash page.
+ *
+ * Must be called inside the write loop with `wpos` being the current
+ * write address.  No-op when RDB_FLASH_PAGE_SIZE == 0.
+ */
+#if RDB_FLASH_PAGE_SIZE > 0
+#define RDB_PAGE_CLAMP(io_chunk, wpos) \
+    do { \
+        uint32_t _po = (uint32_t)((wpos) & ((uint32_t)RDB_FLASH_PAGE_SIZE - 1u)); \
+        if (_po > 0u) { \
+            uint32_t _pr = (uint32_t)RDB_FLASH_PAGE_SIZE - _po; \
+            if ((io_chunk) > _pr) (io_chunk) = _pr; \
+        } \
+    } while (0)
+#else
+#define RDB_PAGE_CLAMP(io_chunk, wpos) ((void)0)
+#endif
+
+/**
  * @brief KVDB key-to-address cache size (number of slots).
  *
  * A direct-mapped cache with linear probing that stores key fingerprints
