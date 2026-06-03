@@ -478,7 +478,8 @@ typedef enum {
 
 #define RDB_KV_SECTOR_MAGIC 0x4B564442u /**< KVDB sector header magic     */
 #define RDB_KV_RECORD_MAGIC 0xA5u       /**< KVDB record header magic     */
-#define RDB_KV_VERSION      0x0001u     /**< KVDB on-flash format version */
+#define RDB_KV_VERSION      0x0002u     /**< KVDB on-flash format version (CRC over 16B header) */
+#define RDB_KV_VERSION_OLD  0x0001u     /**< Previous format (CRC over 6B) accepted on init */
 
 #define RDB_TS_SECTOR_MAGIC 0x54534442u /**< TSDB sector header magic     */
 #define RDB_TS_RECORD_MAGIC 0xB6u       /**< TSDB record header magic     */
@@ -599,14 +600,16 @@ typedef struct {
  * @brief KVDB sector header — 16 bytes.
  *
  * Written once when a sector is initialised (after erase).
- * The hdr_crc covers the first 6 bytes (magic + version) for
- * fast corruption detection during boot scan.
+ * The hdr_crc field covers bytes [0..5] (magic + version) and
+ * [8..15] (erase_cnt + create_seq), protecting the full metadata
+ * from undetected corruption.  The CRC excludes its own storage
+ * at offset 6 to avoid self-referential computation.
  *
  *  Offset  Field        Size  Description
  *  ──────  ───────────  ────  ─────────────────────────────────
  *    0     magic        4     RDB_KV_SECTOR_MAGIC (0x4B564442)
  *    4     version      2     On-flash format version
- *    6     hdr_crc      2     CRC16 of bytes [0..5]
+ *    6     hdr_crc      2     CRC16 of all 16 header bytes
  *    8     erase_cnt    4     Cumulative erase count
  *   12     create_seq   4     Monotonic sector creation sequence
  */
@@ -713,7 +716,7 @@ _Static_assert(sizeof(rdb_kv_sector_hdr_t) == 16u, "KV sector hdr must be 16B");
 _Static_assert(sizeof(rdb_kv_record_hdr_t) == 16u, "KV record hdr must be 16B");
 _Static_assert(sizeof(rdb_ts_sector_hdr_t) == 20u, "TS sector hdr must be 20B");
 _Static_assert(sizeof(rdb_ts_record_hdr_t) == 12u, "TS record hdr must be 12B");
-_Static_assert(offsetof(rdb_kv_sector_hdr_t, hdr_crc) == 6u, "KV sector CRC covers bytes [0..5]");
+_Static_assert(offsetof(rdb_kv_sector_hdr_t, hdr_crc) == 6u, "KV sector CRC offset must be 6");
 _Static_assert(offsetof(rdb_ts_sector_hdr_t, hdr_crc) == 18u, "TS sector CRC covers bytes [0..17]");
 
 /* ═══════════════════════════════════════════════════════════════════════════

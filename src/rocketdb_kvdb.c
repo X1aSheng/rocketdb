@@ -382,7 +382,14 @@ static int write_sec_hdr(const rdb_kvdb_t* db, uint8_t s,
     h.hdr_crc = 0;
     h.erase_cnt = ec;
     h.create_seq = cseq;
-    h.hdr_crc = rdb_crc16(&h, 6); /* CRC covers magic(4) + version(2) */
+    /* CRC covers bytes [0..5] (magic + version) and [8..15] (erase_cnt + create_seq).
+     * The hdr_crc field at offset 6 is excluded from the computation — including it
+     * would create a self-referential CRC that never verifies after the CRC is written. */
+    {
+        uint16_t crc = rdb_crc16(&h, 6);                   /* bytes [0..5]  */
+        crc = rdb_crc16_cont(crc, ((const uint8_t*)&h) + 8, 8); /* bytes [8..15] */
+        h.hdr_crc = crc;
+    }
     return fl_write(db, sec_addr(db, s), &h, sizeof(h));
 }
 
@@ -2233,12 +2240,27 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
             continue;
         }
 
-        /* Validate sector header magic and CRC */
-        if (sh.magic != RDB_KV_SECTOR_MAGIC ||
-            rdb_crc16(&sh, 6) != sh.hdr_crc) {
+        /* Validate sector header magic and version-aware CRC */
+        if (sh.magic != RDB_KV_SECTOR_MAGIC) {
             db->sectors[s].status = RDB_SEC_CORRUPT;
             db->stats.corrupt_sectors++;
             continue;
+        }
+        {
+            int crc_ok = 0;
+            if (sh.version == RDB_KV_VERSION) {
+                /* CRC covers bytes [0..5] and [8..15], skipping self-referential hdr_crc */
+                uint16_t calc = rdb_crc16(&sh, 6);
+                calc = rdb_crc16_cont(calc, ((const uint8_t*)&sh) + 8, 8);
+                crc_ok = (calc == sh.hdr_crc);
+            } else if (sh.version == RDB_KV_VERSION_OLD) {
+                crc_ok = (rdb_crc16(&sh, 6) == sh.hdr_crc);
+            }
+            if (!crc_ok) {
+                db->sectors[s].status = RDB_SEC_CORRUPT;
+                db->stats.corrupt_sectors++;
+                continue;
+            }
         }
 
         /* Valid sector header — load metadata.
@@ -2404,10 +2426,19 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
         /* Also check flash header for a potentially higher count
            (handles the case where RAM was zeroed but flash wasn't) */
         rdb_kv_sector_hdr_t sh;
-        if (fl_read(db, sec_addr(db, s), &sh, sizeof(sh)) == 0 &&
-            sh.magic == RDB_KV_SECTOR_MAGIC &&
-            rdb_crc16(&sh, 6) == sh.hdr_crc) {
-            if (sh.erase_cnt > saved_ec[s])
+        {
+            int hdr_valid = 0;
+            if (fl_read(db, sec_addr(db, s), &sh, sizeof(sh)) == 0 &&
+                sh.magic == RDB_KV_SECTOR_MAGIC) {
+                if (sh.version == RDB_KV_VERSION) {
+                    uint16_t calc = rdb_crc16(&sh, 6);
+                    calc = rdb_crc16_cont(calc, ((const uint8_t*)&sh) + 8, 8);
+                    hdr_valid = (calc == sh.hdr_crc);
+                } else if (sh.version == RDB_KV_VERSION_OLD) {
+                    hdr_valid = (rdb_crc16(&sh, 6) == sh.hdr_crc);
+                }
+            }
+            if (hdr_valid && sh.erase_cnt > saved_ec[s])
                 saved_ec[s] = sh.erase_cnt;
         }
     }
