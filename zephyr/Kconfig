@@ -71,6 +71,58 @@ config ROCKETDB_GC_WEAR_THRESHOLD
 	  When max_ec - min_ec exceeds this value, Phase 4 wear
 	  leveling activates to redistribute wear.
 
+config ROCKETDB_KV_CACHE_SIZE
+	int "KVDB key-to-address cache size (slots)"
+	range 0 255
+	default 0
+	help
+	  Number of cache slots for KVDB key-to-address lookup.
+	  0 disables the cache.  64 slots (~1 KB) recommended for
+	  production workloads.  Each slot is 16 bytes.
+
+config ROCKETDB_BLOOM_BITS
+	int "Per-sector bloom filter width (bits)"
+	range 0 1024
+	default 0
+	help
+	  Hash bucket bitmap width per sector.  256 bits (32 bytes)
+	  is recommended for W25QXX-class workloads; 0 disables.
+	  When > 0 must be a power of 2.
+
+config ROCKETDB_FLASH_PAGE_SIZE
+	int "Flash physical page size (bytes, 0=no restriction)"
+	range 0 4096
+	default 0
+	help
+	  When > 0 the engine ensures no write crosses a page boundary.
+	  W25QXX-series parts use 256-byte pages.  Must be a power
+	  of 2 when > 0.
+
+config ROCKETDB_GC_W_GARBAGE
+	int "GC score weight: garbage percentage"
+	range 0 100
+	default 7
+	help
+	  Weight of the garbage-percentage term in the GC Phase 2
+	  scored-selection formula.  Higher values favour throughput
+	  (reclaim sectors with the most waste).
+
+config ROCKETDB_GC_W_WEAR
+	int "GC score weight: wear percentage"
+	range 0 100
+	default 3
+	help
+	  Weight of the wear-percentage term.  Higher values distribute
+	  erase cycles more evenly, extending flash lifespan.
+
+config ROCKETDB_GC_W_CAPACITY
+	int "GC score weight: capacity utilisation"
+	range 0 100
+	default 1
+	help
+	  Weight of the capacity-utilisation term.  Higher values favour
+	  sectors with low live-data occupancy (efficient reclaim).
+
 config ROCKETDB_SHELL
 	bool "RocketDB shell commands"
 	depends on SHELL
