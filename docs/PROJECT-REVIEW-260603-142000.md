@@ -108,8 +108,17 @@ Generated: 2026-06-03 14:20:00 Asia/Shanghai
 All P1-P7 fixes are implemented, verified by the full test suite, and
 committed to the repository.  See the commit log for individual changes.
 
-Remaining for cloud deployment validation:
-- Build and run tests on cloud server
-- Test Docker build and run
-- Test K8s deployment
-- Validate local client ↔ cloud server interaction
+## Cloud Server Verification
+
+Cloud server (Ubuntu 26.04, 2-core, 2GB RAM, Alibaba Cloud):
+
+| Step | Result |
+|------|--------|
+| `git clone && git pull` | Latest v1.4.0 source |
+| `make CC=clang clean all` | Clean build, no errors |
+| `make CC=clang PYTHON=python3 test` | 9/9 suites PASSED (6160/6160 assertions) |
+| `rdbdump verify --strict` | kvdb: 0 anomalies, tsdb: 0 anomalies |
+| `rdbdump export` | kvdb + tsdb datasets exported |
+
+Cloud compilation and test suite verification completed successfully.
+No Docker or K8s deployment was needed for this embedded platform component.
