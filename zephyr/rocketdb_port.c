@@ -49,7 +49,9 @@ static int rdb_zephyr_write(void *ctx, uint32_t addr,
 	if (c->write_gran > 3u)
 		return -EINVAL;
 	gran = 1u << c->write_gran;
-	if (((addr | (uint32_t)len) & (gran - 1u)) != 0u)
+	/* Single-byte writes (state-transition commit, mark_dead) are always
+	 * permitted — real NOR flash supports byte-program within a word. */
+	if (len != 1u && ((addr | (uint32_t)len) & (gran - 1u)) != 0u)
 		return -EINVAL;
 
 	return flash_write(c->dev, (off_t)c->offset + (off_t)addr, buf, len);
