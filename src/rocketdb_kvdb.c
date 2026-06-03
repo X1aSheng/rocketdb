@@ -2644,6 +2644,7 @@ rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
     kv_cache_insert(db, key, kl, fc.best_addr);
 
 read_value:
+    ; /* null statement — label before declaration in C99 */
     /* Read the record header for val_len and data_crc */
     rdb_kv_record_hdr_t rh;
     if (fl_read(db, best_addr, &rh, sizeof(rh)) != 0) {
