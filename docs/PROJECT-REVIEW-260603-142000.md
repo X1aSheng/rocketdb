@@ -84,8 +84,9 @@ Generated: 2026-06-03 14:20:00 Asia/Shanghai
 
 ## Completion
 
-All P1-P7 fixes are implemented, verified by the full test suite, and
-committed to the repository.  See the commit log for individual changes.
+All fixes (P1, P4, P5, P6, P7) are implemented, verified by the full test
+suite, and committed to the repository.  See the commit log for individual
+changes.
 
 ## Cloud Server Verification
 
