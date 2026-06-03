@@ -226,13 +226,21 @@ typedef struct {
 
 /** @brief KVDB key-to-address cache (embedded in rdb_kvdb_t).
  *
- * The total RAM cost is RDB_KV_CACHE_SIZE * 16 bytes.  With the
- * default of 0, the cache is a zero-element flexible array and costs
- * nothing.  Use at least 64 slots for production workloads. */
+ * The total RAM cost is RDB_KV_CACHE_SIZE * 16 + 1 bytes.  With the
+ * default of 0, the cache is a single padding byte and costs nothing.
+ * Use at least 64 slots for production workloads.
+ *
+ * Eviction uses the CLOCK (Second-Chance) algorithm: each slot has a
+ * referenced bit (MSB of klen) set on lookup hits.  When a new entry
+ * must displace an existing one the clock hand scans for a slot whose
+ * referenced bit is clear, clearing the bits it passes.  This
+ * approximates LRU with zero per-entry overhead beyond the bit itself. */
 typedef struct {
 #if RDB_KV_CACHE_SIZE > 0
     rdb_kv_cache_slot_t slots[RDB_KV_CACHE_SIZE];
-#else
+    uint8_t             clock_hand;
+#endif
+#if RDB_KV_CACHE_SIZE == 0
     uint8_t disabled;
 #endif
 } rdb_kv_cache_t;

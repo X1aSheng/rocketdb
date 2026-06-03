@@ -896,6 +896,10 @@ static inline uint8_t kv_cache_idx(uint16_t hash) {
  * Linear-probes from the home slot.  Returns the flash address on
  * match, or RDB_ADDR_INVALID on miss / full table / disabled cache.
  */
+/** @brief Look up a key in the cache.
+ *
+ * On hit the slot's CLOCK referenced bit (MSB of klen) is set so the
+ * CLOCK eviction hand will not displace it on the next scan. */
 static uint32_t kv_cache_lookup(rdb_kvdb_t* db, const char* key, uint8_t kl) {
     uint16_t hash = rdb_hash16(key, kl);
     uint8_t  idx = kv_cache_idx(hash);
@@ -904,25 +908,28 @@ static uint32_t kv_cache_lookup(rdb_kvdb_t* db, const char* key, uint8_t kl) {
     do {
         rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
         if (sl->klen == 0)
-            return RDB_ADDR_INVALID;  /* empty slot — definite miss */
-        if (sl->hash == hash && sl->klen == kl) {
+            return RDB_ADDR_INVALID;
+        if ((sl->klen & 0x7Fu) == kl && sl->hash == hash) {
             uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
-            if (memcmp(sl->prefix, key, pl) == 0)
-                return sl->addr;  /* hit */
+            if (memcmp(sl->prefix, key, pl) == 0) {
+                sl->klen |= 0x80u;  /* set CLOCK referenced bit */
+                return sl->addr;
+            }
         }
         idx = (uint8_t)((idx + 1u) % RDB_KV_CACHE_SIZE);
     } while (idx != start);
 
-    return RDB_ADDR_INVALID;  /* full table — miss */
+    return RDB_ADDR_INVALID;
 }
 
 /**
  * @brief Insert (or update) a cache entry for a key.
  *
  * If an existing entry with the same fingerprint is found it is
- * updated in-place; otherwise a new empty slot is populated.
- * On a full cache table the insertion is silently dropped (the next
- * find_latest() will re-populate it on miss).
+ * updated in-place.  When the home bucket and its linear-probe chain
+ * are all occupied the CLOCK (Second-Chance) eviction hand scans the
+ * table for a slot whose referenced bit is clear, clearing bits as it
+ * passes.  This approximates LRU with minimal per-slot state.
  */
 static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
     uint32_t addr) {
@@ -930,12 +937,12 @@ static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
     uint8_t  idx = kv_cache_idx(hash);
     uint8_t  start = idx;
 
+    /* Phase 1: probe home chain for empty slot or matching entry */
     do {
         rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
         if (sl->klen == 0) {
-            /* Empty slot — insert */
             sl->hash = hash;
-            sl->klen = kl;
+            sl->klen = kl | 0x80u;  /* store actual length + set CLOCK bit */
             {
                 uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
                 memcpy(sl->prefix, key, pl);
@@ -943,16 +950,50 @@ static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
             sl->addr = addr;
             return;
         }
-        if (sl->hash == hash && sl->klen == kl) {
+        if ((sl->klen & 0x7Fu) == kl && sl->hash == hash) {
             uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
             if (memcmp(sl->prefix, key, pl) == 0) {
-                sl->addr = addr;  /* update */
+                sl->addr = addr;  /* update address in-place */
+                sl->klen |= 0x80u;  /* set CLOCK bit */
                 return;
             }
         }
         idx = (uint8_t)((idx + 1u) % RDB_KV_CACHE_SIZE);
     } while (idx != start);
-    /* Table full — silently drop */
+
+    /* Phase 2: home chain full — CLOCK eviction scan */
+    {
+        uint8_t n = RDB_KV_CACHE_SIZE;
+        while (n--) {
+            rdb_kv_cache_slot_t* sl = &db->cache.slots[db->cache.clock_hand];
+            if (sl->klen == 0) {
+                idx = db->cache.clock_hand;
+                goto fill;
+            }
+            if (sl->klen & 0x80u) {
+                sl->klen &= 0x7Fu;  /* clear referenced bit, give second chance */
+            } else {
+                idx = db->cache.clock_hand;  /* unreferenced — evict */
+                goto fill;
+            }
+            db->cache.clock_hand = (uint8_t)((db->cache.clock_hand + 1u) % RDB_KV_CACHE_SIZE);
+        }
+        /* All slots referenced — evict at current hand position */
+        idx = db->cache.clock_hand;
+    }
+
+fill:
+    {
+        rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
+        sl->hash = hash;
+        sl->klen = kl | 0x80u;
+        {
+            uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
+            memcpy(sl->prefix, key, pl);
+        }
+        sl->addr = addr;
+        db->cache.clock_hand = (uint8_t)((idx + 1u) % RDB_KV_CACHE_SIZE);
+    }
 }
 
 /**
@@ -970,7 +1011,8 @@ static void kv_cache_invalidate(rdb_kvdb_t* db, const char* key, uint8_t kl) {
         rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
         if (sl->klen == 0)
             return;
-        if (sl->hash == hash && sl->klen == kl) {
+        /* klen may have CLOCK bit (0x80) set — mask it out for comparison */
+        if ((sl->klen & 0x7Fu) == kl && sl->hash == hash) {
             uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
             if (memcmp(sl->prefix, key, pl) == 0) {
                 sl->klen = 0;  /* invalidate */
