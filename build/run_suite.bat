@@ -8,9 +8,15 @@ REM ============================================================================
 
 setlocal enabledelayedexpansion
 
+REM Compiler discovery — try PATH first, then standard locations
 set CC=clang.exe
-if exist "D:\Programs\LLVM\bin\clang.exe" set CC=D:\Programs\LLVM\bin\clang.exe
-if not exist "%CC%" if exist "D:\Programs\w64devkit\bin\gcc.exe" set CC=D:\Programs\w64devkit\bin\gcc.exe
+where clang.exe >nul 2>nul
+if errorlevel 1 (
+    if exist "C:\Program Files\LLVM\bin\clang.exe" set CC=C:\Program Files\LLVM\bin\clang.exe
+    if not exist "!CC!" if exist "D:\Programs\LLVM\bin\clang.exe" set CC=D:\Programs\LLVM\bin\clang.exe
+    if not exist "!CC!" if exist "D:\Programs\w64devkit\bin\gcc.exe" set CC=D:\Programs\w64devkit\bin\gcc.exe
+    if not exist "!CC!" set CC=gcc.exe
+)
 set CFLAGS=-Wall -Wextra -std=c99 -O2 -g -D_CRT_SECURE_NO_WARNINGS
 set INCLUDES=-Isrc -Itests\sim
 set OUTPUT_DIR=tests\out
