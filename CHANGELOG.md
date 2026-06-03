@@ -20,15 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Docker multi-stage build**: `Dockerfile` builds engine, tests, and TCP server
-  gateway on Alpine Linux with a minimal runtime stage.
-- **TCP server gateway** (`deploy/server/rdb_server.c`): Exposes KVDB/TSDB
-  operations over a simple text-based TCP protocol for cloud validation.
-  Runs in Docker, uses the simulator flash backend.
-- **TCP client** (`deploy/client/rdb_client.c`): Cross-platform (Windows/Linux)
-  interactive client for connecting to a remote RocketDB server.
-- **Kubernetes deployment** (`k8s/rocketdb.yaml`): Namespace, Deployment,
-  and Service manifests for orchestrated deployment.
 - **CMakePresets.json**: Pre-configured build presets (debug, release, debug-win,
   minimal) with matching build and test presets.
 - **CI build caching**: GitHub Actions `actions/cache@v4` step for the CMake

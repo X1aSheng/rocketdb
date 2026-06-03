@@ -22,8 +22,6 @@ This directory contains both current project documentation and historical planni
 | [../tests/sim/vector_format.md](../tests/sim/vector_format.md) | Replay vector format, distinct from raw Flash dumps |
 | [../tests/perf/README.md](../tests/perf/README.md) | Performance benchmark methodology |
 | [../tools/rdbdump/README.md](../tools/rdbdump/README.md) | `rdbdump` CLI usage and export layout |
-| [../deploy/README.md](../deploy/README.md) | Docker, K8s, and TCP server/client deployment |
-| [../CHANGELOG.md](../CHANGELOG.md) | Version history and change log |
 
 ## Historical Records
 

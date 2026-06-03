@@ -36,25 +36,6 @@ Generated: 2026-06-03 14:20:00 Asia/Shanghai
 
 **Fix**: Add `C:\Program Files\LLVM\bin` to the search path before the dev-specific paths, and add a PATH-based fallback for `clang-cl.exe`.
 
-### P2 — Missing Docker Build Configuration
-
-**Severity**: Medium — Blocks cloud deployment workflow.
-
-**Evidence**: 
-- No `Dockerfile` exists in the repository root.
-- No `.dockerignore` for container build context optimization.
-- No docker-compose or container build scripts.
-
-**Fix**: Create a multi-stage Dockerfile that builds the engine and test executables, includes an Alpine-based runtime for minimal size.
-
-### P3 — Missing Kubernetes Deployment Manifests
-
-**Severity**: Medium — Blocks orchestrated deployment.
-
-**Evidence**: No K8s YAML manifests (Deployment, Service, ConfigMap) exist.
-
-**Fix**: Create K8s deployment manifests for a RocketDB test server.
-
 ### P4 — `sim_crypto.c` CRC-16 NULL Handling
 
 **Severity**: Low — Works in practice but differs from port implementations.
@@ -96,8 +77,6 @@ Generated: 2026-06-03 14:20:00 Asia/Shanghai
 | # | Area | Fix | Verification |
 |---|------|-----|-------------|
 | P1 | Windows batch compiler search | Added C:\Program Files\LLVM + PATH search before dev paths | `build\run_all_tests.bat test` passes locally |
-| P2 | Docker deployment | Created Dockerfile (Alpine multistage) + .dockerignore | `docker build -t rocketdb .` succeeds on cloud |
-| P3 | K8s deployment | Created k8s/rocketdb.yaml (Namespace, Deployment, Service) | `kubectl apply -f k8s/` succeeds on cloud |
 | P4 | sim_crypto.c CRC NULL guard | Added explicit `data==NULL && len==0` check | `test_kvdb_basic` passes (3005/3005 assertions) |
 | P5 | CI caching | Added `actions/cache@v4` step for cmake-build | CI uses cache on subsequent runs |
 | P6 | CMake presets | Created CMakePresets.json with 4 presets | `cmake --preset debug` configures successfully |
