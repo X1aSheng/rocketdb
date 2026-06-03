@@ -18,6 +18,9 @@ tests/perf/*.pdb
 *.swp
 *.swo
 *~
+*.orig
+*.bak
+*.save
 
 # OS
 .DS_Store
