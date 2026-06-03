@@ -62,7 +62,7 @@ for %%t in (%TESTS%) do (
     set TARGET=%OUTPUT_DIR%\%%t.exe
     set SRCS=%BASE_SRCS% tests\sim\%%t.c
     set EXTRA=
-    if "%%t"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64
+    if "%%t"=="test_kvdb_cache" set EXTRA=-DRDB_KV_CACHE_SIZE=64 -DRDB_BLOOM_BITS=256
 
     echo [%%t] Building...
     %CC% %CFLAGS% !EXTRA! %INCLUDES% -o !TARGET! !SRCS! 2>nul

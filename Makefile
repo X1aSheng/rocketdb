@@ -78,7 +78,7 @@ $(OUTPUT_DIR)/%.o: %.c | $(OUTPUT_DIR)
 
 $(OUTPUT_DIR)/test_kvdb_cache.o: tests/sim/test_kvdb_cache.c | $(OUTPUT_DIR)
 	@echo Compiling $<...
-	@$(CC) $(CFLAGS) -DRDB_KV_CACHE_SIZE=64 $(INCLUDES) -c $< -o $@
+	@$(CC) $(CFLAGS) -DRDB_KV_CACHE_SIZE=64 -DRDB_BLOOM_BITS=256 $(INCLUDES) -c $< -o $@
 
 # ── Test executable link rules ──────────────────────────────────────────
 

@@ -178,6 +178,40 @@ extern "C" {
 #define RDB_KV_CACHE_SIZE 0u
 #endif
 
+/**
+ * @brief Per-sector bloom filter width in bits.
+ *
+ * A 256-bit (32-byte) hash bucket bitmap that tracks which keys *may*
+ * exist in each sector.  Before scanning a sector for a key the engine
+ * checks the bloom filter and can skip the entire sector when the key
+ * is definitively absent, avoiding costly flash reads.
+ *
+ * False-positive rate with 256 bits, 2 hash functions, and 80 keys per
+ * sector is approximately 27%.  Set to 0 to disable.
+ *
+ * Must be a power of 2 when > 0.
+ */
+#ifndef RDB_BLOOM_BITS
+#define RDB_BLOOM_BITS 0u  /* 0 = disabled; W25QXX-class workloads: 256 */
+#endif
+#if RDB_BLOOM_BITS > 0
+#define RDB_BLOOM_BYTES (RDB_BLOOM_BITS / 8u)
+/** @brief Set two hash bits in a per-sector bloom bitmap for key hash @p h. */
+#define RDB_BLOOM_SET(bm, h) \
+    do { \
+        (bm)[(h) & 0x1Fu] |= (uint8_t)(1u << (((h) >> 5) & 7u)); \
+        (bm)[((h) >> 8) & 0x1Fu] |= (uint8_t)(1u << ((((h) >> 8) >> 5) & 7u)); \
+    } while (0)
+/** @brief Test whether key hash @p h *may* exist in the sector.  0 = absent. */
+#define RDB_BLOOM_MAYBE(bm, h) \
+    ((int)(((bm)[(h) & 0x1Fu] & (uint8_t)(1u << (((h) >> 5) & 7u))) != 0u && \
+           ((bm)[((h) >> 8) & 0x1Fu] & (uint8_t)(1u << ((((h) >> 8) >> 5) & 7u))) != 0u))
+#else
+#define RDB_BLOOM_BYTES 0u
+#define RDB_BLOOM_SET(bm, h)       ((void)0)
+#define RDB_BLOOM_MAYBE(bm, h)     1  /* Always "may exist" when disabled */
+#endif
+
 /** @brief Key fingerprint slot for the KV cache.
  *
  * Each slot stores a key fingerprint (hash + length + 8-byte prefix) and
@@ -751,6 +785,9 @@ typedef struct {
     uint32_t               iter_gen;    /**< Iterator generation (detects modification) */
     rdb_kv_cache_t         cache;       /**< Key-to-address cache (disabled if size=0)  */
     rdb_kv_stats_t         stats;       /**< Runtime statistics                         */
+#if RDB_BLOOM_BITS > 0
+    uint8_t*               blooms;      /**< Per-sector bloom bitmaps, RDB_BLOOM_BYTES×sector_cnt */
+#endif
 } rdb_kvdb_t;
 
 /**

@@ -259,6 +259,7 @@ if(BUILD_TESTS)
     # test_kvdb_cache enables the KV key cache for cache-specific test coverage.
     target_compile_definitions(test_kvdb_cache PRIVATE
         RDB_KV_CACHE_SIZE=64
+        RDB_BLOOM_BITS=256
     )
 
     add_executable(test_rdbdump_dump

@@ -289,7 +289,7 @@ uint32_t rdb_version(void) {
  * `meta_buf` argument to rdb_kvdb_init().
  */
 size_t rdb_kvdb_meta_size(uint8_t n) {
-    return (size_t)n * sizeof(rdb_kv_sector_meta_t);
+    return (size_t)n * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES);
 }
 
 /**
@@ -674,6 +674,9 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
     if (db->active_sec < db->sector_cnt &&
         db->sectors[db->active_sec].status != RDB_SEC_ERASED &&
         db->sectors[db->active_sec].status != RDB_SEC_CORRUPT) {
+#if RDB_BLOOM_BITS > 0
+        if (db->blooms && RDB_BLOOM_MAYBE(db->blooms + (size_t)db->active_sec * RDB_BLOOM_BYTES, fc->hash))
+#endif
         scan_sector(db, db->active_sec, find_cb, fc, RDB_FALSE);
         if (fc->found)
             return;
@@ -709,7 +712,12 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
 
     /* Scan from newest to oldest; stop on first match */
     for (int16_t i = (int16_t)(cnt - 1); i >= 0; i--) {
-        scan_sector(db, order[(uint16_t)i], find_cb, fc, RDB_FALSE);
+        uint8_t sidx = order[(uint16_t)i];
+#if RDB_BLOOM_BITS > 0
+        if (db->blooms && !RDB_BLOOM_MAYBE(db->blooms + (size_t)sidx * RDB_BLOOM_BYTES, fc->hash))
+            continue;
+#endif
+        scan_sector(db, sidx, find_cb, fc, RDB_FALSE);
         if (fc->found)
             return;
     }
@@ -1078,6 +1086,45 @@ static void fixup_stale(rdb_kvdb_t* db) {
     }
 }
 
+#if RDB_BLOOM_BITS > 0
+/**
+ * @brief Scan callback — set bloom bits for each VALID record.
+ *
+ * Used to rebuild per-sector bloom filters after init or GC.
+ */
+static int bloom_build_cb(rdb_kvdb_t* db, uint8_t s,
+    const kv_rec_info_t* ri, void* arg) {
+    (void)db;
+    (void)s;
+    if (ri->state != RDB_STATE_VALID)
+        return RDB_ITER_CONTINUE;
+    uint8_t kb[RDB_MAX_KEY_LEN];
+    if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
+        return RDB_ITER_CONTINUE;
+    uint16_t h = rdb_hash16(kb, ri->key_len);
+    uint8_t* bm = (uint8_t*)arg;
+    RDB_BLOOM_SET(bm, h);
+    return RDB_ITER_CONTINUE;
+}
+
+/** @brief Rebuild bloom filter for a single sector from scratch. */
+static void bloom_rebuild_sec(rdb_kvdb_t* db, uint8_t s) {
+    uint8_t* bm = db->blooms + (size_t)s * RDB_BLOOM_BYTES;
+    memset(bm, 0, RDB_BLOOM_BYTES);
+    scan_sector(db, s, bloom_build_cb, bm, RDB_FALSE);
+}
+
+/** @brief Rebuild bloom filters for all non-erased, non-corrupt sectors. */
+static void bloom_rebuild_all(rdb_kvdb_t* db) {
+    for (uint8_t s = 0; s < db->sector_cnt; s++) {
+        if (db->sectors[s].status == RDB_SEC_ERASED ||
+            db->sectors[s].status == RDB_SEC_CORRUPT)
+            continue;
+        bloom_rebuild_sec(db, s);
+    }
+}
+#endif /* RDB_BLOOM_BITS > 0 */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Post-GC dedup marker (mark-only, no garbage accounting)
  *
@@ -1219,6 +1266,11 @@ static int init_sector(rdb_kvdb_t* db, uint8_t s) {
     db->sectors[s].garbage_bytes = 0;
     db->sectors[s].write_off = data_start(db);
     db->sectors[s].status = RDB_SEC_ACTIVE;
+#if RDB_BLOOM_BITS > 0
+    /* Freshly erased sector has no keys — clear bloom */
+    if (db->blooms)
+        memset(db->blooms + (size_t)s * RDB_BLOOM_BYTES, 0, RDB_BLOOM_BYTES);
+#endif
     return 0;
 }
 
@@ -1540,6 +1592,14 @@ static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s,
     kv_cache_invalidate(db, (const char*)kb, ri->key_len);
     kv_cache_insert(db, (const char*)kb, ri->key_len, new_addr);
 
+#if RDB_BLOOM_BITS > 0
+    /* Set bloom bits in the active sector for the migrated key */
+    if (db->blooms) {
+        uint8_t* bm = db->blooms + (size_t)db->active_sec * RDB_BLOOM_BYTES;
+        RDB_BLOOM_SET(bm, rdb_hash16(kb, ri->key_len));
+    }
+#endif
+
     /* Mark source record dead after successful migration.
        If mark_dead fails, retry once after a yield.  A persistent
        failure produces two VALID copies, which is self-healing:
@@ -1607,6 +1667,10 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
     db->sectors[victim].garbage_bytes = 0;
     db->sectors[victim].write_off = data_start(db);
     db->sectors[victim].status = RDB_SEC_ERASED;
+#if RDB_BLOOM_BITS > 0
+    if (db->blooms)
+        memset(db->blooms + (size_t)victim * RDB_BLOOM_BYTES, 0, RDB_BLOOM_BYTES);
+#endif
 
     db->stats.gc_reclaimed_bytes += data_cap(db);
 
@@ -2084,6 +2148,9 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
     memset(db, 0, sizeof(*db));
     db->part = part;
     db->sectors = (rdb_kv_sector_meta_t*)meta_buf;
+#if RDB_BLOOM_BITS > 0
+    db->blooms = (uint8_t*)meta_buf + (size_t)scnt * sizeof(rdb_kv_sector_meta_t);
+#endif
     db->sector_cnt = (uint8_t)scnt;
     db->gc_reserve = RDB_GC_RESERVE(scnt);
     db->active_sec = 0xFF; /* No active sector yet */
@@ -2155,6 +2222,11 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
     fixup_stale(db);
     recalc_garbage_all(db);
     reconcile_live(db);
+
+#if RDB_BLOOM_BITS > 0
+    /* Rebuild per-sector bloom filters from the deduplicated state */
+    bloom_rebuild_all(db);
+#endif
 
     /* ══════════════════════════════════════════════════════════════════
      *  Phase 3: Select active sector [K-11 fix]
@@ -2548,6 +2620,14 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
 
     /* Cache the new record's address for fast future lookups */
     kv_cache_insert(db, key, kl, wa);
+
+#if RDB_BLOOM_BITS > 0
+    /* Set bloom bits for this key in the active sector */
+    if (db->blooms) {
+        uint8_t* bm = db->blooms + (size_t)db->active_sec * RDB_BLOOM_BYTES;
+        RDB_BLOOM_SET(bm, rdb_hash16(key, kl));
+    }
+#endif
 
     /* Step 5 [K-4/K-5 fix]: invalidate old copy using refreshed fc.
        The old record was located by the re-find in Step 2b, so its
