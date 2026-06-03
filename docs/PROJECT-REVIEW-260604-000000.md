@@ -76,4 +76,9 @@ The interface template and Zephyr port have equivalent guards.
 
 ## Completion
 
-F1 fix applied and pushed.
+| ID | Fix | Commit | Verification |
+|----|-----|--------|-------------|
+| F1 | Add `len!=1` bypass to Zephyr `rdb_zephyr_write()` | `16f9e0a` | Cloud: 8/8 suites PASSED |
+
+Local: 8/8 test suites PASSED, rdbdump 0 anomalies.
+Cloud (Ubuntu 26.04): 8/8 test suites PASSED, 0 compilation warnings.
