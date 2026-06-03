@@ -1821,11 +1821,12 @@ static rdb_err_t ensure_space(rdb_kvdb_t* db, uint32_t need,
                 if (cache[s].live > gc_avail(db, s))
                     continue;
 
-                /* Composite score: garbage% × 7 + wear% × 3 + capacity% */
+                /* Composite score: garbage% × W_GARBAGE + wear% × W_WEAR + capacity% × W_CAPACITY
+                 * Weights are configurable via RDB_GC_W_* macros. */
                 uint32_t wpct = ((cache[s].ec - g_min_ec) * 100u) / ec_range;
                 uint32_t cpct = (cache[s].live == 0) ? 100u : 100u - (uint32_t)RDB_MIN((cache[s].live * 100u) / data_cap(db), 100u);
 
-                uint32_t score = gpct * 7u + wpct * 3u + cpct;
+                uint32_t score = gpct * RDB_GC_W_GARBAGE + wpct * RDB_GC_W_WEAR + cpct * RDB_GC_W_CAPACITY;
                 if (score > best_score) {
                     best_score = score;
                     best_v = s;

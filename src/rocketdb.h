@@ -225,6 +225,38 @@ typedef struct {
 #define RDB_GC_WEAR_THRESHOLD 100u
 #endif
 
+/**
+ * @brief GC Phase 2 scored-selection weight for the garbage percentage
+ *        term in the composite score formula:
+ *          score = gpct × W_GARBAGE + wpct × W_WEAR + cpct × W_CAPACITY
+ *
+ * Higher values favour reclaiming sectors with the most garbage (throughput).
+ * Lower values relative to W_WEAR favour even wear distribution (lifespan).
+ */
+#ifndef RDB_GC_W_GARBAGE
+#define RDB_GC_W_GARBAGE 7u
+#endif
+
+/**
+ * @brief GC Phase 2 weight for the wear percentage term.
+ *
+ * Higher values favour recycling sectors with lower erase counts,
+ * distributing wear more evenly across the flash array.
+ */
+#ifndef RDB_GC_W_WEAR
+#define RDB_GC_W_WEAR 3u
+#endif
+
+/**
+ * @brief GC Phase 2 weight for the capacity utilisation term.
+ *
+ * Higher values favour sectors with mostly dead space (high reclaim
+ * efficiency per byte migrated).
+ */
+#ifndef RDB_GC_W_CAPACITY
+#define RDB_GC_W_CAPACITY 1u
+#endif
+
 /** @brief Minimum supported sector (erase block) size in bytes.
  *         Must be a power of 2. */
 #ifndef RDB_MIN_SECTOR_SIZE
