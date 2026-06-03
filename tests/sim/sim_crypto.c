@@ -4,6 +4,8 @@
 /* CRC16-MODBUS implementation */
 uint16_t rdb_crc16(const void *data, size_t len)
 {
+    if (data == NULL && len == 0)
+        return 0xFFFFu;  /* initial seed */
     const uint8_t *p = (const uint8_t *)data;
     uint16_t crc = 0xFFFFu;
     for (size_t i = 0; i < len; i++) {
