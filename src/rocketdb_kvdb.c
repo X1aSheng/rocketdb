@@ -209,7 +209,7 @@ static inline uint32_t sec_addr(const rdb_kvdb_t* db, uint8_t s) {
  * @return         0 on success, 1 if key is empty or too long,
  *                -1 if not null-terminated within bounds.
  */
-static int strkey_len(const char* key, uint8_t* out_len) {
+static int key_scan_len(const char* key, uint8_t* out_len) {
     size_t limit = (size_t)RDB_MAX_KEY_LEN + 1u;
     for (size_t i = 0; i <= limit; i++) {
         if (key[i] == '\0') {
@@ -350,7 +350,7 @@ static int is_erased(const rdb_kvdb_t* db, uint8_t s) {
  *  Count erased sectors
  *
  *  Iterates over the in-RAM sector metadata to count how many sectors
- *  are currently in the ERASED state.  Used by ensure_space() and
+ *  are currently in the ERASED state.  Used by gc_ensure_space() and
  *  init to determine GC pressure.
  *
  *  @param db  Database handle.
@@ -466,7 +466,7 @@ static int data_crc_flash(const rdb_kvdb_t* db,
  *  @return      0 on success, non-zero on flash write failure.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int mark_dead(const rdb_kvdb_t* db, uint32_t addr) {
+static int kv_mark_dead(const rdb_kvdb_t* db, uint32_t addr) {
     uint8_t st = RDB_STATE_DEAD;
     return fl_write(db, addr + 1, &st, 1); /* state field is at offset 1 */
 }
@@ -516,7 +516,7 @@ typedef int (*kv_scan_cb_t)(rdb_kvdb_t* db, uint8_t sec,
  *  granularity, which is the minimum possible record footprint.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static inline uint32_t corrupt_skip(const rdb_kvdb_t* db) {
+static inline uint32_t kv_corrupt_skip(const rdb_kvdb_t* db) {
     return RDB_ALIGN_UP(KV_REC_SZ, wr_gran(db));
 }
 
@@ -565,7 +565,7 @@ static void scan_sector(rdb_kvdb_t* db, uint8_t s,
             /* [K-3 fix]: skip at least one full record header width
                to avoid byte-by-byte crawl through corrupt regions
                and reduce risk of mid-record false-positive parse. */
-            off += corrupt_skip(db);
+            off += kv_corrupt_skip(db);
             continue;
         }
 
@@ -809,7 +809,7 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
  *  Overflow gracefully falls back to find_latest(). */
 #define RDB_DEDUP_SLOTS 32u
 
-/** @brief Return values for rdb_dedup_track(). */
+/** @brief Return values for dedup_track(). */
 #define RDB_DEDUP_NEW   0   /**< First sighting — key was inserted       */
 #define RDB_DEDUP_SEEN  1   /**< Already tracked — duplicate key         */
 #define RDB_DEDUP_FULL (-1) /**< Hash set overflow — fall back to scan   */
@@ -829,7 +829,7 @@ typedef struct {
 } rdb_dedup_set_t;
 
 /** @brief Initialise (clear) the dedup hash set. */
-static void rdb_dedup_init(rdb_dedup_set_t* ds) {
+static void dedup_init(rdb_dedup_set_t* ds) {
     memset(ds->slots, 0, sizeof(ds->slots));
     ds->overflow = 0;
 }
@@ -848,7 +848,7 @@ static void rdb_dedup_init(rdb_dedup_set_t* ds) {
  * @param klen  Key length in bytes.
  * @return      RDB_DEDUP_NEW, RDB_DEDUP_SEEN, or RDB_DEDUP_FULL.
  */
-static int rdb_dedup_track(rdb_dedup_set_t* ds, rdb_kvdb_t* db,
+static int dedup_track(rdb_dedup_set_t* ds, rdb_kvdb_t* db,
     uint16_t hash, const uint8_t* key, uint8_t klen, uint32_t addr) {
     if (ds->overflow)
         return RDB_DEDUP_FULL;
@@ -1052,7 +1052,7 @@ static void kv_cache_flush(rdb_kvdb_t* db) {
 /**
  * @brief Scan callback for fixup_stale (newest-first dedup pass).
  *
- * For each VALID record, checks the hash set via rdb_dedup_track().
+ * For each VALID record, checks the hash set via dedup_track().
  * The first sighting of a key is kept; subsequent sightings in older
  * sectors are marked DEAD.  On hash-set overflow falls back to
  * find_latest() for authoritative comparison.
@@ -1073,13 +1073,13 @@ static int fixup_cb(rdb_kvdb_t* db, uint8_t s,
     if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
         return RDB_ITER_CONTINUE;
 
-    int r = rdb_dedup_track(fx->ds, db, ri->key_hash, kb, ri->key_len, ri->addr);
+    int r = dedup_track(fx->ds, db, ri->key_hash, kb, ri->key_len, ri->addr);
     if (r == RDB_DEDUP_NEW)
         return RDB_ITER_CONTINUE;
 
     if (r == RDB_DEDUP_SEEN) {
         /* Already tracked in a newer sector — mark stale copy DEAD */
-        if (mark_dead(db, ri->addr) != 0)
+        if (kv_mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
         db->sectors[s].garbage_bytes += ri->rsz;
         kv_cache_invalidate(db, (const char*)kb, ri->key_len);
@@ -1093,7 +1093,7 @@ static int fixup_cb(rdb_kvdb_t* db, uint8_t s,
         find_ctx_t fc;
         find_latest(db, (const char*)kb, ri->key_len, &fc);
         if (fc.found && fc.best_addr != ri->addr) {
-            if (mark_dead(db, ri->addr) != 0)
+            if (kv_mark_dead(db, ri->addr) != 0)
                 db->stats.flash_errors++;
             db->sectors[s].garbage_bytes += ri->rsz;
             kv_cache_invalidate(db, (const char*)kb, ri->key_len);
@@ -1131,7 +1131,7 @@ static void fixup_stale(rdb_kvdb_t* db) {
 
     /* ── Scan newest → oldest with bounded hash set ── */
     rdb_dedup_set_t ds;
-    rdb_dedup_init(&ds);
+    dedup_init(&ds);
     fixup_ctx_t fx = { .ds = &ds, .dead_count = 0, .fallback = 0 };
 
     int16_t i = (int16_t)(cnt - 1);
@@ -1201,9 +1201,9 @@ static int dedup_mark_cb(rdb_kvdb_t* db, uint8_t s,
     if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
         return RDB_ITER_CONTINUE;
 
-    int r = rdb_dedup_track(ds, db, ri->key_hash, kb, ri->key_len, ri->addr);
+    int r = dedup_track(ds, db, ri->key_hash, kb, ri->key_len, ri->addr);
     if (r == RDB_DEDUP_SEEN) {
-        if (mark_dead(db, ri->addr) != 0)
+        if (kv_mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
         kv_cache_invalidate(db, (const char*)kb, ri->key_len);
     } else if (r == RDB_DEDUP_FULL) {
@@ -1211,7 +1211,7 @@ static int dedup_mark_cb(rdb_kvdb_t* db, uint8_t s,
         find_ctx_t fc;
         find_latest(db, (const char*)kb, ri->key_len, &fc);
         if (fc.found && fc.best_addr != ri->addr) {
-            if (mark_dead(db, ri->addr) != 0)
+            if (kv_mark_dead(db, ri->addr) != 0)
                 db->stats.flash_errors++;
             kv_cache_invalidate(db, (const char*)kb, ri->key_len);
         }
@@ -1607,7 +1607,7 @@ static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s,
 
     if (!fc.found || fc.best_addr != ri->addr) {
         /* Stale duplicate discovered during GC — mark dead */
-        if (mark_dead(db, ri->addr) != 0)
+        if (kv_mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
         return RDB_ITER_CONTINUE;
     }
@@ -1622,14 +1622,14 @@ static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s,
     uint16_t calc;
     if (data_crc_flash(db, ri->addr, ri->key_len, ri->val_len, &calc) != 0) {
         db->stats.flash_errors++;
-        if (mark_dead(db, ri->addr) != 0)
+        if (kv_mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
         return RDB_ITER_CONTINUE;
     }
 
     if (calc != rh.data_crc) {
         db->stats.crc_errors++;
-        if (mark_dead(db, ri->addr) != 0)
+        if (kv_mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
         return RDB_ITER_CONTINUE;
     }
@@ -1659,9 +1659,9 @@ static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s,
        failure produces two VALID copies, which is self-healing:
        the next GC pass finds the old copy stale (new copy has
        higher seq) and re-attempts mark_dead. */
-    if (mark_dead(db, ri->addr) != 0) {
+    if (kv_mark_dead(db, ri->addr) != 0) {
         fl_yield(db);
-        if (mark_dead(db, ri->addr) != 0) {
+        if (kv_mark_dead(db, ri->addr) != 0) {
             db->stats.flash_errors++;
             return RDB_ITER_CONTINUE;
         }
@@ -1762,7 +1762,7 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
         }
 
         rdb_dedup_set_t ds;
-        rdb_dedup_init(&ds);
+        dedup_init(&ds);
         for (uint8_t s = 0; s < cnt; s++) {
             scan_sector(db, order[s], dedup_mark_cb, &ds, RDB_FALSE);
             recalc_garbage(db, order[s]);
@@ -1794,7 +1794,7 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
  *  │ **Phase 1** (Zero-Live GC):                                    │
  *  │   If any sector has 0 live data → erase immediately            │
  *  │   This is the cheapest GC (lowest wear, fastest overhead)       │
- *  │   Detection: Triggered by ensure_space() when erased ≤ reserve │
+ *  │   Detection: Triggered by gc_ensure_space() when erased ≤ reserve │
  *  │                                                                 │
  *  │ **Phase 2** (Scored GC):                                       │
  *  │   Build a cache of all sectors with (live, garbage, erase_cnt) │
@@ -1834,7 +1834,7 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
  *    • Average overhead: ~10-50ms per ensure_space call (test verified)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static rdb_err_t ensure_space(rdb_kvdb_t* db, uint32_t need,
+static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
     uint32_t will_free, uint8_t free_sec) {
     /* Logical capacity check: even if all garbage were reclaimed,
        would the new data fit? */
@@ -2067,7 +2067,7 @@ static int writing_cb(rdb_kvdb_t* db, uint8_t s,
 
     rdb_kv_record_hdr_t rh;
     if (fl_read(db, ri->addr, &rh, sizeof(rh)) != 0) {
-        if (mark_dead(db, ri->addr) != 0)
+        if (kv_mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
         return RDB_ITER_CONTINUE;
     }
@@ -2077,7 +2077,7 @@ static int writing_cb(rdb_kvdb_t* db, uint8_t s,
     if (data_crc_flash(db, ri->addr, ri->key_len, ri->val_len, &calc) != 0 ||
         calc != rh.data_crc) {
         /* Data incomplete or corrupt → mark dead */
-        if (mark_dead(db, ri->addr) != 0)
+        if (kv_mark_dead(db, ri->addr) != 0)
             db->stats.flash_errors++;
     } else {
         /* Data intact → promote to VALID */
@@ -2122,7 +2122,7 @@ static int writing_cb(rdb_kvdb_t* db, uint8_t s,
  *  │                                                                      │
  *  │ **Phase 4** — Safety-watermark recovery:                            │
  *  │   • Check: count_erased >= gc_reserve + 1?                         │
- *  │   • If not: call ensure_space(0, ...) to trigger GC                │
+ *  │   • If not: call gc_ensure_space(0, ...) to trigger GC                │
  *  │   • This brings system back to healthy GC state                     │
  *  │   • Handles: power-loss during GC (left system depleted)            │
  *  │                                                                      │
@@ -2164,7 +2164,7 @@ static int writing_cb(rdb_kvdb_t* db, uint8_t s,
  *
  *  Phase 4 — Safety-watermark recovery:
  *    If fewer than gc_reserve + 1 erased sectors remain, run
- *    ensure_space(0, ...) to trigger GC without a specific write
+ *    gc_ensure_space(0, ...) to trigger GC without a specific write
  *    target, bringing the system back to a healthy state.
  *
  *  Recover CORRUPT sectors:
@@ -2380,7 +2380,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
      *  target for migration.
      * ══════════════════════════════════════════════════════════════════ */
     if (count_erased(db) < (uint8_t)(db->gc_reserve + 1u)) {
-        ensure_space(db, 0, 0, 0xFF);
+        gc_ensure_space(db, 0, 0, 0xFF);
     }
 
     db->iter_gen = 0;
@@ -2493,7 +2493,7 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
  *  If power is lost during Phase A, the WRITING record will be
  *  recovered (or discarded) at the next init.
  *
- *  [K-4/K-5 fix]: After ensure_space() (which may trigger GC and
+ *  [K-4/K-5 fix]: After gc_ensure_space() (which may trigger GC and
  *  move records), re-find the old copy of the key to get its
  *  updated address/sector before invalidation.
  *
@@ -2516,7 +2516,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
         return RDB_ERR_PARAM;
 
     uint8_t kl;
-    {   int sr = strkey_len(key, &kl);
+    {   int sr = key_scan_len(key, &kl);
         if (sr == -1) return RDB_ERR_PARAM;
         if (sr == 1)  return RDB_ERR_TOO_LARGE;
     }
@@ -2540,7 +2540,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
     uint32_t old_rsz = fc.found ? fc.best_rsz : 0;
 
     /* Step 2: reserve space (may trigger GC) */
-    rdb_err_t rc = ensure_space(db, rsz, old_rsz,
+    rdb_err_t rc = gc_ensure_space(db, rsz, old_rsz,
         fc.found ? fc.best_sec : 0xFF);
     if (rc != RDB_OK) {
         fl_unlock(db);
@@ -2602,7 +2602,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
 
         if (fl_write(db, wa, mbuf, rsz) != 0) {
             db->stats.flash_errors++;
-            if (mark_dead(db, wa) != 0)
+            if (kv_mark_dead(db, wa) != 0)
                 db->stats.flash_errors++;
             fl_unlock(db);
             return RDB_ERR_FLASH;
@@ -2615,7 +2615,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
         /* Write record header */
         if (fl_write(db, wa, &rh, sizeof(rh)) != 0) {
             db->stats.flash_errors++;
-            if (mark_dead(db, wa) != 0)
+            if (kv_mark_dead(db, wa) != 0)
                 db->stats.flash_errors++;
             fl_unlock(db);
             return RDB_ERR_FLASH;
@@ -2629,7 +2629,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
                 memset(kb + kl, 0xFF, ka - kl);
             if (fl_write(db, wa + KV_REC_SZ, kb, ka) != 0) {
                 db->stats.flash_errors++;
-                if (mark_dead(db, wa) != 0)
+                if (kv_mark_dead(db, wa) != 0)
                     db->stats.flash_errors++;
                 fl_unlock(db);
                 return RDB_ERR_FLASH;
@@ -2666,7 +2666,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
 
                 if (fl_write(db, wpos, buf, ch) != 0) {
                     db->stats.flash_errors++;
-                    if (mark_dead(db, wa) != 0)
+                    if (kv_mark_dead(db, wa) != 0)
                         db->stats.flash_errors++;
                     fl_unlock(db);
                     return RDB_ERR_FLASH;
@@ -2714,7 +2714,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
         rdb_kv_record_hdr_t oh;
         if (fl_read(db, fc.best_addr, &oh, sizeof(oh)) == 0 &&
             oh.state == RDB_STATE_VALID) {
-            if (mark_dead(db, fc.best_addr) != 0) {
+            if (kv_mark_dead(db, fc.best_addr) != 0) {
                 db->stats.flash_errors++;
             } else {
                 db->sectors[fc.best_sec].garbage_bytes += fc.best_rsz;
@@ -2758,7 +2758,7 @@ rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
         return RDB_ERR_PARAM;
 
     uint8_t kl;
-    if (strkey_len(key, &kl) != 0)
+    if (key_scan_len(key, &kl) != 0)
         return RDB_ERR_PARAM;   /* empty, too long, or not null-terminated */
 
     fl_lock(db);
@@ -2871,7 +2871,7 @@ rdb_err_t rdb_kvdb_delete(rdb_kvdb_t* db, const char* key) {
         return RDB_ERR_PARAM;
 
     uint8_t kl;
-    if (strkey_len(key, &kl) != 0)
+    if (key_scan_len(key, &kl) != 0)
         return RDB_ERR_PARAM;   /* empty, too long, or not null-terminated */
 
     fl_lock(db);
@@ -2897,7 +2897,7 @@ rdb_err_t rdb_kvdb_delete(rdb_kvdb_t* db, const char* key) {
             if (rh.magic != RDB_KV_RECORD_MAGIC ||
                 rh.key_len < 1 || rh.key_len > RDB_MAX_KEY_LEN ||
                 rh.val_len > RDB_MAX_VAL_LEN) {
-                off += corrupt_skip(db); /* [K-3 fix] */
+                off += kv_corrupt_skip(db); /* [K-3 fix] */
                 continue;
             }
             uint32_t rsz = rec_size(db, rh.key_len, rh.val_len);
@@ -2910,7 +2910,7 @@ rdb_err_t rdb_kvdb_delete(rdb_kvdb_t* db, const char* key) {
                 uint8_t kb[RDB_MAX_KEY_LEN];
                 if (fl_read(db, base + off + KV_REC_SZ, kb, kl) == 0 &&
                     memcmp(kb, key, kl) == 0) {
-                    if (mark_dead(db, base + off) != 0) {
+                    if (kv_mark_dead(db, base + off) != 0) {
                         db->stats.flash_errors++;
                     } else {
                         db->sectors[s].garbage_bytes += rsz;
@@ -2950,7 +2950,7 @@ rdb_err_t rdb_kvdb_exists(rdb_kvdb_t* db, const char* key) {
     if (!key)
         return RDB_ERR_PARAM;
     uint8_t kl;
-    if (strkey_len(key, &kl) != 0)
+    if (key_scan_len(key, &kl) != 0)
         return RDB_ERR_PARAM;   /* empty, too long, or not null-terminated */
 
     fl_lock(db);
@@ -2964,7 +2964,7 @@ rdb_err_t rdb_kvdb_exists(rdb_kvdb_t* db, const char* key) {
  *  rdb_kvdb_gc — Trigger manual garbage collection
  *
  *  If the GC invariant is already satisfied (enough erased sectors),
- *  this is a no-op.  Otherwise, runs ensure_space(0, ...) which
+ *  this is a no-op.  Otherwise, runs gc_ensure_space(0, ...) which
  *  invokes the four-phase GC without requiring a specific write target.
  *
  *  @param db  Database handle.
@@ -2979,7 +2979,7 @@ rdb_err_t rdb_kvdb_gc(rdb_kvdb_t* db) {
         fl_unlock(db);
         return RDB_OK;
     }
-    rdb_err_t rc = ensure_space(db, 0, 0, 0xFF);
+    rdb_err_t rc = gc_ensure_space(db, 0, 0, 0xFF);
     fl_unlock(db);
     return rc;
 }
@@ -3197,7 +3197,7 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
             if (rh.magic != RDB_KV_RECORD_MAGIC ||
                 rh.key_len < 1 || rh.key_len > RDB_MAX_KEY_LEN ||
                 rh.val_len > RDB_MAX_VAL_LEN) {
-                it->offset += corrupt_skip(db);
+                it->offset += kv_corrupt_skip(db);
                 continue;
             }
 
