@@ -218,24 +218,25 @@ do the same for `erase_cnts`.
 
 ### Summary
 
-| ID | Severity | Area | Requires code change? | Test coverage? |
-|----|----------|------|----------------------|----------------|
-| F1 | Medium | Version | Yes (1 line) | No (cosmetic) |
-| F2 | Low | Comment | Yes (1 comment) | No (docs only) |
-| F3 | Low | Error handling | Optional | Indirect |
-| F4 | Medium | Deployment | Yes (new files) | N/A |
-| F5 | Low | CI | Yes | CI itself |
-| F6 | Info | Maintenance | No | N/A |
-| F7 | Low | Build scripts | Yes (clean target) | N/A |
-| F8 | Low | CMake | Yes (comment) | No |
-| F9 | Low | Readability | Optional | No |
-| F10 | Low | Robustness | Yes (2 lines) | Existing |
+| ID | Severity | Area | Requires code change? | Status |
+|----|----------|------|----------------------|--------|
+| F1 | Medium | Version | Yes (1 line) | ✅ Fixed in `8e15379` |
+| F2 | Low | Comment | Yes (1 comment) | ✅ Fixed in `8e15379` |
+| F3 | Low | Error handling | Optional (comment only) | ✅ Documented in `0000523` |
+| F4 | Medium | Deployment | Yes (new files) | ✅ Added in `0000523` |
+| F5 | Low | CI | Yes | ✅ Fixed in `635f8fb` |
+| F6 | Info | Maintenance | No | Noted |
+| F7 | Low | Build scripts | Yes (clean target) | ✅ Fixed in `635f8fb` |
+| F8 | Low | CMake | Yes (comment + binaryDir) | ✅ Fixed in `0000523` |
+| F9 | Low | Readability | Yes (named constant) | ✅ Fixed in `8e15379` |
+| F10 | Low | Robustness | Not applicable | Reclassified — TSDB erase_cnts passed as param, not stored in handle |
 
 ---
 
 ## Test Results
 
-All 11 CTest suites executed on Windows 11 with Clang 22.1.5:
+All 11 CTest suites executed on Windows 11 with Clang 22.1.5
+(before and after all fixes):
 
 | Test | Status | Assertions |
 |------|--------|-----------|
@@ -255,14 +256,15 @@ All 11 CTest suites executed on Windows 11 with Clang 22.1.5:
 
 ---
 
-## Remediation Plan
+## Remediation Completed
 
-1. Fix F1 (version) → verify with `rdb_version()` call
-2. Fix F2 (comment) → verify by reading the updated comment
-3. Fix F3 (error handling) → standardise strkey_len callers
-4. Fix F4 (Docker) → add Dockerfile and docker-compose.yml
-5. Fix F5 (CI) → update cache action and key globs
-6. Fix F7 (clean target) → improve run_all_tests.bat clean
-7. Fix F8 (CMakePresets) → add comment
-8. Fix F9 (write_gran constant) → add #define
-9. Fix F10 (TSDB init) → protect erase_cnts pointer
+| ID | Fix | Commit | Verification |
+|----|-----|--------|-------------|
+| F1 | Bump rdb_version() to 0x010200, sync @version tags | `8e15379` | 11/11 CTest pass |
+| F2 | Clarify KV sector header CRC comment | `8e15379` | Compile clean |
+| F3 | Added doc note on strkey_len behavior differences | `0000523` | N/A (documentation) |
+| F4 | Add Dockerfile + docker-compose.yml | `0000523` | `docker build -t rocketdb .` |
+| F5 | Update cache action v4→v5, widen key globs | `635f8fb` | CI workflow |
+| F7 | Stronger clean targets (rmdir/mkdir) | `635f8fb` | `build\run_all_tests.bat clean` |
+| F8 | Fix binaryDir collision, add PATH hint | `0000523` | CMake configure |
+| F9 | Add RDB_WRITE_GRAN_MAX constant | `8e15379` | 11/11 CTest pass |

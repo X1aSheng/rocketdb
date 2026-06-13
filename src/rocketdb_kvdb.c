@@ -199,6 +199,11 @@ static inline uint32_t sec_addr(const rdb_kvdb_t* db, uint8_t s) {
  * This prevents buffer overflow on non-null-terminated input while
  * still supporting the full valid key range (1..RDB_MAX_KEY_LEN).
  *
+ * Note: set() distinguishes TOO_LARGE (empty/too long) from PARAM
+ * (no null terminator), while get()/delete() return PARAM for all
+ * three cases.  Callers should validate key length before calling
+ * if they need specific error codes.
+ *
  * @param key      Pointer to key string (must not be NULL).
  * @param out_len  Receives the key length on success.
  * @return         0 on success, 1 if key is empty or too long,
