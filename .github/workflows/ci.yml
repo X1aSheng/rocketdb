@@ -23,10 +23,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Cache CMake build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: cmake-build
-          key: cmake-${{ matrix.os }}-${{ matrix.build_type }}-${{ hashFiles('CMakeLists.txt', '**/*.cmake') }}
+          key: cmake-${{ matrix.os }}-${{ matrix.build_type }}-${{ hashFiles('CMakeLists.txt', '**/*.cmake', 'src/*.c', 'src/*.h', 'tests/sim/*.c', 'tests/sim/*.h') }}
           restore-keys: |
             cmake-${{ matrix.os }}-${{ matrix.build_type }}-
             cmake-${{ matrix.os }}-

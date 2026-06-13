@@ -212,15 +212,9 @@ goto :eof
 :clean_all
 echo Cleaning all test outputs...
 if exist "%OUTPUT_DIR%" (
-    del /q "%OUTPUT_DIR%\*.exe" 2>nul
-    del /q "%OUTPUT_DIR%\*.log" 2>nul
-    del /q "%OUTPUT_DIR%\*.pdb" 2>nul
-    del /q "%OUTPUT_DIR%\*.ilk" 2>nul
-    del /q "%OUTPUT_DIR%\*.o" 2>nul
-    del /q "%OUTPUT_DIR%\*.bin" 2>nul
-    del /q "%OUTPUT_DIR%\rdbdump_*.json" 2>nul
-    if exist "%OUTPUT_DIR%\rdbdump_export" rmdir /s /q "%OUTPUT_DIR%\rdbdump_export"
+    rmdir /s /q "%OUTPUT_DIR%" 2>nul
 )
+mkdir "%OUTPUT_DIR%" 2>nul
 echo Clean complete.
 goto end
 

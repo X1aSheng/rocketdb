@@ -38,12 +38,12 @@ if "%TESTS%"=="" (
 
 if "%ACTION%"=="clean" (
     echo Cleaning %SUITE% test outputs...
-    for %%t in (%TESTS%) do (
-        if exist "%OUTPUT_DIR%\%%t.exe" del /q "%OUTPUT_DIR%\%%t.exe"
+    if exist "%OUTPUT_DIR%\%SUITE%_clean_guard" (
+        del /q "%OUTPUT_DIR%\*.exe" 2>nul
+        del /q "%OUTPUT_DIR%\*.pdb" 2>nul
+        del /q "%OUTPUT_DIR%\*.ilk" 2>nul
+        del /q "%OUTPUT_DIR%\*.o"   2>nul
     )
-    if exist "%OUTPUT_DIR%\*.ilk" del /q "%OUTPUT_DIR%\*.ilk" 2>nul
-    if exist "%OUTPUT_DIR%\*.pdb" del /q "%OUTPUT_DIR%\*.pdb" 2>nul
-    if exist "%OUTPUT_DIR%\*.o"   del /q "%OUTPUT_DIR%\*.o"   2>nul
     echo Clean complete.
     goto end
 )
