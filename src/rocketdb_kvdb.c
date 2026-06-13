@@ -25,7 +25,7 @@
  * Copyright (c) 2015 XiaSheng(info@zhis.net)
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
- * @version 1.1.0
+ * @version 1.2.0
  *
  *****************************************************************************/
 
@@ -270,9 +270,9 @@ static inline int fl_erase(const rdb_kvdb_t* db, uint32_t a) {
  *  engine-independent.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** @brief Return the library version as a packed 24-bit integer (0x010100 = v1.1.0). */
+/** @brief Return the library version as a packed 24-bit integer (0x010200 = v1.2.0). */
 uint32_t rdb_version(void) {
-    return 0x010100u;
+    return 0x010200u;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2186,7 +2186,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
         return RDB_ERR_PARAM;
     if (part->total_size % part->sector_size)
         return RDB_ERR_PARAM;
-    if (part->write_gran > 3)
+    if (part->write_gran > RDB_WRITE_GRAN_MAX)
         return RDB_ERR_PARAM;
 
     uint32_t scnt = part->total_size / part->sector_size;

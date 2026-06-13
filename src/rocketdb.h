@@ -47,7 +47,7 @@
  * Copyright (c) 2015 XiaSheng(info@zhis.net)
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
- * @version 1.1.0
+ * @version 1.2.0
  * 
  *****************************************************************************/
 #ifndef ROCKETDB_H
@@ -304,6 +304,9 @@ typedef struct {
 #ifndef RDB_MIN_SECTOR_SIZE
 #define RDB_MIN_SECTOR_SIZE 4096u
 #endif
+
+/** @brief Maximum write granularity exponent (3 = 8 bytes). */
+#define RDB_WRITE_GRAN_MAX 3u
 
 /** @brief Minimum number of sectors required for a KVDB partition.
  *         At least 3 sectors are needed: 1 active + 1 GC reserve + 1 data. */
@@ -601,9 +604,9 @@ typedef struct {
  *
  * Written once when a sector is initialised (after erase).
  * The hdr_crc field covers bytes [0..5] (magic + version) and
- * [8..15] (erase_cnt + create_seq), protecting the full metadata
+ * [8..15] (erase_cnt + create_seq), protecting the metadata fields
  * from undetected corruption.  The CRC excludes its own storage
- * at offset 6 to avoid self-referential computation.
+ * at bytes [6..7] to avoid self-referential computation.
  *
  *  Offset  Field        Size  Description
  *  ──────  ───────────  ────  ─────────────────────────────────
@@ -974,7 +977,7 @@ extern uint16_t rdb_hash16(const void* data, size_t len);
 /**
  * @brief Get the library version as a packed integer.
  * @return  Version in 0x00MMNNPP format (major.minor.patch).
- *          Example: v1.1.0 → 0x010100.
+ *          Example: v1.2.0 → 0x010200.
  */
 uint32_t rdb_version(void);
 
