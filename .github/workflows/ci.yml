@@ -40,6 +40,7 @@ jobs:
           -DBUILD_TESTS=ON
           -DBUILD_EXAMPLES=ON
           -DBUILD_PERF=ON
+          -DENABLE_STRICT_WARNINGS=ON
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
@@ -51,12 +52,43 @@ jobs:
           -DBUILD_TESTS=ON
           -DBUILD_EXAMPLES=ON
           -DBUILD_PERF=ON
+          -DENABLE_STRICT_WARNINGS=ON
 
       - name: Build
         run: cmake --build cmake-build --parallel
 
       - name: Test
         run: ctest --test-dir cmake-build --output-on-failure
+
+  sanitizer:
+    name: Sanitizer ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B cmake-build-asan
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_TESTS=ON
+          -DBUILD_EXAMPLES=ON
+          -DBUILD_PERF=ON
+          -DENABLE_STRICT_WARNINGS=ON
+          -DENABLE_SANITIZER=ON
+
+      - name: Build
+        run: cmake --build cmake-build-asan --parallel
+
+      - name: Test
+        run: ctest --test-dir cmake-build-asan --output-on-failure
 
   windows-batch:
     name: Windows batch runner
@@ -70,7 +102,7 @@ jobs:
         run: clang --version
 
       - name: Run legacy test script
-        run: cmd /c build\build.bat all test
+        run: build\run_all_tests.bat test
 
       - name: Run performance benchmark
-        run: cmd /c build\build.bat perf run
+        run: build\build_perf.bat run

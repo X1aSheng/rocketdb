@@ -53,6 +53,34 @@
                 "BUILD_EXAMPLES": "OFF",
                 "BUILD_PERF": "OFF"
             }
+        },
+        {
+            "name": "sanitize",
+            "displayName": "Sanitizer",
+            "description": "Debug build with AddressSanitizer and UndefinedBehaviorSanitizer",
+            "inherits": "debug",
+            "cacheVariables": {
+                "ENABLE_SANITIZER": "ON",
+                "ENABLE_STRICT_WARNINGS": "ON"
+            }
+        },
+        {
+            "name": "ci-ubuntu",
+            "displayName": "CI Ubuntu",
+            "description": "CI build for Ubuntu (used by GitHub Actions)",
+            "inherits": "debug",
+            "cacheVariables": {
+                "ENABLE_STRICT_WARNINGS": "ON"
+            }
+        },
+        {
+            "name": "ci-win",
+            "displayName": "CI Windows",
+            "description": "CI build for Windows with Clang (used by GitHub Actions)",
+            "inherits": "debug-win",
+            "cacheVariables": {
+                "ENABLE_STRICT_WARNINGS": "ON"
+            }
         }
     ],
     "buildPresets": [
