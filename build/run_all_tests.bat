@@ -34,7 +34,7 @@ cd /d "%~dp0.."
 
 for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyMMdd-HHmmss"') do set MASTER_TS=%%a
 
-set SUMMARY_LOG=%OUTPUT_DIR%\%MASTER_TS%-SUMMARY.log
+set SUMMARY_LOG=%OUTPUT_DIR%\!MASTER_TS!-SUMMARY.log
 
 if "%ACTION%"=="clean" goto clean_all
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
