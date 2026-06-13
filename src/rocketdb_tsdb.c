@@ -1475,7 +1475,7 @@ typedef struct {
  * @brief Scan callback for query — filters by time range, verifies CRC,
  *        reads data, and invokes the user callback.
  */
-static int ts_qcb(rdb_tsdb_t* db, const ts_rec_t* r, void* arg) {
+static int ts_query_cb(rdb_tsdb_t* db, const ts_rec_t* r, void* arg) {
     ts_qctx_t* q = (ts_qctx_t*)arg;
 
     /* Time range filter */
@@ -1567,13 +1567,13 @@ static rdb_err_t ts_query_impl(rdb_tsdb_t* db, uint32_t from, uint32_t to,
 
         if (cls == TS_SEALED && h.time_base != RDB_TIME_INVALID) {
             /* Sealed sector with valid time_base — scan normally */
-            ts_scan(db, s, h.time_base, h.end_off, ts_qcb, &q, RDB_FALSE);
+            ts_scan(db, s, h.time_base, h.end_off, ts_query_cb, &q, RDB_FALSE);
 
         } else if (cls == TS_ACTIVE && s == db->head_sec &&
                    db->head_time_base != RDB_TIME_INVALID &&
                    db->head_count > 0) {
             /* Active head sector with records — scan up to head_off */
-            ts_scan(db, s, db->head_time_base, db->head_off, ts_qcb, &q, RDB_FALSE);
+            ts_scan(db, s, db->head_time_base, db->head_off, ts_query_cb, &q, RDB_FALSE);
 
         } else if (cls == TS_ACTIVE && s != db->head_sec) {
             /* [T-6 related] Degraded ACTIVE sector in ring body —
@@ -1581,7 +1581,7 @@ static rdb_err_t ts_query_impl(rdb_tsdb_t* db, uint32_t from, uint32_t to,
             uint32_t tb, eo;
             ts_active_info(db, s, &tb, &eo);
             if (tb != RDB_TIME_INVALID && eo > ts_data_start(db))
-                ts_scan(db, s, tb, eo, ts_qcb, &q, RDB_FALSE);
+                ts_scan(db, s, tb, eo, ts_query_cb, &q, RDB_FALSE);
         }
 
         if (s == db->head_sec)
@@ -1802,7 +1802,7 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
 /**
  * @brief Scan callback for get_oldest — stops at the first VALID record.
  */
-static int ts_old_cb(rdb_tsdb_t* db, const ts_rec_t* r, void* arg) {
+static int ts_oldest_cb(rdb_tsdb_t* db, const ts_rec_t* r, void* arg) {
     (void)db;
     ts_lt_ctx_t* c = (ts_lt_ctx_t*)arg;
     c->time = r->time;
@@ -1834,21 +1834,21 @@ rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time,
         if (cls == TS_SEALED && h.time_base != RDB_TIME_INVALID &&
             h.count > 0) {
             /* Sealed sector with records — scan for first VALID */
-            ts_scan(db, s, h.time_base, h.end_off, ts_old_cb, &c, RDB_FALSE);
+            ts_scan(db, s, h.time_base, h.end_off, ts_oldest_cb, &c, RDB_FALSE);
 
         } else if (cls == TS_ACTIVE && s == db->head_sec &&
                    db->head_count > 0 &&
                    db->head_time_base != RDB_TIME_INVALID) {
             /* Active head sector — scan up to head_off */
             ts_scan(db, s, db->head_time_base, db->head_off,
-                ts_old_cb, &c, RDB_FALSE);
+                ts_oldest_cb, &c, RDB_FALSE);
 
         } else if (cls == TS_ACTIVE && s != db->head_sec) {
             /* [T-6 fix] Degraded ACTIVE sector — recover and scan */
             uint32_t tb, eo;
             ts_active_info(db, s, &tb, &eo);
             if (tb != RDB_TIME_INVALID && eo > ts_data_start(db))
-                ts_scan(db, s, tb, eo, ts_old_cb, &c, RDB_FALSE);
+                ts_scan(db, s, tb, eo, ts_oldest_cb, &c, RDB_FALSE);
         }
 
         if (s == db->head_sec)

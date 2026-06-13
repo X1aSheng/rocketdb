@@ -102,7 +102,7 @@ static int key_index_2d(const char *key) {
     return (key[1] - '0') * 10 + (key[2] - '0');
 }
 
-static uint32_t lcg_next(uint32_t *s) {
+static uint32_t kv_rand_next(uint32_t *s) {
     *s = (*s * 1664525u) + 1013904223u;
     return *s;
 }
@@ -316,7 +316,7 @@ TEST_CASE(kv_mixed_lengths, "KVDB", "Mixed key/value length Monte Carlo")
             uint16_t vlen = (uint16_t)sim_dist_next(&vdist);
             if (vlen == 0) vlen = 1;
             if (vlen > MIX_MAX_VAL) vlen = MIX_MAX_VAL;
-            for (uint16_t j = 0; j < vlen; j++) expected[i][j] = (uint8_t)lcg_next(&seed);
+            for (uint16_t j = 0; j < vlen; j++) expected[i][j] = (uint8_t)kv_rand_next(&seed);
             expected_len[i] = vlen;
             TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, keys[i], expected[i], vlen));
         }

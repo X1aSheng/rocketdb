@@ -154,7 +154,7 @@ static rdb_err_t ts_reset(void)
 
 static uint32_t g_int_sz_prng = INT_SIZE_SEED;
 
-static uint16_t int_sz_next(void)
+static uint16_t mix_sz_next(void)
 {
     g_int_sz_prng ^= g_int_sz_prng << 13;
     g_int_sz_prng ^= g_int_sz_prng >> 17;
@@ -187,7 +187,7 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
         for (int i = 0; i < 50; i++) {
             key[1] = (char)('0' + (i / 10));
             key[2] = (char)('0' + (i % 10));
-            uint16_t vsz = 1u + (uint16_t)(int_sz_next() % 512u);
+            uint16_t vsz = 1u + (uint16_t)(mix_sz_next() % 512u);
             TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, key, val, vsz));
             if (g_kv_db.stats.gc_runs != prev_gc) {
                 prev_gc = g_kv_db.stats.gc_runs;
@@ -214,7 +214,7 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles >=200")
 
     uint32_t loops = 0, time = 1, prev_rot = g_ts_db.stats.sector_rotations;
     while (g_ts_db.stats.sector_rotations < CYCLE_ROT_TARGET && loops < CYCLE_MAX_LOOPS) {
-        uint16_t dsz = 1u + (uint16_t)(int_sz_next() % 512u);
+        uint16_t dsz = 1u + (uint16_t)(mix_sz_next() % 512u);
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_ts_db, time++, data, dsz));
         loops++;
         if (g_ts_db.stats.sector_rotations != prev_rot) {
