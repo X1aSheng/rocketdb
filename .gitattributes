@@ -1,0 +1,25 @@
+# RocketDB .gitattributes — cross-platform line ending normalization
+#
+# Batch files MUST have CRLF line endings to be parsed by cmd.exe.
+# All other text files use LF (the repository default).
+
+*           text=auto
+
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+*.c         text eol=lf
+*.h         text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.cmake     text eol=lf
+*.py        text eol=lf
+
+*.png       binary
+*.jpg       binary
+*.bin       binary
+*.xlsx      binary
