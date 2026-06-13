@@ -23,6 +23,12 @@ This directory contains both current project documentation and historical planni
 | [../tests/perf/README.md](../tests/perf/README.md) | Performance benchmark methodology |
 | [../tools/rdbdump/README.md](../tools/rdbdump/README.md) | `rdbdump` CLI usage and export layout |
 
-## Historical Records
+## Review Records
+
+| Document | Focus |
+|----------|-------|
+| [PROJECT-REVIEW-260613-103231.md](PROJECT-REVIEW-260613-103231.md) | v1.2.0 review: version sync, Docker/CI, batch scripts, code quality |
+| [PROJECT-REVIEW-260604-001500.md](PROJECT-REVIEW-260604-001500.md) | Previous review with Zephyr Kconfig fixes |
+| [PROJECT-REVIEW-260604-000000.md](PROJECT-REVIEW-260604-000000.md) | Zephyr port single-byte write alignment |
 
 `PROJECT-REVIEW-*`, `RocketKV/`, and `SpecKit/` preserve design notes, review records, and planning material from earlier project phases. They may mention older paths or historical validation results; current build/test behavior is defined by the documents listed above.

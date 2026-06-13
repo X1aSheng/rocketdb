@@ -67,6 +67,16 @@ Add RocketDB as a Zephyr module (see `zephyr/module.yml`):
 All external primitives (`rdb_crc16`, `rdb_hash16`, flash ops) are provided
 by `zephyr/rocketdb_port.c`.  No additional HAL code is needed.
 
+#### Docker
+
+A multi-stage Dockerfile is provided for Linux build and test:
+
+```bash
+docker build -t rocketdb:latest .
+docker run --rm rocketdb:latest
+docker-compose up
+```
+
 ### Build And Test
 
 Windows host builds use LLVM/Clang by default and fall back to GCC:

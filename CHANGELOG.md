@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] — 2026-06-13
+
+### Added
+
+- **Docker support**: Multi-stage Dockerfile and docker-compose.yml for Linux
+  build and test.  `docker build -t rocketdb . && docker run --rm rocketdb`
+  runs the full CTest suite in an Ubuntu 24.04 container.
+- **`RDB_WRITE_GRAN_MAX` constant**: Named constant (value 3) for the write
+  granularity exponent upper bound, used by `rdb_kvdb_init()` validation.
+
+### Fixed
+
+- **Version consistency**: `rdb_version()` now returns `0x010200` (v1.2.0),
+  matching the README badge and source `@version` tags.
+- **KVDB sector header CRC documentation**: Comment now accurately states
+  that `hdr_crc` covers bytes [0..5] and [8..15], excluding its own storage.
+- **CMakePresets binary directory**: `debug` and `release` presets now use
+  separate build directories (`cmake-build` vs `cmake-build-release`).
+- **CI cache key**: `actions/cache` updated from v4 to v5; cache key widened
+  to include `src/*.c`, `src/*.h`, `tests/sim/*.c`, `tests/sim/*.h`.
+- **Windows batch clean targets**: `run_all_tests.bat clean` and
+  `run_suite.bat clean` now use `rmdir/mkdir` for guaranteed clean state.
+
+### Changed
+
+- **CI**: `actions/cache@v4` → `actions/cache@v5`.
+- **CMakePresets.json**: `debug-win` description now notes that `clang` must
+  be in PATH or CMAKE_C_COMPILER must use a full path.
+
 ## [1.4.0] — 2026-06-03
 
 ### Fixed
