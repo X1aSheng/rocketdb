@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.1] — 2026-06-13
+
+### Added
+
+- **Strict compiler warnings**: New `ENABLE_STRICT_WARNINGS` CMake option (default ON)
+  enables `-Wpedantic -Wshadow -Wmissing-prototypes -Wstrict-prototypes
+  -Wold-style-definition -Wconversion -Wdouble-promotion` for Clang/GCC builds.
+- **Sanitizer support**: New `ENABLE_SANITIZER` CMake option enables AddressSanitizer
+  and UndefinedBehaviorSanitizer for runtime memory error detection.
+- **GitHub Actions sanitizer CI job**: Runs ASan+UBSan on Ubuntu with all tests.
+- **CI presets**: `ci-ubuntu` and `ci-win` CMake presets for CI builds.
+- **`.gitattributes`**: Cross-platform line ending normalization — `.bat`/`.cmd` files
+  forced to CRLF (required by cmd.exe), all other text files use LF.
+
+### Fixed
+
+- **Windows batch file line endings**: All `.bat` files converted from LF to CRLF.
+  cmd.exe requires CRLF to correctly parse `@echo off` and `REM` statements; LF-only
+  endings caused "M is not recognized" errors.
+- **Type consistency**: Fixed `kv_rec_info_t.rsz` and `find_ctx_t.best_rsz` from
+  `uint16_t` to `uint32_t` to prevent overflow on large records.
+- **TSDB `ts_init_sec` seq type**: Changed `seq` parameter from `uint16_t` to `uint32_t`
+  to match `rdb_tsdb_t.head_seq` type, eliminating implicit truncation warning.
+- **Portable static assertions**: Replaced direct `_Static_assert` calls with the
+  C99-compatible `RDB_STATIC_ASSERT` macro, fixing `-Wpedantic` C11 extension warnings.
+- **Test and sim type casts**: Added explicit casts for `size_t→uint32_t` (sim_flash),
+  `uint64_t→double` (perf_benchmark), and `uint32_t→uint16_t` (test_kvdb_basic).
+
+### Changed
+
+- **Dockerfile**: Switched from `build-essential` (GCC) to `clang` for CI consistency.
+  Added `CMAKE_OPTS` build-arg for runtime customization.
+- **CI windows-batch job**: Uses direct `build\run_all_tests.bat test` call instead of
+  `build\build.bat` wrapper for clarity.
+- **CI CMake config**: `ENABLE_STRICT_WARNINGS=ON` passed to all CMake CI builds.
+
 ## [1.5.0] — 2026-06-13
 
 ### Added

@@ -100,6 +100,28 @@ cmake --build cmake-build --config Debug
 ctest --test-dir cmake-build --output-on-failure
 ```
 
+Additional CMake options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-DENABLE_STRICT_WARNINGS=ON` | ON | Enable `-Wpedantic -Wshadow -Wconversion` |
+| `-DENABLE_SANITIZER=ON` | OFF | Enable AddressSanitizer + UndefinedBehaviorSanitizer |
+| `-DENABLE_DEBUG_LOGGING=ON` | OFF | Enable runtime debug trace output |
+| `-DBUILD_PERF=ON` | OFF | Build performance benchmark |
+
+CMake presets are also available for common configurations:
+
+```bash
+cmake --preset debug          # Debug build with tests
+cmake --preset release        # Release build with tests
+cmake --preset sanitize       # Debug build with sanitizers
+cmake --preset minimal        # Release build without tests
+```
+
+```bash
+# Or use the Makefile on Unix-like systems:
+make test
+
 ### Usage
 
 Reference the examples in `/examples` to complete your own driver.
