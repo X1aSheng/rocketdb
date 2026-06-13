@@ -517,7 +517,7 @@ TEST_CASE(kv_max_boundaries, "KVDB", "Maximum key/value boundary test")
         uint8_t* out = (uint8_t*)malloc(max_val);
         TEST_ASSERT(out != NULL);
         uint16_t out_len = 0;
-        TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "MK", out, max_val, &out_len));
+        TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_db, "MK", out, (uint16_t)max_val, &out_len));
         TEST_ASSERT_EQ(out_len, (uint16_t)max_val);
         TEST_ASSERT_MEM_EQ(out, mv, max_val);
         free(out);

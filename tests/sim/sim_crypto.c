@@ -1,5 +1,6 @@
 ﻿#include <stdint.h>
 #include <stddef.h>
+#include "rocketdb.h"
 
 /* CRC16-MODBUS implementation */
 uint16_t rdb_crc16(const void *data, size_t len)

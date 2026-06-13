@@ -182,7 +182,7 @@ static inline void perf_stats_calculate(perf_stats_t *stats) {
     uint64_t total_ns = sum * 1000;  // Convert us to ns
     stats->throughput = (total_ns == 0)
         ? 0.0
-        : (stats->count * 1000000000.0) / total_ns;
+        : (double)(stats->count) * 1000000000.0 / (double)total_ns;
 }
 
 /**

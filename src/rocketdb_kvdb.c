@@ -483,7 +483,7 @@ static int kv_mark_dead(const rdb_kvdb_t* db, uint32_t addr) {
 typedef struct {
     uint32_t addr;     /**< Absolute flash address of the record header */
     uint32_t seq;      /**< Monotonic write sequence number             */
-    uint16_t rsz;      /**< Total record size (header + key + value)    */
+    uint32_t rsz;      /**< Total record size (header + key + value)    */
     uint16_t val_len;  /**< Value length in bytes (unpadded)            */
     uint16_t key_hash; /**< Precomputed 16-bit hash of the key          */
     uint8_t  key_len;  /**< Key length in bytes (unpadded)              */
@@ -613,7 +613,7 @@ typedef struct {
     uint16_t    hash;      /**< Precomputed key hash              */
     uint32_t    best_addr; /**< Flash address of best match found */
     uint32_t    best_seq;  /**< Sequence number of best match     */
-    uint16_t    best_rsz;  /**< Record size of best match         */
+    uint32_t    best_rsz;  /**< Record size of best match         */
     uint8_t     best_sec;  /**< Sector index of best match        */
     uint8_t     found;     /**< 1 if at least one match was found */
 } find_ctx_t;

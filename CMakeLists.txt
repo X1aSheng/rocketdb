@@ -77,6 +77,8 @@ option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_TESTS "Build test suite" ON)
 option(BUILD_PERF "Build performance benchmark" OFF)
 option(ENABLE_DEBUG_LOGGING "Enable debug logging" OFF)
+option(ENABLE_SANITIZER "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(ENABLE_STRICT_WARNINGS "Enable stricter compiler warnings (-Wpedantic -Wshadow -Wconversion)" ON)
 
 set(ROCKETDB_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/out"
     CACHE PATH "Directory for RocketDB build outputs")
@@ -120,6 +122,36 @@ function(rocketdb_apply_warnings target_name)
             -Wextra
             $<$<CONFIG:Debug>:-Werror>
         )
+        if(ENABLE_STRICT_WARNINGS)
+            target_compile_options(${target_name} PRIVATE
+                -Wpedantic
+                -Wshadow
+                -Wmissing-prototypes
+                -Wstrict-prototypes
+                -Wold-style-definition
+                $<$<C_COMPILER_ID:Clang>:-Wconversion
+                    -Wdouble-promotion
+                    -Wno-sign-conversion>
+            )
+        endif()
+    endif()
+endfunction()
+
+function(rocketdb_apply_sanitizer target_name)
+    if(ENABLE_SANITIZER)
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(${target_name} PRIVATE
+                -fsanitize=address
+                -fsanitize=undefined
+                -fno-omit-frame-pointer
+            )
+            target_link_options(${target_name} PRIVATE
+                -fsanitize=address
+                -fsanitize=undefined
+            )
+        elseif(MSVC)
+            target_compile_options(${target_name} PRIVATE /fsanitize=address)
+        endif()
     endif()
 endfunction()
 
@@ -142,6 +174,7 @@ endfunction()
 function(rocketdb_configure_target target_name)
     target_include_directories(${target_name} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     rocketdb_apply_warnings(${target_name})
+    rocketdb_apply_sanitizer(${target_name})
     rocketdb_apply_optimization(${target_name})
 endfunction()
 
@@ -361,6 +394,8 @@ message(STATUS "Examples: ${BUILD_EXAMPLES}")
 message(STATUS "Tests: ${BUILD_TESTS}")
 message(STATUS "Performance benchmark: ${BUILD_PERF}")
 message(STATUS "Debug logging: ${ENABLE_DEBUG_LOGGING}")
+message(STATUS "Strict warnings: ${ENABLE_STRICT_WARNINGS}")
+message(STATUS "Sanitizer: ${ENABLE_SANITIZER}")
 message(STATUS "Output directory: ${ROCKETDB_OUTPUT_DIR}")
 message(STATUS "========================================")
 message(STATUS "")

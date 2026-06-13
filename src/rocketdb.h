@@ -56,7 +56,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Portable compile-time assertion helper. */
+/* Portable compile-time assertion helper.
+   Uses _Static_assert when available (C11+), falls back to a
+   negative-size typedef trick for C99 compliance.
+
+   With Clang in -std=c99 -Wpedantic, _Static_assert triggers
+   -Wc11-extensions.  __extension__ suppresses it because the
+   fallback path (negative-width typedef) works fine in C99. */
 #ifndef RDB_STATIC_ASSERT
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 #define RDB_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
@@ -714,13 +720,13 @@ typedef struct {
 
 #pragma pack(pop)
 
-/* Compile-time size verification */
-_Static_assert(sizeof(rdb_kv_sector_hdr_t) == 16u, "KV sector hdr must be 16B");
-_Static_assert(sizeof(rdb_kv_record_hdr_t) == 16u, "KV record hdr must be 16B");
-_Static_assert(sizeof(rdb_ts_sector_hdr_t) == 20u, "TS sector hdr must be 20B");
-_Static_assert(sizeof(rdb_ts_record_hdr_t) == 12u, "TS record hdr must be 12B");
-_Static_assert(offsetof(rdb_kv_sector_hdr_t, hdr_crc) == 6u, "KV sector CRC offset must be 6");
-_Static_assert(offsetof(rdb_ts_sector_hdr_t, hdr_crc) == 18u, "TS sector CRC covers bytes [0..17]");
+/* Compile-time size verification (uses portable C99-compatible macro) */
+RDB_STATIC_ASSERT(sizeof(rdb_kv_sector_hdr_t) == 16u, "KV sector hdr must be 16B");
+RDB_STATIC_ASSERT(sizeof(rdb_kv_record_hdr_t) == 16u, "KV record hdr must be 16B");
+RDB_STATIC_ASSERT(sizeof(rdb_ts_sector_hdr_t) == 20u, "TS sector hdr must be 20B");
+RDB_STATIC_ASSERT(sizeof(rdb_ts_record_hdr_t) == 12u, "TS record hdr must be 12B");
+RDB_STATIC_ASSERT(offsetof(rdb_kv_sector_hdr_t, hdr_crc) == 6u, "KV sector CRC offset must be 6");
+RDB_STATIC_ASSERT(offsetof(rdb_ts_sector_hdr_t, hdr_crc) == 18u, "TS sector CRC covers bytes [0..17]");
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  §9  KVDB RAM structures

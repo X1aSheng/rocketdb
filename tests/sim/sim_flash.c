@@ -106,7 +106,7 @@ int sim_flash_write(sim_flash_t *f, uint32_t addr, const uint8_t *buf, size_t le
 
     /* 注入数据损坏 */
     if (f->fault_ctx) {
-        fault_inject_corruption(f->fault_ctx, f->mem, addr, len);
+        fault_inject_corruption(f->fault_ctx, f->mem, addr, (uint32_t)len);
     }
 
     return 0;

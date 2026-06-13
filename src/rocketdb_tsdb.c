@@ -413,7 +413,7 @@ static uint16_t ts_sector_count(const rdb_tsdb_t* db, uint8_t s) {
  *  @return     0 on success, -1 on flash failure.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int ts_init_sec(rdb_tsdb_t* db, uint8_t s, uint16_t seq) {
+static int ts_init_sec(rdb_tsdb_t* db, uint8_t s, uint32_t seq) {
     uint32_t addr = ts_sec_addr(db, s);
     uint32_t old_ec = db->erase_cnts ? db->erase_cnts[s] : 0;
 
