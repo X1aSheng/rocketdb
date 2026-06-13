@@ -24,7 +24,7 @@
             "displayName": "Release",
             "description": "Release build with optimizations",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/cmake-build",
+            "binaryDir": "${sourceDir}/cmake-build-release",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "BUILD_TESTS": "ON",
@@ -35,7 +35,7 @@
         {
             "name": "debug-win",
             "displayName": "Debug (Windows Clang)",
-            "description": "Debug build with Clang on Windows",
+            "description": "Debug build with Clang on Windows.  clang must be in PATH or override CMAKE_C_COMPILER with the full path.",
             "inherits": "debug",
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "clang"
