@@ -7,15 +7,20 @@
 #   docker build -t rocketdb:latest .
 #   docker run --rm rocketdb:latest
 #   docker run --rm rocketdb:latest ctest --test-dir /build --output-on-failure -V
+#
+# Override the CMake options at build time:
+#   docker build --build-arg CMAKE_OPTS="-DENABLE_SANITIZER=ON" -t rocketdb:latest .
 
 # ── Stage 1: Builder ──────────────────────────────────────────────────────────
 FROM ubuntu:24.04 AS builder
 
 LABEL description="RocketDB Flash Storage Engine — Build & Test"
 
+ARG CMAKE_OPTS=""
+
 RUN apt-get update -qq && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-        build-essential \
+        clang \
         cmake \
         ninja-build \
         python3 \
@@ -25,11 +30,14 @@ RUN apt-get update -qq && \
 WORKDIR /src
 COPY . .
 
+ENV CC=clang CXX=clang++
 RUN cmake -S . -B /build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_TESTS=ON \
         -DBUILD_EXAMPLES=ON \
         -DBUILD_PERF=ON \
+        -DENABLE_STRICT_WARNINGS=ON \
+        ${CMAKE_OPTS} \
     && cmake --build /build --parallel
 
 # ── Stage 2: Test runner ──────────────────────────────────────────────────────
