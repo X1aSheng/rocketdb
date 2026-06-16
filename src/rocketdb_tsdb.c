@@ -141,7 +141,7 @@ static inline int fl_erase(const rdb_tsdb_t* db, uint32_t a) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  Corrupt-record skip step (mirrors KVDB K-3 fix)
+ *  Corrupt-record skip step
  *
  *  When a record header fails validation (bad magic, etc.), advance
  *  by this many bytes rather than by 1.  This prevents byte-by-byte
@@ -280,7 +280,7 @@ static ts_cls_t ts_classify(const rdb_tsdb_t* db, uint8_t s,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [T-C2 fix] ts_active_info — Extract time_base and write frontier
+ *  ts_active_info — Extract time_base and write frontier
  *  from a non-head ACTIVE sector
  *
  *  This handles degraded ACTIVE sectors (failed seal or mid-write
@@ -335,7 +335,7 @@ static void ts_active_info(const rdb_tsdb_t* db, uint8_t s,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [T-C4 fix] ts_sector_count — Count VALID records in a sector
+ *  ts_sector_count — Count VALID records in a sector
  *
  *  For SEALED sectors: returns h.count from the header (fast path).
  *  For ACTIVE sectors: scans and counts VALID records (slow path).
@@ -397,12 +397,12 @@ static uint16_t ts_sector_count(const rdb_tsdb_t* db, uint8_t s) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [T-2 fix] ts_init_sec — Erase and initialise a sector
+ *  ts_init_sec — Erase and initialise a sector
  *
  *  Erases the sector, increments its erase count, and writes a fresh
  *  sector header with the given sequence number.
  *
- *  T-2 fix detail: the erase count takes the maximum of the RAM-cached
+ *  the erase count takes the maximum of the RAM-cached
  *  value and the value read from the existing flash header.  This
  *  prevents erase count regression when RAM is zeroed (e.g. after a
  *  warm reboot) but flash still holds the true count.
@@ -417,7 +417,7 @@ static int ts_init_sec(rdb_tsdb_t* db, uint8_t s, uint32_t seq) {
     uint32_t addr = ts_sec_addr(db, s);
     uint32_t old_ec = db->erase_cnts ? db->erase_cnts[s] : 0;
 
-    /* [T-2 fix]: take max of RAM and flash to prevent ec regression */
+    /* Take max of RAM and flash to prevent ec regression */
     rdb_ts_sector_hdr_t oh;
     if (fl_read(db, addr, &oh, sizeof(oh)) == 0 &&
         oh.magic == RDB_TS_SECTOR_MAGIC) {
@@ -491,7 +491,7 @@ static int ts_seal(rdb_tsdb_t* db, uint8_t s,
  *
  *  Writes RDB_STATE_DEAD (0xFC) to the state byte at addr+1.
  *  This is a NOR-safe 1→0 transition (0xFF or 0xFE → 0xFC).
- *  Mirrors KVDB's mark_dead() at rocketdb_kvdb.c:457.
+ *  Marks a record as DEAD with a single-byte NOR-safe transition (0xFF→0xFC).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int ts_mark_dead(const rdb_tsdb_t* db, uint32_t addr) {
@@ -724,7 +724,7 @@ static uint16_t ts_scan(rdb_tsdb_t* db, uint8_t s,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [T-C1/C5 fix] ts_rotate — Rotate to a new head sector
+ *  ts_rotate — Rotate to a new head sector
  *
  *  Seals the current head sector, advances the head pointer to the
  *  next sector in the ring, and initialises it.  If the new head
@@ -732,7 +732,7 @@ static uint16_t ts_scan(rdb_tsdb_t* db, uint8_t s,
  *  records are counted and subtracted from total_count before the
  *  tail pointer advances.
  *
- *  [T-8 fix]: periodic total_count recount is NOT done here.  It is
+ *   periodic total_count recount is NOT done here.  It is
  *  only performed in rdb_tsdb_append() to avoid double-triggering.
  *
  *  @param db  Database handle.
@@ -814,7 +814,7 @@ static rdb_err_t ts_rotate(rdb_tsdb_t* db) {
  *
  *  Phase 2 — Validate sequence continuity (tail → head):
  *    Walk the ring from tail to head verifying monotonic seq progression.
- *    [T-3 fix]: non-monotonic seq is demoted to a data_gaps counter
+ *     non-monotonic seq is demoted to a data_gaps counter
  *    increment rather than triggering a full format.  This preserves
  *    all recoverable data.
  *
@@ -895,7 +895,7 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 #endif
     }
 
-    /* [T-EC-PERSIST fix]: do NOT zero ec_buf here.  Erase counts for
+    /*  do NOT zero ec_buf here.  Erase counts for
      * EMPTY sectors exist only in RAM; zeroing them would discard the
      * accumulated wear history.  For sectors with valid flash headers
      * take the maximum of RAM and flash to prevent regression. */
@@ -913,7 +913,7 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 
         if (cls == TS_CORRUPT) {
             /* Attempt to reclaim corrupt sectors by erasing.
-             * [T-EC-PERSIST fix]: do NOT reset ec to 1 or 0.
+             *  do NOT reset ec to 1 or 0.
              * The prior ec_buf[s] value is the best estimate. */
             if (fl_erase(db, ts_sec_addr(db, s)) != 0)
                 db->stats.flash_errors++;
@@ -924,7 +924,7 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
             continue; /* ec_buf[s] untouched — keep pre-existing value */
 
         has_data = 1;
-        /* [T-2 fix + T-EC-PERSIST]: take max of RAM and flash ec */
+        /*  take max of RAM and flash ec */
         if (ec_buf && h.erase_cnt > ec_buf[s])
             ec_buf[s] = h.erase_cnt;
 
@@ -948,7 +948,7 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
     /* ══════════════════════════════════════════════════════════════════
      *  Phase 2: Validate sequence continuity (tail → head)
      *
-     *  [T-3 fix]: non-monotonic seq no longer triggers format.
+     *   non-monotonic seq no longer triggers format.
      *  Instead, increment data_gaps counter and continue.
      *  This preserves all recoverable data after power-loss scenarios
      *  that may have left gaps in the ring.
@@ -965,7 +965,7 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
             if (cls == TS_ACTIVE || cls == TS_SEALED) {
                 if (!first && !RDB_SEQ16_GT(h.seq, prev_seq) &&
                     h.seq != prev_seq) {
-                    /* [T-3 fix]: demoted from full format to warning */
+                    /*  demoted from full format to warning */
                     db->stats.data_gaps++;
                 }
                 prev_seq = h.seq;
@@ -1109,7 +1109,7 @@ rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
             saved_ec[s] = db->erase_cnts[s];
 
         /* Also check flash header for a potentially higher count.
-         * [T-CRC-FMT fix]: verify CRC for sealed sectors before trusting
+         *  verify CRC for sealed sectors before trusting
          * erase_cnt.  Unsealed sectors (hdr_crc == 0xFFFF) have no CRC
          * to verify but magic matched, so their erase_cnt is trusted. */
         rdb_ts_sector_hdr_t h;
@@ -1174,7 +1174,7 @@ rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
  *  Timestamp monotonicity is enforced: if the provided time is ≤
  *  last_time or is 0/INVALID, it is auto-corrected to last_time + 1.
  *
- *  [T-8 fix]: periodic total_count reconciliation is performed here
+ *   periodic total_count reconciliation is performed here
  *  (not in ts_rotate) every full ring cycle to eliminate accumulated
  *  drift from edge cases.
  *
@@ -1354,7 +1354,7 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
             /* Advance head_off past the abandoned record so the next
                append() starts in clean erased space.  The WRITING record
                will be recovered (promoted/demoted) by ts_scan() on next
-               init.  Mirrors KVDB K-4/K-5 fix at rocketdb_kvdb.c:2331. */
+               init.  Mirrors the KVDB set() two-phase write protocol. */
             db->head_off += rsz;
             fl_unlock(db);
             return RDB_ERR_FLASH;
@@ -1368,7 +1368,7 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
     db->total_count++;
     db->stats.write_ops++;
 
-    /* ── [T-8 fix] total_count is maintained incrementally:
+    /* ── total_count is maintained incrementally:
        - Append path: total_count++ on each successful append
        - ts_rotate(): subtracts lost count when overwriting tail sector
        - init path: full recount at boot (Phase 4)
@@ -1494,7 +1494,7 @@ rdb_err_t rdb_tsdb_reset_epoch(rdb_tsdb_t* db) {
  *
  *  The callback may return RDB_ITER_STOP to abort the query early.
  *
- *  Degraded ACTIVE sectors (T-6 fix) in the ring body are handled
+ *  Degraded ACTIVE sectors in the ring body are handled
  *  by using ts_active_info() to recover their time_base and write
  *  frontier.
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -1616,7 +1616,7 @@ static rdb_err_t ts_query_impl(rdb_tsdb_t* db, uint32_t from, uint32_t to,
             ts_scan(db, s, db->head_time_base, db->head_off, ts_query_cb, &q, RDB_FALSE);
 
         } else if (cls == TS_ACTIVE && s != db->head_sec) {
-            /* [T-6 related] Degraded ACTIVE sector in ring body —
+            /* Degraded ACTIVE sector in ring body —
                recover time_base and write frontier, then scan */
             uint32_t tb, eo;
             ts_active_info(db, s, &tb, &eo);
@@ -1662,7 +1662,7 @@ rdb_err_t rdb_tsdb_query_ex(rdb_tsdb_t* db, uint32_t from, uint32_t to,
  *  the last VALID record.  Verifies data CRC before returning.
  *
  *  Degraded ACTIVE sectors in the ring body are handled via
- *  ts_active_info() (T-6 fix).
+ *  ts_active_info().
  *
  *  @param db        Database handle.
  *  @param[out] time Receives the record's timestamp (may be NULL).
@@ -1762,7 +1762,7 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
                 h.count > 0) {
                 ts_find_last_valid(db, prev, h.time_base, h.end_off, &c);
             } else if (cls == TS_ACTIVE) {
-                /* [T-6 fix] Degraded ACTIVE sector */
+                /* Degraded ACTIVE sector */
                 uint32_t tb, eo;
                 ts_active_info(db, prev, &tb, &eo);
                 if (tb != RDB_TIME_INVALID && eo > ts_data_start(db))
@@ -1822,7 +1822,7 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [T-6 fix] rdb_tsdb_get_oldest — Retrieve the oldest record
+ *  rdb_tsdb_get_oldest — Retrieve the oldest record
  *
  *  Searches from the tail sector forward through the ring to find
  *  the first VALID record.  Verifies data CRC before returning.
@@ -1884,7 +1884,7 @@ rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time,
                 ts_oldest_cb, &c, RDB_FALSE);
 
         } else if (cls == TS_ACTIVE && s != db->head_sec) {
-            /* [T-6 fix] Degraded ACTIVE sector — recover and scan */
+            /* Degraded ACTIVE sector — recover and scan */
             uint32_t tb, eo;
             ts_active_info(db, s, &tb, &eo);
             if (tb != RDB_TIME_INVALID && eo > ts_data_start(db))
@@ -1959,10 +1959,10 @@ uint32_t rdb_tsdb_count(rdb_tsdb_t* db) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [T-6 fix] rdb_tsdb_time_range — Report oldest and newest timestamps
+ *  rdb_tsdb_time_range — Report oldest and newest timestamps
  *
  *  For the oldest timestamp, walks from tail forward.  Degraded ACTIVE
- *  sectors use ts_active_info() (T-6 fix) to recover time_base.
+ *  sectors use ts_active_info() to recover time_base.
  *
  *  For the newest timestamp, returns db->last_time which is maintained
  *  incrementally by append().
@@ -2037,7 +2037,7 @@ void rdb_tsdb_time_range(rdb_tsdb_t* db, uint32_t* oldest, uint32_t* newest) {
                 break;
             }
             if (cls == TS_ACTIVE && s != db->head_sec) {
-                /* [T-6 fix] Degraded ACTIVE sector */
+                /* Degraded ACTIVE sector */
                 uint32_t tb, eo;
                 ts_active_info(db, s, &tb, &eo);
                 if (tb != RDB_TIME_INVALID) {
