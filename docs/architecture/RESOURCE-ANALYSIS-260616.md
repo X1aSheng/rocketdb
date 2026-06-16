@@ -13,16 +13,16 @@
 
 | 模块 | 源码行数 | .text x86-64 | 估 .text ARM Thumb2 | .data | .rdata | .xdata |
 |------|---------|-------------|---------------------|-------|--------|--------|
-| `rocketdb_kvdb.c` | 3,299 | **26,818 B** | ~12-16 KB | 0 | 16 B | 720 B |
+| `rocketdb_kvdb.c` | 3,256 | **26,530 B** | ~12-15 KB | 0 | 16 B | 628 B |
 | `rocketdb_tsdb.c` | 2,120 | **13,555 B** | ~6-8 KB | 0 | 96 B | 492 B |
 | `rocketdb.h` | 1,388 | 0 (header) | 0 | — | — | — |
-| **合计** | **6,807** | **40,373 B** | **~18-24 KB** | 0 | 112 B | 1,212 B |
+| **合计** | **6,764** | **40,085 B** | **~18-23 KB** | 0 | 112 B | 1,120 B |
 
 ### 1.2 KVDB 函数编译体积 (完整)
 
 | 函数区域 | 字节 | 占比 | 源码行数 | 字节/行 | 说明 |
 |----------|------|------|---------|---------|------|
-| `rdb_kvdb_init` + 内部静态函数群 | 13,120 | 48.9% | ~550 | 23.9 | scan_sector, writing_cb, fixup_stale, bloom_rebuild_all, dedup, init_sector, rotate |
+| `rdb_kvdb_init` + `init_combined_cb` + 静态函数群 | 13,456 | 50.7% | ~480 | 28.0 | scan_sector, dedup, cache, init_sector, rotate (5-in-1 合并扫描) |
 | `rdb_kvdb_set` | 3,824 | 14.3% | ~155 | 24.7 | 含 `kv_write_large_record` |
 | `rdb_kvdb_get` | 1,536 | 5.7% | ~98 | 15.7 | find_latest + cache 查找 |
 | `rdb_kvdb_format` | 1,056 | 3.9% | ~77 | 13.7 | init_sector + rotate |
@@ -171,7 +171,7 @@
 | 调用路径 | 深度 | 主要局部变量 | 栈帧估算 |
 |----------|------|-------------|---------|
 | `rdb_kvdb_set` → `gc_ensure_space` → `gc_execute` → `migrate_one` → `fl_write` | 5 | mbuf[64], cache[N], rh, kb[N] | **~400 B** |
-| `rdb_kvdb_init` → `scan_sector` → `writing_cb` → `fl_read` | 4 | kb[N], rh, meta_buf | **~300 B** |
+| `rdb_kvdb_init` → `scan_sector` → `init_combined_cb` → `fl_read` | 4 | kb[64], rh, ctx | **~300 B** |
 | `rdb_tsdb_init` → `ts_recover_head` → `fl_read/write` | 3 | rh, calc | **~250 B** |
 | `rdb_tsdb_append` → `ts_rotate` → `fl_read/write` | 3 | mbuf[64], buf[64] | **~250 B** |
 | `rdb_tsdb_query` → callback → `fl_read` | 3 | qctx, buf | **~200 B** |
@@ -267,7 +267,19 @@
 | `rdb_kvdb_set` | 223 | 164 | **-26%** |
 | `rdb_tsdb_append` | 176 | 137 | **-22%** |
 
-### 4.3 Bug 修复: ODR 违例导致 stats 读取错误
+### 4.3 Init 合并扫描 (5-in-1)
+
+**移除的函数 (7个):** `writing_cb`, `fixup_stale`, `fixup_cb`, `fixup_ctx_t`, `bloom_rebuild_all`, `bloom_rebuild_sec`, `bloom_build_cb`, `recalc_garbage_all`
+
+**新增:** `init_combined_cb` (93行) + `init_scan_ctx_t` (8行)
+
+| 指标 | 优化前 | 优化后 | 改善 |
+|------|--------|--------|------|
+| init 全表扫描 | 5 遍 | **1 遍** | **-80% Flash 读取** |
+| KVDB 源码 | 3,299 行 | 3,256 行 | -43 行 |
+| KVDB .text | 26,818 B | 26,530 B | -288 B |
+
+### 4.4 Bug 修复: ODR 违例导致 stats 读取错误
 
 **问题:** `rocketdb_sim_support` 库未链接 `rocketdb`，缺少 `RDB_KV_CACHE_SIZE=64` / `RDB_BLOOM_BITS=256` 编译宏。
 

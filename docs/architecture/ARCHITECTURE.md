@@ -543,18 +543,16 @@ rdb_kvdb_init(db, part, meta_buf)
 │
 ├── 参数校验
 │
-├── Phase 1：逐扇区扫描
-│   ├── magic=0xFFFFFFFF → 三点擦除验证 → ERASED/CORRUPT
-│   ├── magic≠KV_MAGIC 或 hdr_crc 不匹配 → CORRUPT
-│   └── 有效 → 遍历记录：
-│       ├── 跟踪最大 create_seq + 最大 record_seq → write_seq
-│       └── WRITING: CRC 匹配→VALID, 不匹配→DEAD
-│
-├── Phase 2：清理过期副本
-│   ├── fixup_stale: 每个 VALID 记录 → find_latest → 非最新→DEAD
-│   │   并将废弃记录的 rsz 计入所在扇区的 garbage_bytes
-│   ├── recalc_garbage_all: 重算每个扇区的 garbage_bytes
-│   └── reconcile_live: 全局重算 live_bytes
+├── Phase 1+2：单次合并扫描（5-in-1）
+│   ├── Step A: 读所有扇区头，分类 ERASED / ACTIVE / CORRUPT
+│   ├── Step B: ACTIVE 扇区按 create_seq 降序排列（最新在前）
+│   ├── Step C: 清零参与扇区的 Bloom 位图
+│   └── Step D: 单遍 scan_sector → init_combined_cb：
+│       ├── 跟踪 max_seq（扇区头 + 记录 seq）
+│       ├── WRITING: CRC 匹配→VALID, 不匹配→DEAD + garbage
+│       ├── 去重：hash-set 最新优先 → 旧副本→DEAD + garbage
+│       ├── Bloom：为每个 authoritative key 设置 bit
+│       └── 会计：每扇区 garbage_bytes + 全局 live_bytes
 │
 ├── Phase 3：选择活跃扇区
 │   1. create_seq 最大且有余量（write_off < sector_size）
@@ -652,8 +650,8 @@ rdb_kvdb_set(key, val, len)
     │
     └── 掉电安全保证：
         即使在 Step 5 中途掉电（旧副本未被标记 DEAD），
-        下次 init 的 Phase 2 fixup_stale 会基于 seq 比较
-        自动完成清理。find_latest 始终返回 seq 最大者。
+        下次 init 的合并扫描会基于 seq 比较自动完成清理。
+        find_latest 始终返回 seq 最大者。
 ```
 
 **数据安全设计要点——"先写新再删旧"原则：**
@@ -789,9 +787,8 @@ gc_execute(victim)
 │   │  跳过 Phase C 可减少约 50% 的 GC Flash 读操作。
 │   │
 │   │  掉电安全：如果在 Phase C 中途掉电，部分旧副本
-│   │  未被标记 DEAD。下次 init Phase 2 的 fixup_stale
-│   │  会完成清理。find_latest 始终基于 seq
-│   │  返回最新副本，未清理的旧副本不影响正确性。
+│   │  未被标记 DEAD。下次 init 的合并扫描会基于
+│   │  newest-first dedup 完成清理。未清理的旧副本不影响正确性。
 │   │
 └── Phase D：重算 live_bytes
     reconcile_live 全局重算
@@ -801,10 +798,10 @@ gc_execute(victim)
 
 | 掉电发生在 | 恢复行为 | 数据完整性 |
 |-----------|---------|-----------|
-| Phase A 中途（部分迁移） | init fixup_stale 保留 seq 大者 | 无损 |
+| Phase A 中途（部分迁移） | init 合并扫描保留 seq 大者 | 无损 |
 | Phase B 擦除中 | 三点检测→CORRUPT→后续恢复擦除 | 无损 |
-| Phase B 完成后，C 未开始 | init fixup_stale 清理旧副本 | 无损 |
-| Phase C 中途 | 下次 init fixup_stale 重新完成 | 无损 |
+| Phase B 完成后，C 未开始 | init 合并扫描清理旧副本 | 无损 |
+| Phase C 中途 | 下次 init 合并扫描完成清理 | 无损 |
 
 #### 4.7.4 GC 评分算法
 
@@ -856,10 +853,10 @@ rotate(db)
 | 写 record_hdr 中 | header 不完整 | magic 不匹配→跳过 corrupt_skip 字节 | 无损 |
 | 写 key/val 中 | header 完整, data 部分 | WRITING+CRC不匹配→DEAD | 无损 |
 | 写 state=VALID 中 | header+data 完整 | WRITING+CRC匹配→VALID | 无损 |
-| 作废旧记录中（Step 5） | 新VALID, 旧部分作废 | fixup_stale→DEAD | 无损 |
-| GC 迁移中(源未DEAD) | 目标VALID, 源VALID | fixup 保留 seq 大者 | 无损 |
+| 作废旧记录中（Step 5） | 新VALID, 旧部分作废 | init 合并扫描→DEAD | 无损 |
+| GC 迁移中(源未DEAD) | 目标VALID, 源VALID | dedup 保留 seq 大者 | 无损 |
 | GC 擦除中 | 擦除不完整 | 三点→CORRUPT→恢复 | 无损 |
-| GC fixup 中 | 部分旧副本未清理 | 下次 init fixup 完成 | 无损 |
+| GC dedup 中 | 部分旧副本未清理 | 下次 init 合并扫描完成 | 无损 |
 
 ---
 
@@ -1578,7 +1575,7 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | 满数据库更新返回 FULL | 所有扇区充满有效数据且无垃圾 | 先删除部分 key |
 | 三点擦除验证 | ~1.2% 覆盖 | 依赖硬件原子性 |
 | 跨纪元查询返回多 epoch | reset_epoch 后时间戳可能重叠 | 应用层 epoch 过滤 |
-| KVDB init fixup_stale 复杂度 | 最坏 O(N²)，32KB 可接受 | 大分区需索引优化 |
+| KVDB init 去重复杂度 | O(R) 单遍扫描 + hash-set | dedup 溢出时回退 find_latest |
 | KVDB delete 不触发 GC | 删除后空间不立即回收 | 后续 set 自动触发，或手动 gc |
 | KVDB 查找无索引 | O(N) 线性扫描 | 大分区需引入索引机制 |
 | TSDB wg≥2 未作为主支持目标 | 20B 扇区头、2B seal 字段和部分 HAL 粒度组合不兼容 | 当前 init/format 明确拒绝；生产使用前保持 wg=0/1，或重新设计头部布局 |
