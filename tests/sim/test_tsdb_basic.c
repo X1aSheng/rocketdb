@@ -429,6 +429,7 @@ static void post_test_tsdb_sectors(const char *name, int result, void *ctx)
 {
     (void)name; (void)result; (void)ctx;
     trace_tsdb_sector_summary(&g_trace, &g_db);
+    trace_tsdb_stats(&g_trace, &g_db);
 }
 
 int main(void)

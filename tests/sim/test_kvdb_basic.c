@@ -609,6 +609,7 @@ static void post_test_kvdb_sectors(const char *name, int result, void *ctx)
 {
     (void)name; (void)result; (void)ctx;
     trace_kvdb_sector_summary(&g_trace, &g_db);
+    trace_kvdb_stats(&g_trace, &g_db);
 }
 
 int main(void)

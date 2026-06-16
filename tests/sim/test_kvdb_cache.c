@@ -828,16 +828,24 @@ static void post_test_sectors(const char *name, int result, void *ctx) {
     (void)result; (void)ctx;
     /* Name prefix encodes DB type: kv_ → KVDB, ts_ → TSDB, init_ → both */
     if (strstr(name, "ts_") == name || strstr(name, "ts_append") == name) {
-        if (g_ts_db.initialized)
+        if (g_ts_db.initialized) {
             trace_tsdb_sector_summary(&g_trace, &g_ts_db);
+            trace_tsdb_stats(&g_trace, &g_ts_db);
+        }
     } else if (strstr(name, "init_") == name) {
-        if (g_kv_db.initialized)
+        if (g_kv_db.initialized) {
             trace_kvdb_sector_summary(&g_trace, &g_kv_db);
-        if (g_ts_db.initialized)
+            trace_kvdb_stats(&g_trace, &g_kv_db);
+        }
+        if (g_ts_db.initialized) {
             trace_tsdb_sector_summary(&g_trace, &g_ts_db);
+            trace_tsdb_stats(&g_trace, &g_ts_db);
+        }
     } else {
-        if (g_kv_db.initialized)
+        if (g_kv_db.initialized) {
             trace_kvdb_sector_summary(&g_trace, &g_kv_db);
+            trace_kvdb_stats(&g_trace, &g_kv_db);
+        }
     }
 }
 
