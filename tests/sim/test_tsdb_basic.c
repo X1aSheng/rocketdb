@@ -58,13 +58,21 @@ static rdb_flash_ops_t g_ops = {
     .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
 };
 
-/* ── Trace wrapper ─────────────────────────────────────────────────── */
+/* ── Trace wrappers ─────────────────────────────────────────────────── */
 static rdb_err_t trace_ts_append(rdb_tsdb_t *db, uint32_t ts,
                                   const void *data, uint16_t dlen)
 {
     trace_event(&g_trace, "  [TS-APPEND] time=%u dlen=%u",
                 (unsigned)ts, (unsigned)dlen);
     return rdb_tsdb_append(db, ts, (const uint8_t *)data, dlen);
+}
+
+static rdb_err_t trace_ts_query(rdb_tsdb_t *db, uint32_t from, uint32_t to,
+                                 rdb_ts_cb_t cb, void *arg)
+{
+    trace_event(&g_trace, "  [TS-QUERY] from=%u to=%u",
+                (unsigned)from, (unsigned)to);
+    return rdb_tsdb_query(db, from, to, cb, arg);
 }
 
 static rdb_err_t ts_reset(void)
@@ -127,7 +135,7 @@ TEST_CASE(ts_basic_append_query, "TSDB", "Append/query/latest/oldest/count/time_
     memcpy(qctx.expected, payload, sizeof(payload));
     qctx.expected_len = (uint16_t)sizeof(payload);
 
-    TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_db, 1, TS_APPEND_COUNT, ts_check_cb, &qctx));
+    TEST_ASSERT_RDB_OK(trace_ts_query(&g_db, 1, TS_APPEND_COUNT, ts_check_cb, &qctx));
     TEST_ASSERT_EQ(qctx.count, TS_APPEND_COUNT);
     TEST_ASSERT_EQ(qctx.first_time, 1u);
     TEST_ASSERT_EQ(qctx.last_time, TS_APPEND_COUNT);
@@ -205,7 +213,7 @@ TEST_CASE(ts_epoch_query_integrity, "TSDB", "Epoch reset keeps query integrity")
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, i, data, sizeof(data)));
 
     ts_count_ctx_t qctx = { 0 };
-    TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_db, 1, 100, ts_count_cb, &qctx));
+    TEST_ASSERT_RDB_OK(trace_ts_query(&g_db, 1, 100, ts_count_cb, &qctx));
     TEST_ASSERT_EQ(qctx.count, 100u);
     TEST_ASSERT_EQ(qctx.first_time, 1u);
     TEST_ASSERT_EQ(qctx.last_time, 50u);
@@ -230,7 +238,7 @@ TEST_CASE(ts_query_does_not_stop_across_epoch, "TSDB",
     TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 10, &new_data, 1));
 
     ts_count_ctx_t qctx = { 0 };
-    TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_db, 1, 100, ts_count_cb, &qctx));
+    TEST_ASSERT_RDB_OK(trace_ts_query(&g_db, 1, 100, ts_count_cb, &qctx));
     TEST_ASSERT_EQ(qctx.count, 1u);
     TEST_ASSERT_EQ(qctx.first_time, 10u);
     TEST_ASSERT_EQ(qctx.last_time, 10u);
@@ -302,7 +310,7 @@ TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
 
         /* Query full range — all records should be accessible */
         ts_wg_ctx_t qx = { 0 };
-        TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_db, 1, time - 1, ts_wg_query_cb, &qx));
+        TEST_ASSERT_RDB_OK(trace_ts_query(&g_db, 1, time - 1, ts_wg_query_cb, &qx));
         TEST_ASSERT_EQ(qx.n, count);
 
         /* get_latest works */

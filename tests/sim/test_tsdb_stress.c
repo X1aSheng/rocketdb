@@ -52,13 +52,31 @@ static rdb_flash_ops_t g_ops = {
     .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
 };
 
-/* ── Trace wrapper ─────────────────────────────────────────────────── */
+/* ── Trace wrappers ─────────────────────────────────────────────────── */
 static rdb_err_t trace_ts_append(rdb_tsdb_t *db, uint32_t ts,
                                   const void *data, uint16_t dlen)
 {
     trace_event(&g_trace, "  [TS-APPEND] time=%u dlen=%u",
                 (unsigned)ts, (unsigned)dlen);
     return rdb_tsdb_append(db, ts, (const uint8_t *)data, dlen);
+}
+
+static rdb_err_t trace_ts_query(rdb_tsdb_t *db, uint32_t from, uint32_t to,
+                                 rdb_ts_cb_t cb, void *arg)
+{
+    trace_event(&g_trace, "  [TS-QUERY] from=%u to=%u",
+                (unsigned)from, (unsigned)to);
+    return rdb_tsdb_query(db, from, to, cb, arg);
+}
+
+/* ── TS query helper ─────────────────────────────────────────────── */
+typedef struct { uint32_t n; } ts_wg_ctx_t;
+
+static int ts_wg_query_cb(uint32_t t, const void *d, uint16_t l, void *a)
+{
+    (void)t; (void)d; (void)l;
+    ((ts_wg_ctx_t *)a)->n++;
+    return RDB_ITER_CONTINUE;
 }
 
 static rdb_err_t ts_reset(void)
@@ -107,7 +125,7 @@ static uint16_t ts_sz_next(void)
 #define ROT_TARGET   100u
 #define ROT_MAX_LOOPS 500000u
 
-TEST_CASE(ts_rotation_stress, "TSDB", "Rotation stress >=100")
+TEST_CASE(ts_rotation_stress, "TSDB", "Rotation stress: append+query >=100")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
@@ -118,21 +136,44 @@ TEST_CASE(ts_rotation_stress, "TSDB", "Rotation stress >=100")
     memset(data, 0x5A, sizeof(data));
 
     uint32_t loops = 0, time = 1, prev_rot = g_db.stats.sector_rotations;
+    uint32_t n_append = 0, n_query = 0, n_latest = 0;
     while (g_db.stats.sector_rotations < ROT_TARGET && loops < ROT_MAX_LOOPS) {
         uint16_t dsz = 1u + (uint16_t)(ts_sz_next() % 512u);
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, time++, data, dsz));
+        n_append++;
+
+        /* Periodic range query: every 200 appends, scan recent window */
+        if ((n_append % 200) == 0 && time > 100u) {
+            ts_wg_ctx_t qctx = { 0 };
+            TEST_ASSERT_RDB_OK(trace_ts_query(&g_db,
+                time - 100u, time - 1u, ts_wg_query_cb, &qctx));
+            TEST_ASSERT_GT(qctx.n, 0u);
+            n_query++;
+        }
+
+        /* Periodic latest: every 500 appends */
+        if ((n_append % 500) == 0 && rdb_tsdb_count(&g_db) > 0u) {
+            uint32_t lt = 0; uint8_t lb[64]; uint16_t ll = 0;
+            rdb_err_t r = rdb_tsdb_get_latest(&g_db, &lt, lb, sizeof(lb), &ll);
+            if (r == RDB_OK) {
+                TEST_ASSERT_GT(ll, 0u);
+                n_latest++;
+            }
+        }
+
         loops++;
         if (g_db.stats.sector_rotations != prev_rot) {
             prev_rot = g_db.stats.sector_rotations;
             trace_tsdb_rot_event(&g_trace, &g_db, prev_rot, loops);
         }
         if (time % 500 == 0)
-            trace_event(&g_trace, "  [TS-ROT] time=%u loops=%u rotations=%u",
-                        time - 1, loops, g_db.stats.sector_rotations);
+            trace_event(&g_trace, "  [TS-ROT] time=%u append=%u query=%u rot=%u",
+                        time - 1, n_append, n_query, g_db.stats.sector_rotations);
     }
     TEST_ASSERT_GE(g_db.stats.sector_rotations, ROT_TARGET);
-    trace_event(&g_trace, "TS-ROT done: time=%u loops=%u rotations=%u",
-                time - 1, loops, g_db.stats.sector_rotations);
+    TEST_ASSERT_GT(n_query, 0u);
+    trace_event(&g_trace, "TS-ROT done: append=%u query=%u latest=%u loops=%u rot=%u",
+                n_append, n_query, n_latest, loops, g_db.stats.sector_rotations);
     return 0;
 }
 
