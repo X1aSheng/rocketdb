@@ -154,7 +154,7 @@ function(rocketdb_apply_sanitizer target_name)
                 -fsanitize=undefined
                 -fno-omit-frame-pointer
             )
-            target_link_options(${target_name} PRIVATE
+            target_link_options(${target_name} PUBLIC
                 -fsanitize=address
                 -fsanitize=undefined
             )
@@ -231,6 +231,7 @@ if(BUILD_EXAMPLES)
         )
         target_link_libraries(example_kvdb_basic PRIVATE rocketdb)
         rocketdb_apply_warnings(example_kvdb_basic)
+        rocketdb_apply_sanitizer(example_kvdb_basic)
         rocketdb_apply_optimization(example_kvdb_basic)
     else()
         message(STATUS "Skipping example_kvdb_basic: examples/example_kvdb_basic.c not found")
@@ -243,6 +244,7 @@ if(BUILD_EXAMPLES)
         )
         target_link_libraries(example_tsdb_sensor PRIVATE rocketdb)
         rocketdb_apply_warnings(example_tsdb_sensor)
+        rocketdb_apply_sanitizer(example_tsdb_sensor)
         rocketdb_apply_optimization(example_tsdb_sensor)
     endif()
     
@@ -298,6 +300,7 @@ if(BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/sim
         )
         rocketdb_apply_warnings(${test_name})
+        rocketdb_apply_sanitizer(${test_name})
         rocketdb_apply_optimization(${test_name})
         add_test(NAME ${test_name} COMMAND ${test_name})
         set_tests_properties(${test_name} PROPERTIES
@@ -314,6 +317,7 @@ if(BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sim
     )
     rocketdb_apply_warnings(test_rdbdump_dump)
+    rocketdb_apply_sanitizer(test_rdbdump_dump)
     rocketdb_apply_optimization(test_rdbdump_dump)
 
     set(ROCKETDB_RDBDUMP_DEPS ${ROCKETDB_TESTS})
@@ -373,6 +377,7 @@ if(BUILD_PERF)
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/perf
     )
     rocketdb_apply_warnings(rocketdb_perf)
+    rocketdb_apply_sanitizer(rocketdb_perf)
     rocketdb_apply_optimization(rocketdb_perf)
 endif()
 

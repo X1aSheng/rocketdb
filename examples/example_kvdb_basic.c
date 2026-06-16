@@ -236,7 +236,8 @@ int main(void)
 {
     rdb_partition_t part;
     rdb_kvdb_t db;
-    rdb_kv_sector_meta_t meta[EXAMPLE_SECTOR_COUNT];
+    uint8_t meta_buf[EXAMPLE_SECTOR_COUNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
     app_config_t config;
     app_config_t loaded_config;
     rdb_kv_stats_t stats;
