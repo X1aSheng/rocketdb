@@ -5,7 +5,7 @@
 
 | 项目 | 内容 |
 |------|------|
-| 版本 | 1.3.0 |
+| 版本 | 1.5.1 |
 | 状态 | 生产级基线 |
 | 适用硬件 | SPI NOR Flash（W25Q系列及兼容型号） |
 | 适用 MCU | Cortex-M0 / M3 / M4 / M7（已针对非对齐访问做结构体自然对齐） |
@@ -119,11 +119,13 @@ zephyr/
 #define RDB_MAX_KEY_LEN         32u
 #define RDB_MAX_VAL_LEN         4095u
 #define RDB_MAX_TS_DATA_LEN     0u       /* 0=由扇区决定；>0 为软限制 */
-#define RDB_KV_CACHE_SIZE       0u       /* KVDB 键地址缓存槽位数 */
+#define RDB_KV_CACHE_SIZE       64u      /* CMake 默认; 0=禁用 */
+#define RDB_BLOOM_BITS          256u     /* CMake 默认; 0=禁用 */
 #define RDB_STACK_BUF_SIZE      64u
 #define RDB_GC_GARBAGE_PCT      20u
 #define RDB_GC_WEAR_THRESHOLD   100u
 #define RDB_MIN_SECTOR_SIZE     4096u
+#define RDB_FLASH_PAGE_SIZE     256u
 #define RDB_KV_MIN_SECTORS      3u
 #define RDB_TS_MIN_SECTORS      2u
 #define RDB_MAX_SECTORS         255u
@@ -1584,3 +1586,33 @@ size_t      rdb_tsdb_ec_size(uint8_t sector_cnt);    /* N × 4  */
 | uint32 序列比较理论边界 | 超过 2^31 差值时 wrap-safe 比较会翻转 | 典型 NOR 寿命内不可达；超长寿命场景需格式迁移到 64 位 |
 | 查询线性扫描 | TSDB range query、KVDB get 在大分区下延迟增长 | 未来增加索引/游标；当前通过分区规划控制规模 |
 | 真实硬件故障模型差异 | 模拟器无法覆盖所有电气边界 | 量产前执行目标板断电和长时耐久测试 |
+
+
+---
+
+## 第十章 版本历史
+
+### v1.5.1 (2026-06-16)
+
+**代码审查修复（10 项）：**
+- 编译守卫： 静态断言（禁止非 0/256 值）、 断言、
+  / 幂等断言
+- CMake：最低版本升至 3.15、拒绝 MSVC 编译器、/
+  设为 library PUBLIC 编译定义（修复 ODR 结构体布局不匹配）
+- GC 旋转回退守卫： → （K-1 不变式同步）
+- TSDB 旋转恢复策略： → （旋转不恢复 WRITING 记录，防止 total_count 漂移）
+- TSDB 运行时校验： 在 init 时拒绝（保护 on-flash uint16_t 字段）
+- HAL 接口文档：补充单字节状态提交不受 write_gran 约束的说明
+
+**测试增强：**
+- 集成测试 CRUD 全覆盖：12,884 SET / 2,600 GET / 1,153 DEL / 5,919 APPEND / 99 QUERY
+- kvdb_stress、tsdb_stress、tsdb_basic 均添加 trace wrapper，操作分布可见
+- 全量 55 用例 / ~48,000 断言 / 0 失败
+
+### v1.3.0 (2026-05-25)
+
+- KVDB 键地址缓存 ()
+- TSDB  和提交失败  推进
+- total_count 增量维护，移除周期性 O(N) 重算
+- GC 批量迁移
+- 测试数据多变长分布

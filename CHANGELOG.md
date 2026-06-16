@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.2] — 2026-06-16
+
+### Added
+
+- **Compile-time validation**: Static assertions for `RDB_BLOOM_BITS` (0 or 256 only),
+  `RDB_MAX_SECTORS <= 255`, `RDB_MIN_SECTOR_SIZE` and `RDB_FLASH_PAGE_SIZE` power-of-2.
+- **TSDB sector size guard**: Runtime rejection of `sector_size > 65535` in
+  `rdb_tsdb_init` to protect on-flash `uint16_t` `end_off`/`count` fields.
+- **MSVC rejection**: CMake now explicitly rejects MSVC with a clear error message
+  directing users to install Clang or GCC.
+- **Balanced CRUD test coverage**: All test suites now exercise SET/GET/DELETE for KV
+  and APPEND/QUERY for TS, with trace wrappers for full operation visibility.
+  Total: 55 test cases, ~48,000 assertions, 0 failures.
+
+### Fixed
+
+- **KV cache ODR violation**: `RDB_KV_CACHE_SIZE=64` and `RDB_BLOOM_BITS=256` moved
+  from test-only `PRIVATE` to `rocketdb` library `PUBLIC` compile definitions,
+  fixing `rdb_kvdb_t` struct layout mismatch between library and tests.
+- **GC rotation fallback K-1 invariant**: Last-resort rotation guard changed from
+  `count_erased >= 1u` to `> gc_reserve`, preventing erased-sector underflow.
+- **TSDB `total_count` drift**: Rotation no longer recovers WRITING records
+  (`RDB_TRUE` → `RDB_FALSE`), preventing commit-failed records from being
+  subtracted from `total_count` when they were never counted.
+- **HAL interface documentation**: Clarified that single-byte state-transition
+  writes (commit, mark_dead) always occur regardless of `write_gran`, relying
+  on NOR flash byte-program capability.
+
+### Changed
+
+- **Directory rename**: `test/` → `tests/` for consistency. All build scripts,
+  CMake config, documentation, and `.gitignore` paths updated.
+- **Integration test redesigned**: 6 test cases now cover full CRUD spectrum
+  (SET/GET/DELETE during GC, QUERY during rotation, traced power-loss recovery).
+
 ## [1.5.1] — 2026-06-13
 
 ### Added
