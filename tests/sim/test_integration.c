@@ -96,12 +96,33 @@ static rdb_err_t trace_kv_set(rdb_kvdb_t *db, const char *key,
     return rdb_kvdb_set(db, key, (const uint8_t *)val, vlen);
 }
 
+static rdb_err_t trace_kv_get(rdb_kvdb_t *db, const char *key,
+                               void *buf, uint16_t buf_len, uint16_t *out_len)
+{
+    trace_event(&g_trace, "  [KV-READ]  key=%s", key);
+    return rdb_kvdb_get(db, key, buf, buf_len, out_len);
+}
+
+static rdb_err_t trace_kv_del(rdb_kvdb_t *db, const char *key)
+{
+    trace_event(&g_trace, "  [KV-DEL]   key=%s", key);
+    return rdb_kvdb_delete(db, key);
+}
+
 static rdb_err_t trace_ts_append(rdb_tsdb_t *db, uint32_t ts,
                                   const void *data, uint16_t dlen)
 {
     trace_event(&g_trace, "  [TS-APPEND] time=%u dlen=%u",
                 (unsigned)ts, (unsigned)dlen);
     return rdb_tsdb_append(db, ts, (const uint8_t *)data, dlen);
+}
+
+static rdb_err_t trace_ts_query(rdb_tsdb_t *db, uint32_t from, uint32_t to,
+                                 rdb_ts_cb_t cb, void *arg)
+{
+    trace_event(&g_trace, "  [TS-QUERY] from=%u to=%u",
+                (unsigned)from, (unsigned)to);
+    return rdb_tsdb_query(db, from, to, cb, arg);
 }
 
 /* ── Reset helpers ─────────────────────────────────────────────────────── */
@@ -165,6 +186,16 @@ static uint16_t mix_sz_next(void)
     return (uint16_t)(g_int_sz_prng & 0xFFFFu);
 }
 
+/* ── TS query helper (shared across test cases) ─────────────────────── */
+typedef struct { uint32_t n; } ts_wg_ctx_t;
+
+static int ts_wg_query_cb(uint32_t t, const void *d, uint16_t l, void *a)
+{
+    (void)t; (void)d; (void)l;
+    ((ts_wg_ctx_t *)a)->n++;
+    return RDB_ITER_CONTINUE;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  T-400: GC/Rotation cycle stress
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -173,7 +204,7 @@ static uint16_t mix_sz_next(void)
 #define CYCLE_ROT_TARGET  100u
 #define CYCLE_MAX_LOOPS   800000u
 
-TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
+TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles: write+read+delete during GC >=100")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(kv_reset());
@@ -182,16 +213,40 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
                 CYCLE_GC_TARGET, g_int_sz_prng);
 
     char key[4] = { 'K', '0', '0', 0 };
-    uint8_t val[512];
+    uint8_t val[512], readback[512];
     memset(val, 0xA5, sizeof(val));
 
-    uint32_t loops = 0, prev_gc = g_kv_db.stats.gc_runs;
+    uint32_t loops = 0, ops = 0, prev_gc = g_kv_db.stats.gc_runs;
+    uint32_t n_set = 0, n_get = 0, n_del = 0;
     while (g_kv_db.stats.gc_runs < CYCLE_GC_TARGET && loops < CYCLE_MAX_LOOPS) {
         for (int i = 0; i < 50; i++) {
             key[1] = (char)('0' + (i / 10));
             key[2] = (char)('0' + (i % 10));
+
+            /* Write: 100% of iterations */
             uint16_t vsz = 1u + (uint16_t)(mix_sz_next() % 512u);
             TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, key, val, vsz));
+            n_set++;
+
+            /* Read verification: every 3rd key (33% rate) */
+            if ((i % 3) == 0) {
+                uint16_t out_len = 0;
+                rdb_err_t r = trace_kv_get(&g_kv_db, key, readback, sizeof(readback), &out_len);
+                TEST_ASSERT_RDB_OK(r);
+                TEST_ASSERT_EQ(out_len, vsz);
+                TEST_ASSERT_MEM_EQ(readback, val, out_len);
+                n_get++;
+            }
+
+            /* Delete + recreate: every 10th key (10% rate) — exercises
+               mark_dead paths during active GC */
+            if ((i % 10) == 0 && i > 0) {
+                TEST_ASSERT_RDB_OK(trace_kv_del(&g_kv_db, key));
+                TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, key, val, vsz));
+                n_del++; n_set++;
+            }
+
+            ops++;
             if (g_kv_db.stats.gc_runs != prev_gc) {
                 prev_gc = g_kv_db.stats.gc_runs;
                 trace_kvdb_gc_event(&g_trace, &g_kv_db, prev_gc, loops);
@@ -199,12 +254,15 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles >=200")
         }
         loops++;
     }
-    printf("KVDB GC runs: %u (loops=%u)\n", g_kv_db.stats.gc_runs, loops);
+    printf("KVDB GC runs: %u (loops=%u, ops=%u, set=%u get=%u del=%u)\n",
+           g_kv_db.stats.gc_runs, loops, ops, n_set, n_get, n_del);
     TEST_ASSERT_GE(g_kv_db.stats.gc_runs, CYCLE_GC_TARGET);
+    TEST_ASSERT_GT(n_get, 0u);
+    TEST_ASSERT_GT(n_del, 0u);
     return 0;
 }
 
-TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles >=200")
+TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles: append+query during rotation >=100")
 {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
@@ -216,17 +274,48 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles >=200")
     memset(data, 0x5A, sizeof(data));
 
     uint32_t loops = 0, time = 1, prev_rot = g_ts_db.stats.sector_rotations;
+    uint32_t n_append = 0, n_query = 0, n_latest = 0, n_oldest = 0;
     while (g_ts_db.stats.sector_rotations < CYCLE_ROT_TARGET && loops < CYCLE_MAX_LOOPS) {
         uint16_t dsz = 1u + (uint16_t)(mix_sz_next() % 512u);
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_ts_db, time++, data, dsz));
+        n_append++;
+
+        /* Periodic query: every 200 appends, scan recent records */
+        if ((n_append % 200) == 0 && time > 100u) {
+            ts_wg_ctx_t qctx = { 0 };
+            TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db,
+                time - 100u, time - 1u, ts_wg_query_cb, &qctx));
+            TEST_ASSERT_GT(qctx.n, 0u);
+            n_query++;
+        }
+
+        /* Periodic latest/oldest: every 500 appends.
+           Skip if the DB is empty (transient state right after rotation). */
+        if ((n_append % 500) == 0 && rdb_tsdb_count(&g_ts_db) > 0u) {
+            uint32_t lt = 0, ot = 0;
+            uint8_t lb[64]; uint16_t ll = 0;
+            rdb_err_t r = rdb_tsdb_get_latest(&g_ts_db, &lt, lb, sizeof(lb), &ll);
+            if (r == RDB_OK) {
+                TEST_ASSERT_GT(ll, 0u);
+                n_latest++;
+                rdb_tsdb_time_range(&g_ts_db, &ot, &lt);
+                TEST_ASSERT_GT(lt, 0u);
+                n_oldest++;
+            }
+            /* get_latest may transiently fail during rotation — tolerated */
+        }
+
         loops++;
         if (g_ts_db.stats.sector_rotations != prev_rot) {
             prev_rot = g_ts_db.stats.sector_rotations;
             trace_tsdb_rot_event(&g_trace, &g_ts_db, prev_rot, loops);
         }
     }
-    printf("TSDB rotations: %u (loops=%u)\n", g_ts_db.stats.sector_rotations, loops);
+    printf("TSDB rotations: %u (loops=%u, append=%u query=%u latest=%u oldest=%u)\n",
+           g_ts_db.stats.sector_rotations, loops, n_append, n_query, n_latest, n_oldest);
     TEST_ASSERT_GE(g_ts_db.stats.sector_rotations, CYCLE_ROT_TARGET);
+    TEST_ASSERT_GT(n_query, 0u);
+    TEST_ASSERT_GT(n_latest, 0u);
     return 0;
 }
 
@@ -297,7 +386,7 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
             kv_sets++;
         } else if (roll < 75u) {
             uint8_t buf[MIX_MAX_VAL]; uint16_t out_len = 0;
-            rdb_err_t ret = rdb_kvdb_get(&g_kv_db, key, buf, sizeof(buf), &out_len);
+            rdb_err_t ret = trace_kv_get(&g_kv_db, key, buf, sizeof(buf), &out_len);
             if (g_mix_kv_present[key_idx]) {
                 TEST_ASSERT_RDB_OK(ret);
                 TEST_ASSERT_EQ(out_len, g_mix_kv_lens[key_idx]);
@@ -307,7 +396,7 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
             }
             kv_gets++;
         } else if (roll < 85u) {
-            rdb_err_t ret = rdb_kvdb_delete(&g_kv_db, key);
+            rdb_err_t ret = trace_kv_del(&g_kv_db, key);
             if (g_mix_kv_present[key_idx]) {
                 TEST_ASSERT_RDB_OK(ret);
                 g_mix_kv_present[key_idx] = 0;
@@ -327,7 +416,7 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
         if ((op % MIX_QUERY_INTV) == 0u && ts_appends > 0u) {
             uint32_t from = (time > 200u) ? (time - 200u) : 1u;
             mix_ts_ctx_t qctx = { 0 };
-            TEST_ASSERT_RDB_OK(rdb_tsdb_query(&g_ts_db, from, time - 1u, mix_ts_cb, &qctx));
+            TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db, from, time - 1u, mix_ts_cb, &qctx));
             ts_queries++;
         }
     }
@@ -363,8 +452,14 @@ TEST_CASE(kv_power_loss_stress, "KVDB", "KV power-loss stress over 50 iterations
         TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, "KOK", val, (uint16_t)sizeof(val)));
 
         uint8_t out[32]; uint16_t out_len = 0;
-        TEST_ASSERT_RDB_OK(rdb_kvdb_get(&g_kv_db, "KOK", out, sizeof(out), &out_len));
+        TEST_ASSERT_RDB_OK(trace_kv_get(&g_kv_db, "KOK", out, sizeof(out), &out_len));
         TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(val));
+        TEST_ASSERT_MEM_EQ(out, val, sizeof(val));
+
+        /* Delete + re-write to verify GC after power-loss recovery */
+        TEST_ASSERT_RDB_OK(trace_kv_del(&g_kv_db, "KOK"));
+        TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, "KOK", val, (uint16_t)sizeof(val)));
+        TEST_ASSERT_RDB_OK(trace_kv_get(&g_kv_db, "KOK", out, sizeof(out), &out_len));
         TEST_ASSERT_MEM_EQ(out, val, sizeof(val));
     }
     return 0;
@@ -392,6 +487,11 @@ TEST_CASE(ts_power_loss_stress, "TSDB", "TS power-loss stress over 50 iterations
         TEST_ASSERT_EQ(out_time, 2u);
         TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(data));
         TEST_ASSERT_MEM_EQ(out_buf, data, sizeof(data));
+
+        /* Verify range query works after power-loss recovery */
+        ts_wg_ctx_t qctx = { 0 };
+        TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db, 1u, 2u, ts_wg_query_cb, &qctx));
+        TEST_ASSERT_GT(qctx.n, 0u);
     }
     return 0;
 }
@@ -431,24 +531,55 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
     uint8_t val[64];
     memset(val, 0x9Au, sizeof(val));
 
-    uint32_t kv_loops = 0;
+    uint32_t kv_loops = 0, kv_gets = 0;
+    uint8_t readback[64];
     while (g_kv_db.stats.gc_runs < WEAR_KV_GC_TGT && kv_loops < WEAR_MAX_LOOPS) {
         for (int i = 0; i < 30; i++) {
             key[1] = (char)('0' + (i / 10));
             key[2] = (char)('0' + (i % 10));
             TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, key, val, (uint16_t)sizeof(val)));
+
+            /* Periodic read verification: every 500th write */
+            if ((kv_loops * 30 + i) % 500 == 0 && kv_loops > 0) {
+                uint16_t out_len = 0;
+                TEST_ASSERT_RDB_OK(trace_kv_get(&g_kv_db, key, readback, sizeof(readback), &out_len));
+                TEST_ASSERT_MEM_EQ(readback, val, sizeof(val));
+                kv_gets++;
+            }
         }
         kv_loops++;
     }
+    /* Final readback: all 30 keys should be readable after GC cycles */
+    for (int i = 0; i < 30; i++) {
+        key[1] = (char)('0' + (i / 10));
+        key[2] = (char)('0' + (i % 10));
+        uint16_t out_len = 0;
+        TEST_ASSERT_RDB_OK(trace_kv_get(&g_kv_db, key, readback, sizeof(readback), &out_len));
+        TEST_ASSERT_MEM_EQ(readback, val, sizeof(val));
+        kv_gets++;
+    }
+    trace_event(&g_trace, "  [WEAR-KV] GC=%u loops=%u gets=%u",
+                g_kv_db.stats.gc_runs, kv_loops, kv_gets);
 
     uint8_t data[128];
     memset(data, 0x6Cu, sizeof(data));
 
-    uint32_t ts_loops = 0, time = 1;
+    uint32_t ts_loops = 0, time = 1, ts_queries = 0;
     while (g_ts_db.stats.sector_rotations < WEAR_TS_ROT_TGT && ts_loops < WEAR_MAX_LOOPS) {
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_ts_db, time++, data, (uint16_t)sizeof(data)));
+
+        /* Periodic TS query: every 1000 appends */
+        if ((ts_loops % 1000) == 0 && ts_loops > 0 && time > 100u) {
+            ts_wg_ctx_t qctx = { 0 };
+            TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db,
+                time - 50u, time - 1u, ts_wg_query_cb, &qctx));
+            TEST_ASSERT_GT(qctx.n, 0u);
+            ts_queries++;
+        }
         ts_loops++;
     }
+    trace_event(&g_trace, "  [WEAR-TS] rotations=%u loops=%u queries=%u",
+                g_ts_db.stats.sector_rotations, ts_loops, ts_queries);
 
     uint32_t kv_min = 0xFFFFFFFFu, kv_max = 0, kv_sum = 0;
     for (uint32_t i = 0; i < KV_SECTOR_CNT; i++) {
