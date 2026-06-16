@@ -92,7 +92,8 @@ static int generate_kvdb(const char *out_dir)
 {
     sim_flash_t flash;
     rdb_kvdb_t db;
-    rdb_kv_sector_meta_t meta[SECTOR_CNT];
+    uint8_t meta_buf[SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
     rdb_partition_t part = {
         .name = "rdbdump-kvdb",
         .base_addr = 0,
@@ -109,7 +110,7 @@ static int generate_kvdb(const char *out_dir)
     g_flash = &flash;
     memset(&flash, 0, sizeof(flash));
     memset(&db, 0, sizeof(db));
-    memset(meta, 0, sizeof(meta));
+    memset(meta_buf, 0, sizeof(meta_buf));
     if (sim_flash_init(&flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, PAGE_SIZE, 0) != 0) return -1;
     db.part = &part;
     db.sectors = meta;
