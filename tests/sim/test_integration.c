@@ -531,7 +531,7 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
     uint8_t val[64];
     memset(val, 0x9Au, sizeof(val));
 
-    uint32_t kv_loops = 0, kv_gets = 0;
+    uint32_t kv_loops = 0, kv_gets = 0, kv_dels = 0;
     uint8_t readback[64];
     while (g_kv_db.stats.gc_runs < WEAR_KV_GC_TGT && kv_loops < WEAR_MAX_LOOPS) {
         for (int i = 0; i < 30; i++) {
@@ -546,6 +546,14 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
                 TEST_ASSERT_MEM_EQ(readback, val, sizeof(val));
                 kv_gets++;
             }
+
+            /* Periodic delete+rewrite: every 2000th write — exercises
+               mark_dead under sustained GC wear-leveling pressure */
+            if ((kv_loops * 30 + i) % 2000 == 0 && kv_loops > 0 && i > 0) {
+                TEST_ASSERT_RDB_OK(trace_kv_del(&g_kv_db, key));
+                TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, key, val, (uint16_t)sizeof(val)));
+                kv_dels++;
+            }
         }
         kv_loops++;
     }
@@ -558,8 +566,8 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
         TEST_ASSERT_MEM_EQ(readback, val, sizeof(val));
         kv_gets++;
     }
-    trace_event(&g_trace, "  [WEAR-KV] GC=%u loops=%u gets=%u",
-                g_kv_db.stats.gc_runs, kv_loops, kv_gets);
+    trace_event(&g_trace, "  [WEAR-KV] GC=%u loops=%u gets=%u dels=%u",
+                g_kv_db.stats.gc_runs, kv_loops, kv_gets, kv_dels);
 
     uint8_t data[128];
     memset(data, 0x6Cu, sizeof(data));
