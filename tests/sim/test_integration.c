@@ -623,7 +623,9 @@ static void post_test_integration_sectors(const char *name, int result, void *ct
 {
     (void)name; (void)result; (void)ctx;
     trace_kvdb_sector_summary(&g_trace, &g_kv_db);
+    trace_kvdb_stats(&g_trace, &g_kv_db);
     trace_tsdb_sector_summary(&g_trace, &g_ts_db);
+    trace_tsdb_stats(&g_trace, &g_ts_db);
 }
 
 int main(void)
