@@ -74,7 +74,10 @@ int rocketdb_interface_flash_read(void *ctx, uint32_t addr, uint8_t* buf, size_t
  *            - 0 success
  *            - non-zero write failed
  * @note      Must respect NOR flash 1->0 bit-flip semantics.
- *            Caller guarantees addr and len are write-granularity aligned.
+ *            Caller guarantees addr and len are write-granularity aligned
+ *            for data payloads.  Single-byte state-transition writes
+ *            (commit byte, mark_dead) occur at addr+1 regardless of
+ *            write_gran and rely on NOR flash byte-program capability.
  */
 int rocketdb_interface_flash_write(void *ctx, uint32_t addr, const uint8_t* buf, size_t len);
 

@@ -2019,8 +2019,10 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
         db->sectors[db->active_sec].write_off + need <= db->part->sector_size)
         return RDB_OK;
 
-    /* Last resort: rotate to a fresh sector */
-    if (count_erased(db) >= 1u) {
+    /* Last resort: rotate to a fresh sector.
+       Guard with the K-1 invariant (> gc_reserve) so rotation never
+       consumes the last erased sector below the GC safety margin. */
+    if (count_erased(db) > db->gc_reserve) {
         if (rotate(db) == 0) {
             if (need == 0)
                 return RDB_OK;

@@ -633,14 +633,19 @@ static rdb_err_t ts_rotate(rdb_tsdb_t* db) {
     if (next == db->tail_sec && db->sector_cnt > 1u) {
         uint32_t lost = 0;
 
-        /* Read sector header to get time_base and end_off for accurate scan.
-           ts_scan() recovers WRITING records in-place (promote/demote) so
-           the lost count includes records that were mid-write at crash. */
+        /* Read sector header to get time_base and end_off.
+           Scan without WRITING recovery (RDB_FALSE) — only VALID records
+           count toward lost.  Recovering WRITING records here would
+           include commit-failed records that were intentionally abandoned
+           (Phase B write error) and were never added to total_count,
+           causing a persistent undercount drift.  Crash-interrupted
+           records in the head sector are recovered by init Phase 3;
+           rotation is not the right place for recovery. */
         rdb_ts_sector_hdr_t h;
         uint8_t old_tail = db->tail_sec;
         if (fl_read(db, ts_sec_addr(db, old_tail), &h, sizeof(h)) == 0) {
             uint32_t max_off = (h.end_off != 0xFFFFu) ? h.end_off : db->sector_size;
-            lost = ts_scan(db, old_tail, h.time_base, max_off, NULL, NULL, RDB_TRUE);
+            lost = ts_scan(db, old_tail, h.time_base, max_off, NULL, NULL, RDB_FALSE);
         }
 
         if (lost > 0) {
@@ -747,6 +752,11 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 
     /* Guard ts_data_cap() against underflow: sector must hold at least the header */
     if (db->sector_size <= ts_data_start(db))
+        return RDB_ERR_PARAM;
+
+    /* On-flash end_off and count are uint16_t (max 65535, 0xFFFF sentinel
+       for unsealed).  Reject sectors > 65535 to prevent silent truncation. */
+    if (db->sector_size > 65535u)
         return RDB_ERR_PARAM;
 
     /* ── Compute max_data_len ──

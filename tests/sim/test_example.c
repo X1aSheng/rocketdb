@@ -23,7 +23,10 @@ typedef struct {
 
 static uint8_t            g_flash_buf[EX_FLASH_SIZE];
 static sim_flash_t        g_flash;
-static rdb_kv_sector_meta_t g_kv_meta[EX_SECTOR_CNT];
+/* Meta buffer sized for sector metadata + bloom filter bitmaps */
+#define META_BUF_SZ (EX_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES))
+static uint8_t               g_kv_meta_buf[META_BUF_SZ];
+static rdb_kv_sector_meta_t *g_kv_meta = (rdb_kv_sector_meta_t *)g_kv_meta_buf;
 static rdb_partition_t    g_part;
 static rdb_kvdb_t         g_kvdb;
 static trace_ctx_t        g_trace;

@@ -1,4 +1,13 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.15)
+
+# RocketDB requires Clang or GCC.  MSVC is not supported because the project
+# relies on __attribute__((constructor)) for test registration and
+# _Static_assert with typedef fallback for C99 compatibility.
+if(MSVC)
+    message(FATAL_ERROR "RocketDB requires Clang or GCC.  MSVC is not supported.\n"
+        "Install Clang: https://llvm.org\n"
+        "Or use: cmake -G \"MinGW Makefiles\" -DCMAKE_C_COMPILER=gcc")
+endif()
 
 # Windows Clang builds need a resource compiler during compiler platform setup.
 # Detect LLVM's llvm-rc before project() so users do not have to pass
@@ -201,6 +210,13 @@ add_library(rocketdb STATIC
 )
 rocketdb_configure_target(rocketdb)
 
+# KV key-to-address cache and bloom filter sizing.
+# PUBLIC so all consumers (tests, examples, embedded) agree on rdb_kvdb_t layout.
+target_compile_definitions(rocketdb PUBLIC
+    RDB_KV_CACHE_SIZE=64
+    RDB_BLOOM_BITS=256
+)
+
 # -----------------------------------------------------------------------------
 # Example Programs
 # -----------------------------------------------------------------------------
@@ -288,12 +304,6 @@ if(BUILD_TESTS)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     endforeach()
-
-    # test_kvdb_cache enables the KV key cache for cache-specific test coverage.
-    target_compile_definitions(test_kvdb_cache PRIVATE
-        RDB_KV_CACHE_SIZE=64
-        RDB_BLOOM_BITS=256
-    )
 
     add_executable(test_rdbdump_dump
         tests/sim/test_rdbdump_dump.c

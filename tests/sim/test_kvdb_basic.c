@@ -31,7 +31,10 @@ static uint8_t              g_flash_buf[FLASH_SIZE];
 static sim_flash_t          g_flash;
 static rdb_partition_t      g_part;
 static rdb_kvdb_t           g_db;
-static rdb_kv_sector_meta_t g_meta[KV_SECTOR_CNT];
+/* Meta buffer sized for sector metadata + bloom filter bitmaps */
+#define META_BUF_SZ (KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES))
+static uint8_t               g_meta_buf[META_BUF_SZ];
+static rdb_kv_sector_meta_t *g_meta = (rdb_kv_sector_meta_t *)g_meta_buf;
 static trace_ctx_t          g_trace;
 
 static int fl_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {

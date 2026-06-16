@@ -80,9 +80,10 @@ TEST_CASE(fault_write_fail_nth, "Fault", "Nth write failure, data survives recov
 {
     (void)ctx;
 
-    rdb_partition_t part;
-    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
-    rdb_kvdb_t db;
+    static rdb_partition_t part;
+    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
+    static rdb_kvdb_t db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write 3 keys WITHOUT faults */
@@ -132,9 +133,10 @@ TEST_CASE(fault_write_fail_probability, "Fault", "Probabilistic write failure")
 {
     (void)ctx;
 
-    rdb_partition_t part;
-    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
-    rdb_kvdb_t db;
+    static rdb_partition_t part;
+    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
+    static rdb_kvdb_t db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Enable 20% write failure probability */
@@ -180,9 +182,10 @@ TEST_CASE(fault_erase_fail, "Fault", "Erase failure during GC is handled gracefu
 {
     (void)ctx;
 
-    rdb_partition_t part;
-    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
-    rdb_kvdb_t db;
+    static rdb_partition_t part;
+    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
+    static rdb_kvdb_t db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Fill all sectors with data to force GC (which needs erase) */
@@ -235,9 +238,10 @@ TEST_CASE(fault_power_loss, "Fault", "Byte-level power loss with partial write r
 {
     (void)ctx;
 
-    rdb_partition_t part;
-    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
-    rdb_kvdb_t db;
+    static rdb_partition_t part;
+    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
+    static rdb_kvdb_t db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write pre-fault data */
@@ -298,9 +302,10 @@ TEST_CASE(fault_data_corruption, "Fault", "CRC error detected on corrupted value
 {
     (void)ctx;
 
-    rdb_partition_t part;
-    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
-    rdb_kvdb_t db;
+    static rdb_partition_t part;
+    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
+    static rdb_kvdb_t db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write target record */
@@ -373,9 +378,10 @@ TEST_CASE(fault_read_fail, "Fault", "Read failure injection and recovery")
 {
     (void)ctx;
 
-    rdb_partition_t part;
-    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
-    rdb_kvdb_t db;
+    static rdb_partition_t part;
+    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
+    static rdb_kvdb_t db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write data without faults */
@@ -427,9 +433,10 @@ TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC")
 {
     (void)ctx;
 
-    rdb_partition_t part;
-    rdb_kv_sector_meta_t meta[KV_SECTOR_CNT];
-    rdb_kvdb_t db;
+    static rdb_partition_t part;
+    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
+    static rdb_kvdb_t db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write target record */

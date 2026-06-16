@@ -218,6 +218,11 @@ extern "C" {
 #define RDB_BLOOM_MAYBE(bm, h)     1  /* Always "may exist" when disabled */
 #endif
 
+/* Bloom filter sizing: the 0x1F mask in RDB_BLOOM_SET/MAYBE is hardcoded
+   for 256 bits (32 bytes).  Reject any other non-zero value at compile time. */
+RDB_STATIC_ASSERT(RDB_BLOOM_BITS == 0 || RDB_BLOOM_BITS == 256,
+    "RDB_BLOOM_BITS must be 0 (disabled) or 256");
+
 /** @brief Key fingerprint slot for the KV cache.
  *
  * Each slot stores a key fingerprint (hash + length + 8-byte prefix) and
@@ -337,6 +342,13 @@ RDB_STATIC_ASSERT(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 32u,
     "RDB_MAX_KEY_LEN must be 1..32");
 RDB_STATIC_ASSERT(RDB_STACK_BUF_SIZE >= 32u,
     "RDB_STACK_BUF_SIZE must be >= 32 (record header + minimum payload)");
+RDB_STATIC_ASSERT(RDB_MAX_SECTORS <= 255,
+    "RDB_MAX_SECTORS must be <= 255 (sector indices are uint8_t)");
+RDB_STATIC_ASSERT((RDB_MIN_SECTOR_SIZE & (RDB_MIN_SECTOR_SIZE - 1u)) == 0,
+    "RDB_MIN_SECTOR_SIZE must be a power of 2");
+RDB_STATIC_ASSERT(RDB_FLASH_PAGE_SIZE == 0 ||
+    (RDB_FLASH_PAGE_SIZE & (RDB_FLASH_PAGE_SIZE - 1u)) == 0,
+    "RDB_FLASH_PAGE_SIZE must be 0 or a power of 2");
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  §2  Error codes
