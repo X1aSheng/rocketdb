@@ -46,16 +46,10 @@ Timestamped snapshots of project reviews, code audits, and test results.
 
 | Document | Date | Focus |
 |----------|------|-------|
-| [CODE-REVIEW-260616.md](reports/CODE-REVIEW-260616.md) | 2026-06-16 | Full codebase audit: 10 findings ranked by severity |
-| [PROJECT-REVIEW-260613-161500.md](reports/PROJECT-REVIEW-260613-161500.md) | 2026-06-13 | v1.2.0 review: CI, Docker, batch scripts |
-| [PROJECT-REVIEW-260613-103231.md](reports/PROJECT-REVIEW-260613-103231.md) | 2026-06-13 | v1.2.0 review: version sync, code quality |
-| [FUNCTION-NAMING-REVIEW-260613.md](reports/FUNCTION-NAMING-REVIEW-260613.md) | 2026-06-13 | Function naming semantic analysis |
-| [PROJECT-REVIEW-260604-001500.md](reports/PROJECT-REVIEW-260604-001500.md) | 2026-06-04 | Zephyr Kconfig fixes |
-| [PROJECT-REVIEW-260604-000000.md](reports/PROJECT-REVIEW-260604-000000.md) | 2026-06-04 | Zephyr port single-byte alignment |
-| [PROJECT-REVIEW-260603-142000.md](reports/PROJECT-REVIEW-260603-142000.md) | 2026-06-03 | Review snapshot |
-| [PROJECT-REVIEW-260525-230807.md](reports/PROJECT-REVIEW-260525-230807.md) | 2026-05-25 | v1.3.0 feature review |
-| [PROJECT-REVIEW-260517-160748.md](reports/PROJECT-REVIEW-260517-160748.md) | 2026-05-17 | Early review record |
+| [PROJECT-REVIEW-260616-merged.md](reports/PROJECT-REVIEW-260616-merged.md) | 2026-06-16 | **合并综合报告**: 9 次审查、40+ 发现、全部修复状态 |
 | [RocketKV/](reports/RocketKV/) | 2025-12 – 2026-02 | Historical KVDB/TSDB test reports |
+
+> 原始 9 份独立报告已合并为单一综合文档。详细代码审计见合并报告第 9 节。
 
 ## SpecKit (`SpecKit/`)
 
