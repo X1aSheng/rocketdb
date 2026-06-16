@@ -1834,6 +1834,139 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
  *    • Average overhead: ~10-50ms per ensure_space call (test verified)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ── GC Phase 1: zero-live fast reclaim ──
+ * Find a sector with no live records but garbage to reclaim.
+ * Prefer the least-erased among candidates for wear balance. */
+static uint8_t gc_select_zero_live(rdb_kvdb_t* db, const gc_prep_t* cache) {
+    uint8_t  best = 0xFF;
+    uint32_t best_ec = 0xFFFFFFFFu;
+    for (uint8_t s = 0; s < db->sector_cnt; s++) {
+        if (s == db->active_sec)
+            continue;
+        if (cache[s].status != RDB_SEC_ACTIVE &&
+            cache[s].status != RDB_SEC_SEALED)
+            continue;
+        if (cache[s].live == 0 && cache[s].garbage > 0 &&
+            cache[s].ec < best_ec) {
+            best = s;
+            best_ec = cache[s].ec;
+        }
+    }
+    return best;
+}
+
+/* ── GC Phase 2: scored selection ──
+ * Adaptive garbage threshold based on erased-sector headroom.
+ * Composite score: garbage% × W_GARBAGE + wear% × W_WEAR + capacity% × W_CAPACITY. */
+static uint8_t gc_select_scored(rdb_kvdb_t* db, const gc_prep_t* cache,
+    uint32_t g_min_ec, uint32_t ec_range) {
+    uint8_t erased = count_erased(db);
+    uint8_t thresh;
+    if (erased > db->gc_reserve)
+        thresh = RDB_GC_GARBAGE_PCT;   /* Ample erased → strict threshold */
+    else if (erased == db->gc_reserve)
+        thresh = 5u;                    /* At margin → moderate threshold */
+    else
+        thresh = 1u;                    /* Low on erased → aggressive GC */
+
+    uint8_t  best_v = 0xFF;
+    uint32_t best_score = 0;
+
+    for (uint8_t s = 0; s < db->sector_cnt; s++) {
+        if (s == db->active_sec)
+            continue;
+        if (cache[s].status != RDB_SEC_ACTIVE &&
+            cache[s].status != RDB_SEC_SEALED)
+            continue;
+        if (cache[s].garbage == 0)
+            continue;
+
+        uint32_t used = db->sectors[s].write_off - data_start(db);
+        if (used == 0)
+            continue;
+
+        uint32_t gpct = (cache[s].garbage * 100u) / used;
+        if (gpct < thresh)
+            continue;
+
+        if (cache[s].live > gc_avail(db, s))
+            continue;
+
+        uint32_t wpct = ((cache[s].ec - g_min_ec) * 100u) / ec_range;
+        uint32_t cpct = (cache[s].live == 0) ? 100u
+            : 100u - (uint32_t)RDB_MIN((cache[s].live * 100u) / data_cap(db), 100u);
+
+        uint32_t score = gpct * RDB_GC_W_GARBAGE +
+                         wpct * RDB_GC_W_WEAR +
+                         cpct * RDB_GC_W_CAPACITY;
+        if (score > best_score) {
+            best_score = score;
+            best_v = s;
+        }
+    }
+    return best_v;
+}
+
+/* ── GC Phase 3: forced degradation ──
+ * When no sector meets the score threshold, pick the one with the most
+ * garbage among candidates that won't overflow available space. */
+static uint8_t gc_select_forced(rdb_kvdb_t* db, const gc_prep_t* cache) {
+    uint8_t  best = 0xFF;
+    uint32_t best_gb = 0;
+    for (uint8_t s = 0; s < db->sector_cnt; s++) {
+        if (s == db->active_sec)
+            continue;
+        if (cache[s].status != RDB_SEC_ACTIVE &&
+            cache[s].status != RDB_SEC_SEALED)
+            continue;
+        if (cache[s].garbage == 0)
+            continue;
+        if (cache[s].live > gc_avail(db, s))
+            continue;
+        if (cache[s].garbage > best_gb) {
+            best_gb = cache[s].garbage;
+            best = s;
+        }
+    }
+    return best;
+}
+
+/* ── GC Phase 4: static wear leveling ──
+ * When no sector has enough garbage, relocate the least-worn non-active
+ * sector if wear imbalance exceeds RDB_GC_WEAR_THRESHOLD. */
+static uint8_t gc_select_wear_level(rdb_kvdb_t* db, const gc_prep_t* cache) {
+    uint32_t all_min = 0xFFFFFFFFu, all_max = 0;
+    for (uint8_t s = 0; s < db->sector_cnt; s++) {
+        if (db->sectors[s].erase_cnt < all_min)
+            all_min = db->sectors[s].erase_cnt;
+        if (db->sectors[s].erase_cnt > all_max)
+            all_max = db->sectors[s].erase_cnt;
+    }
+    if (all_min == 0xFFFFFFFFu)
+        all_min = 0;
+
+    if (all_max - all_min < RDB_GC_WEAR_THRESHOLD)
+        return 0xFF;
+
+    /* Find least-worn non-erased, non-active sector */
+    uint8_t  min_s = 0xFF;
+    uint32_t min_ec_nea = 0xFFFFFFFFu;
+    for (uint8_t s = 0; s < db->sector_cnt; s++) {
+        if (db->sectors[s].status == RDB_SEC_ERASED)
+            continue;
+        if (s == db->active_sec)
+            continue;
+        if (db->sectors[s].erase_cnt < min_ec_nea) {
+            min_ec_nea = db->sectors[s].erase_cnt;
+            min_s = s;
+        }
+    }
+
+    if (min_s != 0xFF && cache[min_s].live <= gc_avail(db, min_s))
+        return min_s;
+    return 0xFF;
+}
+
 static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
     uint32_t will_free, uint8_t free_sec) {
     /* Logical capacity check: even if all garbage were reclaimed,
@@ -1852,7 +1985,7 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
         count_erased(db) > db->gc_reserve)
         return RDB_OK;
 
-    /* ── GC loop: run up to sector_cnt rounds of victim selection ── */
+    /* ── GC loop: run up to sector_cnt rounds of 4-phase victim selection ── */
     for (uint8_t round = 0; round < db->sector_cnt; round++) {
         if (count_erased(db) >= (uint8_t)(db->gc_reserve + 1u))
             break;
@@ -1884,129 +2017,14 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
             g_min_ec = 0;
         uint32_t ec_range = (g_max_ec > g_min_ec) ? g_max_ec - g_min_ec : 1;
 
-        uint8_t victim = 0xFF;
-
-        /* ── Phase 1: zero-live fast reclaim ── */
-        {
-            uint8_t  best = 0xFF;
-            uint32_t best_ec = 0xFFFFFFFFu;
-            for (uint8_t s = 0; s < db->sector_cnt; s++) {
-                if (s == db->active_sec)
-                    continue;
-                if (cache[s].status != RDB_SEC_ACTIVE &&
-                    cache[s].status != RDB_SEC_SEALED)
-                    continue;
-                if (cache[s].live == 0 && cache[s].garbage > 0 &&
-                    cache[s].ec < best_ec) {
-                    best = s;
-                    best_ec = cache[s].ec;
-                }
-            }
-            victim = best;
-        }
-
-        /* ── Phase 2: scored selection ── */
-        if (victim == 0xFF) {
-            uint8_t erased = count_erased(db);
-            uint8_t thresh;
-            if (erased > db->gc_reserve)
-                thresh = RDB_GC_GARBAGE_PCT;   /* Ample erased → strict threshold */
-            else if (erased == db->gc_reserve)
-                thresh = 5u;                    /* At margin → moderate threshold */
-            else
-                thresh = 1u;                    /* Low on erased → aggressive GC */
-
-            uint8_t  best_v = 0xFF;
-            uint32_t best_score = 0;
-
-            for (uint8_t s = 0; s < db->sector_cnt; s++) {
-                if (s == db->active_sec)
-                    continue;
-                if (cache[s].status != RDB_SEC_ACTIVE &&
-                    cache[s].status != RDB_SEC_SEALED)
-                    continue;
-                if (cache[s].garbage == 0)
-                    continue;
-
-                uint32_t used = db->sectors[s].write_off - data_start(db);
-                if (used == 0)
-                    continue;
-
-                uint32_t gpct = (cache[s].garbage * 100u) / used;
-                if (gpct < thresh)
-                    continue;
-
-                if (cache[s].live > gc_avail(db, s))
-                    continue;
-
-                /* Composite score: garbage% × W_GARBAGE + wear% × W_WEAR + capacity% × W_CAPACITY
-                 * Weights are configurable via RDB_GC_W_* macros. */
-                uint32_t wpct = ((cache[s].ec - g_min_ec) * 100u) / ec_range;
-                uint32_t cpct = (cache[s].live == 0) ? 100u : 100u - (uint32_t)RDB_MIN((cache[s].live * 100u) / data_cap(db), 100u);
-
-                uint32_t score = gpct * RDB_GC_W_GARBAGE + wpct * RDB_GC_W_WEAR + cpct * RDB_GC_W_CAPACITY;
-                if (score > best_score) {
-                    best_score = score;
-                    best_v = s;
-                }
-            }
-            victim = best_v;
-        }
-
-        /* ── Phase 3: forced degradation ── */
-        if (victim == 0xFF) {
-            uint8_t  best = 0xFF;
-            uint32_t best_gb = 0;
-            for (uint8_t s = 0; s < db->sector_cnt; s++) {
-                if (s == db->active_sec)
-                    continue;
-                if (cache[s].status != RDB_SEC_ACTIVE &&
-                    cache[s].status != RDB_SEC_SEALED)
-                    continue;
-                if (cache[s].garbage == 0)
-                    continue;
-                if (cache[s].live > gc_avail(db, s))
-                    continue;
-                if (cache[s].garbage > best_gb) {
-                    best_gb = cache[s].garbage;
-                    best = s;
-                }
-            }
-            victim = best;
-        }
-
-        /* ── Phase 4: static wear leveling ── */
-        if (victim == 0xFF) {
-            uint32_t all_min = 0xFFFFFFFFu, all_max = 0;
-            for (uint8_t s = 0; s < db->sector_cnt; s++) {
-                if (db->sectors[s].erase_cnt < all_min)
-                    all_min = db->sectors[s].erase_cnt;
-                if (db->sectors[s].erase_cnt > all_max)
-                    all_max = db->sectors[s].erase_cnt;
-            }
-            if (all_min == 0xFFFFFFFFu)
-                all_min = 0;
-
-            /* Find least-worn non-erased, non-active sector */
-            uint8_t  min_s = 0xFF;
-            uint32_t min_ec_nea = 0xFFFFFFFFu;
-            for (uint8_t s = 0; s < db->sector_cnt; s++) {
-                if (db->sectors[s].status == RDB_SEC_ERASED)
-                    continue;
-                if (s == db->active_sec)
-                    continue;
-                if (db->sectors[s].erase_cnt < min_ec_nea) {
-                    min_ec_nea = db->sectors[s].erase_cnt;
-                    min_s = s;
-                }
-            }
-
-            if (min_s != 0xFF &&
-                all_max - all_min >= RDB_GC_WEAR_THRESHOLD) {
-                if (cache[min_s].live <= gc_avail(db, min_s))
-                    victim = min_s;
-            }
-        }
+        /* 4-phase victim selection */
+        uint8_t victim = gc_select_zero_live(db, cache);
+        if (victim == 0xFF)
+            victim = gc_select_scored(db, cache, g_min_ec, ec_range);
+        if (victim == 0xFF)
+            victim = gc_select_forced(db, cache);
+        if (victim == 0xFF)
+            victim = gc_select_wear_level(db, cache);
 
         if (victim == 0xFF)
             break; /* No viable victim found */
@@ -2510,6 +2528,81 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
  *  @return     RDB_OK on success, or an error code.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  kv_write_large_record — Multi-step write for records > RDB_STACK_BUF_SIZE
+ *
+ *  Writes the record header, key+padding, and value+padding as separate
+ *  flash operations.  On any write failure, marks the record dead and
+ *  returns RDB_ERR_FLASH (caller must fl_unlock).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static rdb_err_t kv_write_large_record(rdb_kvdb_t* db,
+    const rdb_kv_record_hdr_t* rh,
+    const char* key, uint8_t kl,
+    const void* val, uint16_t len,
+    uint32_t ka, uint32_t va, uint32_t g, uint32_t wa) {
+    /* Write record header */
+    if (fl_write(db, wa, rh, sizeof(*rh)) != 0) {
+        db->stats.flash_errors++;
+        if (kv_mark_dead(db, wa) != 0)
+            db->stats.flash_errors++;
+        return RDB_ERR_FLASH;
+    }
+
+    /* Write key + key alignment padding */
+    {
+        uint8_t kb[RDB_MAX_KEY_LEN + 8];
+        memcpy(kb, key, kl);
+        if (ka > kl)
+            memset(kb + kl, 0xFF, ka - kl);
+        if (fl_write(db, wa + KV_REC_SZ, kb, ka) != 0) {
+            db->stats.flash_errors++;
+            if (kv_mark_dead(db, wa) != 0)
+                db->stats.flash_errors++;
+            return RDB_ERR_FLASH;
+        }
+    }
+
+    /* Write value data plus alignment padding in streaming chunks */
+    if (len > 0) {
+        uint32_t       max_chunk = RDB_STACK_BUF_SIZE;
+        uint32_t       rem = va;
+        uint32_t       data_pos = 0;
+        uint32_t       wpos = wa + KV_REC_SZ + ka;
+        const uint8_t* vp = (const uint8_t*)val;
+        uint8_t        buf[RDB_STACK_BUF_SIZE];
+
+        max_chunk -= max_chunk % g;
+        if (max_chunk == 0)
+            max_chunk = g;
+
+        while (rem) {
+            uint32_t ch = RDB_MIN(rem, max_chunk);
+            RDB_PAGE_CLAMP(ch, wpos);
+            uint32_t data_ch = 0;
+
+            if (data_pos < len) {
+                data_ch = RDB_MIN(ch, (uint32_t)len - data_pos);
+                memcpy(buf, vp + data_pos, data_ch);
+            }
+            if (data_ch < ch)
+                memset(buf + data_ch, 0xFF, ch - data_ch);
+
+            rem -= ch;
+            data_pos += data_ch;
+
+            if (fl_write(db, wpos, buf, ch) != 0) {
+                db->stats.flash_errors++;
+                if (kv_mark_dead(db, wa) != 0)
+                    db->stats.flash_errors++;
+                return RDB_ERR_FLASH;
+            }
+            wpos += ch;
+        }
+    }
+
+    return RDB_OK;
+}
+
 rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
     const void* val, uint16_t len) {
     if (!db || !db->initialized)
@@ -2610,71 +2703,11 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
             return RDB_ERR_FLASH;
         }
     } else {
-        /* Large-record multi-step write.
-           For records that exceed the stack buffer, write header,
-           key, and value as separate flash operations. */
-
-        /* Write record header */
-        if (fl_write(db, wa, &rh, sizeof(rh)) != 0) {
-            db->stats.flash_errors++;
-            if (kv_mark_dead(db, wa) != 0)
-                db->stats.flash_errors++;
+        rc = kv_write_large_record(db, &rh, key, kl, val, len,
+            ka, va, g, wa);
+        if (rc != RDB_OK) {
             fl_unlock(db);
-            return RDB_ERR_FLASH;
-        }
-
-        /* Write key + key alignment padding */
-        {
-            uint8_t kb[RDB_MAX_KEY_LEN + 8];
-            memcpy(kb, key, kl);
-            if (ka > kl)
-                memset(kb + kl, 0xFF, ka - kl);
-            if (fl_write(db, wa + KV_REC_SZ, kb, ka) != 0) {
-                db->stats.flash_errors++;
-                if (kv_mark_dead(db, wa) != 0)
-                    db->stats.flash_errors++;
-                fl_unlock(db);
-                return RDB_ERR_FLASH;
-            }
-        }
-
-        /* Write value data plus alignment padding in streaming chunks */
-        if (len > 0) {
-            uint32_t       max_chunk = RDB_STACK_BUF_SIZE;
-            uint32_t       rem = va;
-            uint32_t       data_pos = 0;
-            uint32_t       wpos = wa + KV_REC_SZ + ka;
-            const uint8_t* vp = (const uint8_t*)val;
-            uint8_t        buf[RDB_STACK_BUF_SIZE];
-
-            max_chunk -= max_chunk % g;
-            if (max_chunk == 0)
-                max_chunk = g;
-
-            while (rem) {
-                uint32_t ch = RDB_MIN(rem, max_chunk);
-                RDB_PAGE_CLAMP(ch, wpos);
-                uint32_t data_ch = 0;
-
-                if (data_pos < len) {
-                    data_ch = RDB_MIN(ch, (uint32_t)len - data_pos);
-                    memcpy(buf, vp + data_pos, data_ch);
-                }
-                if (data_ch < ch)
-                    memset(buf + data_ch, 0xFF, ch - data_ch);
-
-                rem -= ch;
-                data_pos += data_ch;
-
-                if (fl_write(db, wpos, buf, ch) != 0) {
-                    db->stats.flash_errors++;
-                    if (kv_mark_dead(db, wa) != 0)
-                        db->stats.flash_errors++;
-                    fl_unlock(db);
-                    return RDB_ERR_FLASH;
-                }
-                wpos += ch;
-            }
+            return rc;
         }
     }
 

@@ -500,6 +500,123 @@ static int ts_mark_dead(const rdb_tsdb_t* db, uint32_t addr) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  ts_recover_head — Recover head sector state during init
+ *
+ *  Classifies the head sector and handles two cases:
+ *    SEALED: extract metadata from sector header, scan for last_time.
+ *    ACTIVE: scan records, recover WRITING (promote/demote by CRC),
+ *            find the write frontier (head_off).
+ *
+ *  Sets db->head_seq, head_time_base, head_count, head_off, and last_time.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void ts_recover_head(rdb_tsdb_t* db, uint8_t head_s) {
+    rdb_ts_sector_hdr_t hh;
+    ts_cls_t            cls = ts_classify(db, head_s, &hh);
+
+    db->head_sec = head_s;
+    db->head_seq = hh.seq;
+    db->last_time = 0;
+
+    if (cls == TS_SEALED) {
+        /* Head sector is sealed — extract metadata from header */
+        db->head_time_base = hh.time_base;
+        db->head_count = hh.count;
+        db->head_off = hh.end_off;
+
+        /* Find last_time from the sealed head sector's records */
+        if (hh.time_base != RDB_TIME_INVALID && hh.count > 0) {
+            uint32_t base = ts_sec_addr(db, head_s);
+            uint32_t off = ts_data_start(db);
+
+            while (off + TS_REC_SZ <= hh.end_off) {
+                rdb_ts_record_hdr_t rh;
+                if (fl_read(db, base + off, &rh, sizeof(rh)) != 0)
+                    break;
+                if (rh.magic != RDB_TS_RECORD_MAGIC) {
+                    off += ts_corrupt_skip(db);
+                    continue;
+                }
+                uint32_t rsz = ts_rec_size(db, rh.data_len);
+                if (off + rsz > hh.end_off)
+                    break;
+                if (rh.state == RDB_STATE_VALID) {
+                    uint32_t t = hh.time_base + rh.time_delta;
+                    if (t > db->last_time)
+                        db->last_time = t;
+                }
+                off += rsz;
+            }
+        }
+
+        /* Sealed head is full — next append will trigger rotation */
+        db->head_off = db->sector_size;
+
+    } else {
+        /* ACTIVE head — scan records, recover WRITING, find frontier */
+        db->head_time_base = hh.time_base;
+        db->head_count = 0;
+
+        uint32_t base = ts_sec_addr(db, head_s);
+        uint32_t off = ts_data_start(db);
+        uint32_t ss = db->sector_size;
+
+        while (off + TS_REC_SZ <= ss) {
+            rdb_ts_record_hdr_t rh;
+            if (fl_read(db, base + off, &rh, sizeof(rh)) != 0)
+                break;
+
+            /* End of record chain */
+            if (rh.magic == 0xFFu && rh.state == 0xFFu)
+                break;
+
+            /* Corrupt record header — skip */
+            if (rh.magic != RDB_TS_RECORD_MAGIC) {
+                off += ts_corrupt_skip(db);
+                continue;
+            }
+
+            uint32_t rsz = ts_rec_size(db, rh.data_len);
+            if (off + rsz > ss)
+                break;
+
+            /* Recover WRITING records via CRC check */
+            if (rh.state == RDB_STATE_WRITING) {
+                uint16_t calc;
+                uint32_t da = base + off + TS_REC_SZ;
+                if (ts_data_crc(db, da, rh.data_len, &calc) == 0 &&
+                    calc == rh.data_crc) {
+                    /* Data intact → promote to VALID */
+                    uint8_t v = RDB_STATE_VALID;
+                    if (fl_write(db, base + off + 1, &v, 1) == 0) {
+                        db->head_count++;
+                        if (db->head_time_base != RDB_TIME_INVALID) {
+                            uint32_t t = db->head_time_base + rh.time_delta;
+                            if (t > db->last_time)
+                                db->last_time = t;
+                        }
+                    }
+                    /* On write failure: leave as WRITING, will retry next init */
+                } else {
+                    /* Data incomplete → demote to DEAD */
+                    uint8_t d = RDB_STATE_DEAD;
+                    fl_write(db, base + off + 1, &d, 1);
+                    /* On write failure: leave as WRITING, will retry next init */
+                }
+            } else if (rh.state == RDB_STATE_VALID) {
+                db->head_count++;
+                if (db->head_time_base != RDB_TIME_INVALID) {
+                    uint32_t t = db->head_time_base + rh.time_delta;
+                    if (t > db->last_time)
+                        db->last_time = t;
+                }
+            }
+            off += rsz;
+        }
+        db->head_off = off;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Scan sector records — generic forward scanner with callback
  *
  *  Walks the record chain within a sector starting at ts_data_start(), invoking
@@ -867,110 +984,7 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
     /* ══════════════════════════════════════════════════════════════════
      *  Phase 3: Recover head sector state
      * ══════════════════════════════════════════════════════════════════ */
-    rdb_ts_sector_hdr_t hh;
-    ts_cls_t            hcls = ts_classify(db, head_s, &hh);
-
-    db->head_sec = head_s;
-    db->head_seq = hh.seq;
-    db->last_time = 0;
-
-    if (hcls == TS_SEALED) {
-        /* Head sector is sealed — extract metadata from header */
-        db->head_time_base = hh.time_base;
-        db->head_count = hh.count;
-        db->head_off = hh.end_off;
-
-        /* Find last_time from the sealed head sector's records */
-        if (hh.time_base != RDB_TIME_INVALID && hh.count > 0) {
-            uint32_t base = ts_sec_addr(db, head_s);
-            uint32_t off = ts_data_start(db);
-
-            while (off + TS_REC_SZ <= hh.end_off) {
-                rdb_ts_record_hdr_t rh;
-                if (fl_read(db, base + off, &rh, sizeof(rh)) != 0)
-                    break;
-                if (rh.magic != RDB_TS_RECORD_MAGIC) {
-                    off += ts_corrupt_skip(db);
-                    continue;
-                }
-                uint32_t rsz = ts_rec_size(db, rh.data_len);
-                if (off + rsz > hh.end_off)
-                    break;
-                if (rh.state == RDB_STATE_VALID) {
-                    uint32_t t = hh.time_base + rh.time_delta;
-                    if (t > db->last_time)
-                        db->last_time = t;
-                }
-                off += rsz;
-            }
-        }
-
-        /* Sealed head is full — next append will trigger rotation */
-        db->head_off = db->sector_size;
-
-    } else {
-        /* ACTIVE head — scan records, recover WRITING, find frontier */
-        db->head_time_base = hh.time_base;
-        db->head_count = 0;
-
-        uint32_t base = ts_sec_addr(db, head_s);
-        uint32_t off = ts_data_start(db);
-        uint32_t ss = db->sector_size;
-
-        while (off + TS_REC_SZ <= ss) {
-            rdb_ts_record_hdr_t rh;
-            if (fl_read(db, base + off, &rh, sizeof(rh)) != 0)
-                break;
-
-            /* End of record chain */
-            if (rh.magic == 0xFFu && rh.state == 0xFFu)
-                break;
-
-            /* Corrupt record header — skip */
-            if (rh.magic != RDB_TS_RECORD_MAGIC) {
-                off += ts_corrupt_skip(db);
-                continue;
-            }
-
-            uint32_t rsz = ts_rec_size(db, rh.data_len);
-            if (off + rsz > ss)
-                break;
-
-            /* Recover WRITING records via CRC check */
-            if (rh.state == RDB_STATE_WRITING) {
-                uint16_t calc;
-                uint32_t da = base + off + TS_REC_SZ;
-                if (ts_data_crc(db, da, rh.data_len, &calc) == 0 &&
-                    calc == rh.data_crc) {
-                    /* Data intact → promote to VALID */
-                    uint8_t v = RDB_STATE_VALID;
-                    if (fl_write(db, base + off + 1, &v, 1) == 0) {
-                        db->head_count++;
-                        if (db->head_time_base != RDB_TIME_INVALID) {
-                            uint32_t t = db->head_time_base + rh.time_delta;
-                            if (t > db->last_time)
-                                db->last_time = t;
-                        }
-                    }
-                    /* On write failure: leave as WRITING, will retry next init */
-                } else {
-                    /* Data incomplete → demote to DEAD */
-                    uint8_t d = RDB_STATE_DEAD;
-                    fl_write(db, base + off + 1, &d, 1);
-                    /* On write failure: leave as WRITING, will retry next init */
-                }
-            } else if (rh.state == RDB_STATE_VALID) {
-                db->head_count++;
-                if (db->head_time_base != RDB_TIME_INVALID) {
-                    uint32_t t = db->head_time_base + rh.time_delta;
-                    if (t > db->last_time)
-                        db->last_time = t;
-                }
-            }
-            off += rsz;
-        }
-        db->head_off = off;
-    }
+    ts_recover_head(db, head_s);
 
     /* ══════════════════════════════════════════════════════════════════
      *  Phase 4: Count total records across the ring
@@ -1171,6 +1185,63 @@ rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
  *  @return      RDB_OK on success, or an error code.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  ts_write_large_record — Multi-step write for records > RDB_STACK_BUF_SIZE
+ *
+ *  Writes the record header, then streams the data payload plus alignment
+ *  padding in chunks.  On any write failure, marks the record dead and
+ *  returns RDB_ERR_FLASH (caller must fl_unlock).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static rdb_err_t ts_write_large_record(rdb_tsdb_t* db,
+    const rdb_ts_record_hdr_t* rh,
+    const void* data, uint16_t len,
+    uint32_t da, uint32_t wa) {
+    /* Write record header */
+    if (fl_write(db, wa, rh, sizeof(*rh)) != 0) {
+        db->stats.flash_errors++;
+        if (ts_mark_dead(db, wa) != 0)
+            db->stats.flash_errors++;
+        return RDB_ERR_FLASH;
+    }
+
+    /* Write data payload plus alignment padding in streaming chunks */
+    {
+        uint32_t g  = ts_wr_gran(db);
+        uint32_t max_chunk = RDB_STACK_BUF_SIZE;
+        max_chunk -= max_chunk % g;
+        uint32_t rem = da;
+        uint32_t data_pos = 0;
+        uint32_t wpos = wa + TS_REC_SZ;
+        uint8_t  buf[RDB_STACK_BUF_SIZE];
+
+        while (rem > 0) {
+            uint32_t ch = RDB_MIN(rem, max_chunk);
+            RDB_PAGE_CLAMP(ch, wpos);
+
+            uint32_t data_rem = (len > data_pos) ? (uint32_t)len - data_pos : 0;
+            uint32_t data_ch = RDB_MIN(ch, data_rem);
+
+            if (data_ch > 0)
+                memcpy(buf, (const uint8_t*)data + data_pos, data_ch);
+            if (ch > data_ch)
+                memset(buf + data_ch, 0xFF, ch - data_ch);
+
+            if (fl_write(db, wpos, buf, ch) != 0) {
+                db->stats.flash_errors++;
+                if (ts_mark_dead(db, wa) != 0)
+                    db->stats.flash_errors++;
+                return RDB_ERR_FLASH;
+            }
+
+            data_pos += data_ch;
+            wpos += ch;
+            rem -= ch;
+        }
+    }
+
+    return RDB_OK;
+}
+
 rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
     const void* data, uint16_t len) {
     if (!db || !db->initialized)
@@ -1268,51 +1339,10 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
             return RDB_ERR_FLASH;
         }
     } else {
-        /* Large record: multi-step write */
-
-        /* Write record header */
-        if (fl_write(db, wa, &rh, sizeof(rh)) != 0) {
-            db->stats.flash_errors++;
-            if (ts_mark_dead(db, wa) != 0)
-                db->stats.flash_errors++;
+        rdb_err_t rc = ts_write_large_record(db, &rh, data, len, da, wa);
+        if (rc != RDB_OK) {
             fl_unlock(db);
-            return RDB_ERR_FLASH;
-        }
-
-        /* Write data payload plus alignment padding in streaming chunks */
-        {
-            uint32_t g  = ts_wr_gran(db);
-            uint32_t max_chunk = RDB_STACK_BUF_SIZE;
-            max_chunk -= max_chunk % g;
-            uint32_t rem = da;
-            uint32_t data_pos = 0;
-            uint32_t wpos = wa + TS_REC_SZ;
-            uint8_t  buf[RDB_STACK_BUF_SIZE];
-
-            while (rem > 0) {
-                uint32_t ch = RDB_MIN(rem, max_chunk);
-                RDB_PAGE_CLAMP(ch, wpos);
-
-                uint32_t data_rem = (len > data_pos) ? (uint32_t)len - data_pos : 0;
-                uint32_t data_ch = RDB_MIN(ch, data_rem);
-
-                if (data_ch > 0)
-                    memcpy(buf, (const uint8_t*)data + data_pos, data_ch);
-                if (ch > data_ch)
-                    memset(buf + data_ch, 0xFF, ch - data_ch);
-
-                if (fl_write(db, wpos, buf, ch) != 0) {
-                    db->stats.flash_errors++;
-                    if (ts_mark_dead(db, wa) != 0)
-                        db->stats.flash_errors++;
-                    fl_unlock(db);
-                    return RDB_ERR_FLASH;
-                }
-
-                data_pos += data_ch;
-                wpos += ch;
-                rem -= ch;
-            }
+            return rc;
         }
     }
 
