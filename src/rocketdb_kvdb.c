@@ -92,7 +92,7 @@
  *  │ Scenario B: Crash in Stage 3-5                                    │
  *  │   • Partial record visible, commit marker still missing           │
  *  │   • Recovery: CRC check fails or magic mismatch                   │
- *  │   • Action: Mark record as STALE for fixup_stale() dedup        │
+ *  │   • Action: Mark record as DEAD during init scan dedup          │
  *  │                                                                    │
  *  │ Scenario C: Crash in Stage 6 (most critical)                     │
  *  │   • Record complete (magic + CRC valid)                          │
@@ -308,6 +308,38 @@ size_t rdb_tsdb_ec_size(uint8_t n) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Shared helpers
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** @brief Validate a sector header CRC (version-aware).
+ *  @return 1 if valid, 0 if corrupt. */
+static int kv_validate_sector_hdr(const rdb_kv_sector_hdr_t* sh) {
+    if (sh->version == RDB_KV_VERSION) {
+        uint16_t calc = rdb_crc16(sh, 6);
+        calc = rdb_crc16_cont(calc, ((const uint8_t*)sh) + 8, 8);
+        return (calc == sh->hdr_crc);
+    }
+    if (sh->version == RDB_KV_VERSION_OLD)
+        return (rdb_crc16(sh, 6) == sh->hdr_crc);
+    return 0;
+}
+
+/** @brief Sort sector indices by create_seq descending (newest first).
+ *  Uses insertion sort — optimal for N ≤ 255. */
+static void kv_sort_sectors_by_seq(const rdb_kvdb_t* db,
+    uint8_t* order, uint8_t cnt) {
+    for (uint8_t i = 1; i < cnt; i++) {
+        uint8_t key = order[i], j = i;
+        while (j > 0 && RDB_SEQ_GT(db->sectors[order[j - 1]].create_seq,
+                                     db->sectors[key].create_seq)) {
+            order[j] = order[j - 1];
+            j--;
+        }
+        order[j] = key;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Three-point erased verification
  *
  *  Checks three positions within a sector (start, middle, end) for the
@@ -503,7 +535,7 @@ typedef int (*kv_scan_cb_t)(rdb_kvdb_t* db, uint8_t sec,
     const kv_rec_info_t* ri, void* ctx);
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [K-3 fix] Corrupt-record skip step
+ *  Corrupt-record skip step
  *
  *  When scan_sector encounters a record header that fails validation
  *  (bad magic, key_len out of range, etc.), it advances by this many
@@ -562,7 +594,7 @@ static void scan_sector(rdb_kvdb_t* db, uint8_t s,
             (rh.state != RDB_STATE_WRITING &&
              rh.state != RDB_STATE_VALID &&
              rh.state != RDB_STATE_DEAD)) {
-            /* [K-3 fix]: skip at least one full record header width
+            /* Skip at least one full record header width
                to avoid byte-by-byte crawl through corrupt regions
                and reduce risk of mid-record false-positive parse. */
             off += kv_corrupt_skip(db);
@@ -736,7 +768,7 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [K-2 fix] Optimised fixup_stale — reverse-scan deduplication
+ *  Reverse-scan deduplication — newest-sector-first ordering
  *
  *  ┌────────────────────────────────────────────────────────────────────┐
  *  │ Crash-Recovery Deduplication (O(N) instead of O(N²))               │
@@ -770,7 +802,7 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
  *  │   • Why so fast: Binary search in read-only index (sector header) │
  *  │                                                                    │
  *  │ **Power-Loss Safety**:                                             │
- *  │   • Idempotent: Re-running fixup_stale() gives same result       │
+ *  │   • Idempotent: Re-running init scan gives same result           │
  *  │   • Reason: Algorithm depends only on persisted write_seq        │
  *  │   • No state change required: just marks DEAD bits               │
  *  │                                                                    │
@@ -1049,136 +1081,6 @@ static void kv_cache_flush(rdb_kvdb_t* db) {
 
 #endif /* RDB_KV_CACHE_SIZE */
 
-/**
- * @brief Scan callback for fixup_stale (newest-first dedup pass).
- *
- * For each VALID record, checks the hash set via dedup_track().
- * The first sighting of a key is kept; subsequent sightings in older
- * sectors are marked DEAD.  On hash-set overflow falls back to
- * find_latest() for authoritative comparison.
- */
-typedef struct {
-    rdb_dedup_set_t* ds;       /**< Shared dedup hash set                */
-    uint32_t         dead_count;/**< Number of records marked DEAD        */
-    uint32_t         fallback;  /**< Number of fallback find_latest calls */
-} fixup_ctx_t;
-
-static int fixup_cb(rdb_kvdb_t* db, uint8_t s,
-    const kv_rec_info_t* ri, void* arg) {
-    fixup_ctx_t* fx = (fixup_ctx_t*)arg;
-    if (ri->state != RDB_STATE_VALID)
-        return RDB_ITER_CONTINUE;
-
-    uint8_t kb[RDB_MAX_KEY_LEN];
-    if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
-        return RDB_ITER_CONTINUE;
-
-    int r = dedup_track(fx->ds, db, ri->key_hash, kb, ri->key_len, ri->addr);
-    if (r == RDB_DEDUP_NEW)
-        return RDB_ITER_CONTINUE;
-
-    if (r == RDB_DEDUP_SEEN) {
-        /* Already tracked in a newer sector — mark stale copy DEAD */
-        if (kv_mark_dead(db, ri->addr) != 0)
-            db->stats.flash_errors++;
-        db->sectors[s].garbage_bytes += ri->rsz;
-        kv_cache_invalidate(db, (const char*)kb, ri->key_len);
-        fx->dead_count++;
-        return RDB_ITER_CONTINUE;
-    }
-
-    /* RDB_DEDUP_FULL — fall back to authoritative find_latest */
-    fx->fallback++;
-    {
-        find_ctx_t fc;
-        find_latest(db, (const char*)kb, ri->key_len, &fc);
-        if (fc.found && fc.best_addr != ri->addr) {
-            if (kv_mark_dead(db, ri->addr) != 0)
-                db->stats.flash_errors++;
-            db->sectors[s].garbage_bytes += ri->rsz;
-            kv_cache_invalidate(db, (const char*)kb, ri->key_len);
-            fx->dead_count++;
-        }
-    }
-    return RDB_ITER_CONTINUE;
-}
-
-/** @brief Run dedup pass: mark duplicates DEAD in newest→oldest sector order. */
-static void fixup_stale(rdb_kvdb_t* db) {
-    /* ── Gather non-erased sectors and sort by create_seq descending ── */
-    uint8_t order[RDB_MAX_SECTORS];
-    uint8_t cnt = 0;
-    for (uint8_t s = 0; s < db->sector_cnt; s++) {
-        if (db->sectors[s].status != RDB_SEC_ERASED &&
-            db->sectors[s].status != RDB_SEC_CORRUPT)
-            order[cnt++] = s;
-    }
-    if (cnt == 0) return;
-
-    /* Insertion sort — descending by create_seq (newest first).
-       N ≤ 255, O(N²) worst case but tiny constant and cache-friendly. */
-    for (uint8_t i = 1; i < cnt; i++) {
-        uint8_t key = order[i];
-        uint8_t j = i;
-        while (j > 0 && RDB_SEQ_GT(db->sectors[order[j - 1]].create_seq,
-                                     db->sectors[key].create_seq)) {
-            order[j] = order[j - 1];
-            j--;
-        }
-        order[j] = key;
-    }
-    /* order[0] = oldest, order[cnt-1] = newest */
-
-    /* ── Scan newest → oldest with bounded hash set ── */
-    rdb_dedup_set_t ds;
-    dedup_init(&ds);
-    fixup_ctx_t fx = { .ds = &ds, .dead_count = 0, .fallback = 0 };
-
-    int16_t i = (int16_t)(cnt - 1);
-    for (; i >= 0; i--) {
-        scan_sector(db, order[(uint16_t)i], fixup_cb, &fx, RDB_FALSE);
-    }
-}
-
-#if RDB_BLOOM_BITS > 0
-/**
- * @brief Scan callback — set bloom bits for each VALID record.
- *
- * Used to rebuild per-sector bloom filters after init or GC.
- */
-static int bloom_build_cb(rdb_kvdb_t* db, uint8_t s,
-    const kv_rec_info_t* ri, void* arg) {
-    (void)db;
-    (void)s;
-    if (ri->state != RDB_STATE_VALID)
-        return RDB_ITER_CONTINUE;
-    uint8_t kb[RDB_MAX_KEY_LEN];
-    if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
-        return RDB_ITER_CONTINUE;
-    uint16_t h = rdb_hash16(kb, ri->key_len);
-    uint8_t* bm = (uint8_t*)arg;
-    RDB_BLOOM_SET(bm, h);
-    return RDB_ITER_CONTINUE;
-}
-
-/** @brief Rebuild bloom filter for a single sector from scratch. */
-static void bloom_rebuild_sec(rdb_kvdb_t* db, uint8_t s) {
-    uint8_t* bm = db->blooms + (size_t)s * RDB_BLOOM_BYTES;
-    memset(bm, 0, RDB_BLOOM_BYTES);
-    scan_sector(db, s, bloom_build_cb, bm, RDB_FALSE);
-}
-
-/** @brief Rebuild bloom filters for all non-erased, non-corrupt sectors. */
-static void bloom_rebuild_all(rdb_kvdb_t* db) {
-    for (uint8_t s = 0; s < db->sector_cnt; s++) {
-        if (db->sectors[s].status == RDB_SEC_ERASED ||
-            db->sectors[s].status == RDB_SEC_CORRUPT)
-            continue;
-        bloom_rebuild_sec(db, s);
-    }
-}
-#endif /* RDB_BLOOM_BITS > 0 */
-
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Post-GC dedup marker (mark-only, no garbage accounting)
  *
@@ -1187,7 +1089,7 @@ static void bloom_rebuild_all(rdb_kvdb_t* db) {
  *  via recalc_garbage() to avoid double-counting against the just-erased
  *  victim sector whose garbage was already zeroed.
  *
- *  Uses the same hash-set strategy as fixup_stale().
+ *  Uses the same hash-set strategy as the init scan dedup.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int dedup_mark_cb(rdb_kvdb_t* db, uint8_t s,
@@ -1244,16 +1146,6 @@ static void recalc_garbage(rdb_kvdb_t* db, uint8_t s) {
     db->sectors[s].garbage_bytes = gb;
 }
 
-/** @brief Recalculate garbage for ALL non-erased, non-corrupt sectors. */
-static void recalc_garbage_all(rdb_kvdb_t* db) {
-    for (uint8_t s = 0; s < db->sector_cnt; s++) {
-        if (db->sectors[s].status == RDB_SEC_ERASED ||
-            db->sectors[s].status == RDB_SEC_CORRUPT)
-            continue;
-        recalc_garbage(db, s);
-    }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Reconcile live_bytes
  *
@@ -1295,7 +1187,7 @@ static void reconcile_live(rdb_kvdb_t* db) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int init_sector(rdb_kvdb_t* db, uint8_t s) {
-    /* [K-EC-PERSIST fix]: check flash header for a higher erase count
+    /* Check flash header for a higher erase count
      * before erasing, preventing ec regression after RAM loss. */
     uint32_t ec = db->sectors[s].erase_cnt;
     {
@@ -1329,19 +1221,13 @@ static int init_sector(rdb_kvdb_t* db, uint8_t s) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [K-7 fix] Rotate to a new active sector
+ *  Rotate to a new active sector
  *
  *  Selects the erased sector with the lowest erase count (wear-leveling
  *  friendly), initialises it as the new active sector, and seals the
- *  previous active sector.
- *
- *  Original bug (pre-K-7): if the old active sector had write_off ==
- *  data_start (no records written), it was left as ACTIVE, creating a
- *  phantom sector that could never be reclaimed by GC.
- *
- *  Fix: unconditionally seal the old active sector.  An empty SEALED
- *  sector has zero live bytes, so GC Phase 1 (zero-live fast reclaim)
- *  will reclaim it on the next GC pass with no migration cost.
+ *  previous active sector.  The old active sector is unconditionally
+ *  sealed — an empty SEALED sector has zero live bytes, so GC Phase 1
+ *  (zero-live fast reclaim) will reclaim it with no migration cost.
  *
  *  @param db  Database handle.
  *  @return    0 on success, -1 if no erased sector is available.
@@ -1364,7 +1250,7 @@ static int rotate(rdb_kvdb_t* db) {
     if (init_sector(db, best) != 0)
         return -1;
 
-    /* [K-7 fix]: unconditionally seal old active — no write_off guard */
+    /* Unconditionally seal old active — no write_off guard */
     if (db->active_sec < db->sector_cnt &&
         db->sectors[db->active_sec].status == RDB_SEC_ACTIVE)
         db->sectors[db->active_sec].status = RDB_SEC_SEALED;
@@ -1688,6 +1574,45 @@ static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s,
  * @param db      Database handle.
  * @param victim  Sector index to reclaim.
  * @return        0 on success, -1 on failure.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** @brief Post-migration cleanup after GC — dedup + recalc garbage + live.
+ *
+ *  After migrating live records out of the victim sector, old copies may
+ *  still exist in other sectors.  This scans all remaining sectors
+ *  newest-first, marks stale duplicates DEAD, and recomputes per-sector
+ *  garbage_bytes and global live_bytes. */
+static void gc_post_cleanup(rdb_kvdb_t* db, uint8_t victim) {
+    uint8_t order[RDB_MAX_SECTORS];
+    uint8_t cnt = 0;
+    for (uint8_t s = 0; s < db->sector_cnt; s++) {
+        if (s == victim) continue;
+        if (db->sectors[s].status == RDB_SEC_ERASED ||
+            db->sectors[s].status == RDB_SEC_CORRUPT)
+            continue;
+        order[cnt++] = s;
+    }
+    kv_sort_sectors_by_seq(db, order, cnt);
+
+    rdb_dedup_set_t ds;
+    dedup_init(&ds);
+    for (uint8_t s = 0; s < cnt; s++) {
+        scan_sector(db, order[s], dedup_mark_cb, &ds, RDB_FALSE);
+        recalc_garbage(db, order[s]);
+    }
+    reconcile_live(db);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  gc_execute — Reclaim one sector via GC
+ *
+ *  (original comment block continues below)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @brief Execute a full GC cycle on the designated victim sector.
+ *
+ * Steps: migrate → erase victim → dedup cleanup → recalc metadata.
  */
 static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
     db->stats.gc_runs++;
@@ -1734,47 +1659,14 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
     db->iter_gen++;
 
     /* Post-migration cleanup: dedup stale duplicates + recalc garbage */
-    if (gc.migrated > 0) {
-
-        /* Collect active sectors and sort by descending create_seq
-           so the newest copy is the "first sighting" preserved by
-           dedup_mark_cb, matching fixup_stale's ordering invariant. */
-        uint8_t order[RDB_MAX_SECTORS];
-        uint8_t cnt = 0;
-        for (uint8_t s = 0; s < db->sector_cnt; s++) {
-            if (s == victim)
-                continue;
-            if (db->sectors[s].status == RDB_SEC_ERASED ||
-                db->sectors[s].status == RDB_SEC_CORRUPT)
-                continue;
-            order[cnt++] = s;
-        }
-        /* Sort descending by create_seq (newest first) */
-        for (int j = 1; j < cnt; j++) {
-            uint8_t key = order[j];
-            int k = j - 1;
-            while (k >= 0 && RDB_SEQ_GT(db->sectors[key].create_seq,
-                                        db->sectors[order[k]].create_seq)) {
-                order[k + 1] = order[k];
-                k--;
-            }
-            order[k + 1] = key;
-        }
-
-        rdb_dedup_set_t ds;
-        dedup_init(&ds);
-        for (uint8_t s = 0; s < cnt; s++) {
-            scan_sector(db, order[s], dedup_mark_cb, &ds, RDB_FALSE);
-            recalc_garbage(db, order[s]);
-        }
-        reconcile_live(db);
-    }
+    if (gc.migrated > 0)
+        gc_post_cleanup(db, victim);
 
     return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  [K-1 fix] ensure_space — guarantee room for a new write
+ *  ensure_space — guarantee room for a new write
  *
  *  This function ensures that after returning RDB_OK:
  *    1. live_bytes + need ≤ max_live()   (logical capacity check)
@@ -1819,7 +1711,7 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
  *  │                                                                 │
  *  └─────────────────────────────────────────────────────────────────┘
  *
- *  K-1 fix detail:
+ *  Design detail:
  *    Original second fast-return: count_erased(db) >= gc_reserve
  *    Fixed:                       count_erased(db) >  gc_reserve
  *    Rationale: with erased == gc_reserve exactly, the current write
@@ -1979,7 +1871,7 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
     if (count_erased(db) >= (uint8_t)(db->gc_reserve + 1u))
         return RDB_OK;
 
-    /* Fast path 2 [K-1 fix]: active sector has room AND erased > gc_reserve */
+    /* Fast path 2  active sector has room AND erased > gc_reserve */
     if (need > 0 &&
         db->sectors[db->active_sec].write_off + need <= db->part->sector_size &&
         count_erased(db) > db->gc_reserve)
@@ -2038,7 +1930,7 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
         return RDB_OK;
 
     /* Last resort: rotate to a fresh sector.
-       Guard with the K-1 invariant (> gc_reserve) so rotation never
+       Guard with the gc_reserve safety margin so rotation never
        consumes the last erased sector below the GC safety margin. */
     if (count_erased(db) > db->gc_reserve) {
         if (rotate(db) == 0) {
@@ -2053,58 +1945,117 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  Fix WRITING records during init
+ *  Combined init scan — merges 5 passes into 1
  *
- *  WRITING records represent writes that were interrupted by power
- *  loss between the header write and the commit (state → VALID).
+ *  Scans sectors newest-create_seq-first so the dedup table always
+ *  records the authoritative (newest) copy.  Each record triggers:
+ *    1. max_seq tracking
+ *    2. WRITING recovery (CRC-based promote/demote)
+ *    3. Duplicate detection + mark_dead for stale copies
+ *    4. Per-sector Bloom filter population
+ *    5. Garbage / live byte accounting
  *
- *  Recovery strategy:
- *    - Compute the data CRC from flash and compare with the stored CRC.
- *    - If they match, the data payload is complete → promote to VALID.
- *    - If they don't match, the data is incomplete → demote to DEAD.
- *
- *  This is called once per sector during init Phase 1.
+ *  Eliminates the need for separate fixup_stale, bloom_rebuild_all,
+ *  recalc_garbage_all, and reconcile_live calls during init.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** @brief Init scan callback — recover WRITING records and track max_seq.
- *
- *  Merges two Phase 1 passes into one:
- *    1. WRITING record recovery (CRC-based promote/demote)
- *    2. max_seq tracking for write sequence initialisation
- *
- *  @param arg  Pointer to uint32_t receiving the maximum seq seen. */
-static int writing_cb(rdb_kvdb_t* db, uint8_t s,
+/** @brief Context for the combined init scan callback. */
+typedef struct {
+    uint32_t         max_seq;   /**< Tracked maximum sequence number            */
+    rdb_dedup_set_t  ds;        /**< Dedup fingerprint set (newest first wins)  */
+#if RDB_BLOOM_BITS > 0
+    uint8_t*         blooms;    /**< Base pointer to per-sector bloom bitmaps   */
+#endif
+    uint32_t         live;      /**< Accumulated live bytes (VALID records)     */
+} init_scan_ctx_t;
+
+/** @brief Combined init scan callback — 5-in-1 pass over the record chain. */
+static int init_combined_cb(rdb_kvdb_t* db, uint8_t s,
     const kv_rec_info_t* ri, void* arg) {
-    (void)s;
+    init_scan_ctx_t* ctx = (init_scan_ctx_t*)arg;
+    int              is_valid = (ri->state == RDB_STATE_VALID);
 
-    /* Track max sequence number across all records */
-    uint32_t* max_seq = (uint32_t*)arg;
-    if (max_seq && RDB_SEQ_GT(ri->seq, *max_seq))
-        *max_seq = ri->seq;
+    /* ── 1. Track max sequence number ── */
+    if (RDB_SEQ_GT(ri->seq, ctx->max_seq))
+        ctx->max_seq = ri->seq;
 
-    if (ri->state != RDB_STATE_WRITING)
-        return RDB_ITER_CONTINUE;
+    /* ── 2. WRITING recovery ── */
+    if (ri->state == RDB_STATE_WRITING) {
+        rdb_kv_record_hdr_t rh;
+        if (fl_read(db, ri->addr, &rh, sizeof(rh)) != 0) {
+            /* Header unreadable — mark dead, count as garbage */
+            if (kv_mark_dead(db, ri->addr) != 0)
+                db->stats.flash_errors++;
+            db->sectors[s].garbage_bytes += ri->rsz;
+        } else {
+            uint16_t calc;
+            if (data_crc_flash(db, ri->addr, ri->key_len, ri->val_len,
+                               &calc) == 0 && calc == rh.data_crc) {
+                uint8_t v = RDB_STATE_VALID;
+                if (fl_write(db, ri->addr + 1, &v, 1) == 0)
+                    is_valid = 1;   /* promoted — treat as VALID below  */
+                else
+                    db->stats.flash_errors++;
+            } else {
+                /* Data incomplete or corrupt — mark dead, count as garbage */
+                if (kv_mark_dead(db, ri->addr) != 0)
+                    db->stats.flash_errors++;
+                db->sectors[s].garbage_bytes += ri->rsz;
+            }
+        }
+    }
 
-    rdb_kv_record_hdr_t rh;
-    if (fl_read(db, ri->addr, &rh, sizeof(rh)) != 0) {
-        if (kv_mark_dead(db, ri->addr) != 0)
-            db->stats.flash_errors++;
+    if (!is_valid)
+        goto accounting;
+
+    /* ── 3+4. Read key once for dedup + bloom ── */
+    {
+        uint8_t kb[RDB_MAX_KEY_LEN];
+        if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
+            goto accounting;
+
+        /* Dedup: newest-sector-first → first encounter is authoritative */
+        int r = dedup_track(&ctx->ds, db, ri->key_hash, kb,
+                            ri->key_len, ri->addr);
+        if (r == RDB_DEDUP_SEEN) {
+            /* Stale duplicate in an older sector */
+            if (kv_mark_dead(db, ri->addr) != 0)
+                db->stats.flash_errors++;
+            db->sectors[s].garbage_bytes += ri->rsz;
+            kv_cache_invalidate(db, (const char*)kb, ri->key_len);
+            return RDB_ITER_CONTINUE;
+        }
+        if (r == RDB_DEDUP_FULL) {
+            /* Hash table exhausted — fall back to authoritative find_latest */
+            find_ctx_t fc;
+            find_latest(db, (const char*)kb, ri->key_len, &fc);
+            if (fc.found && fc.best_addr != ri->addr) {
+                if (kv_mark_dead(db, ri->addr) != 0)
+                    db->stats.flash_errors++;
+                db->sectors[s].garbage_bytes += ri->rsz;
+                kv_cache_invalidate(db, (const char*)kb, ri->key_len);
+                return RDB_ITER_CONTINUE;
+            }
+        }
+
+#if RDB_BLOOM_BITS > 0
+        /* Bloom: set bits for this key in the current sector */
+        if (ctx->blooms) {
+            uint16_t  h  = rdb_hash16(kb, ri->key_len);
+            uint8_t*  bm = ctx->blooms + (size_t)s * RDB_BLOOM_BYTES;
+            RDB_BLOOM_SET(bm, h);
+        }
+#endif
+
+        /* Live bytes */
+        ctx->live += ri->rsz;
         return RDB_ITER_CONTINUE;
     }
 
-    /* Verify data CRC to determine if write completed successfully */
-    uint16_t calc;
-    if (data_crc_flash(db, ri->addr, ri->key_len, ri->val_len, &calc) != 0 ||
-        calc != rh.data_crc) {
-        /* Data incomplete or corrupt → mark dead */
-        if (kv_mark_dead(db, ri->addr) != 0)
-            db->stats.flash_errors++;
-    } else {
-        /* Data intact → promote to VALID */
-        uint8_t v = RDB_STATE_VALID;
-        if (fl_write(db, ri->addr + 1, &v, 1) != 0)
-            db->stats.flash_errors++;
-    }
+accounting:
+    /* non-VALID and non-WRITING records count as garbage */
+    if (ri->state != RDB_STATE_VALID && ri->state != RDB_STATE_WRITING)
+        db->sectors[s].garbage_bytes += ri->rsz;
     return RDB_ITER_CONTINUE;
 }
 
@@ -2119,77 +2070,43 @@ static int writing_cb(rdb_kvdb_t* db, uint8_t s,
  *  │ Recovery Algorithm (Crash-Consistent Initialization)                 │
  *  ├──────────────────────────────────────────────────────────────────────┤
  *  │                                                                      │
- *  │ **Phase 1** — Scan all sectors:                                     │
- *  │   • Read all sector headers (CRC-protected)                          │
- *  │   • Classify each as: ERASED / ACTIVE / SEALED / CORRUPT            │
- *  │   • For ACTIVE sectors: scan all records, recover WRITING ones      │
- *  │   • Track max_seq for wrap-safe recovery of sequence numbers        │
- *  │   • Detect power-loss: incomplete record (missing commit marker)    │
+ *  │ **Phase 1+2** — Single-pass sector scan (merged 5-in-1):            │
+ *  │   Step A: Read all sector headers, classify each as:                 │
+ *  │           ERASED / ACTIVE / CORRUPT.                                 │
+ *  │   Step B: Sort ACTIVE sectors by create_seq DESC (newest first).    │
+ *  │   Step C: Pre-clear per-sector Bloom bitmaps.                       │
+ *  │   Step D: Single scan_sector() with init_combined_cb:               │
+ *  │     • WRITING recovery: CRC-based promote to VALID or demote to DEAD│
+ *  │     • Dedup: newest-first dedup via hash set; stale copies → DEAD  │
+ *  │     • Bloom: set bits for authoritative (newest) copy of each key  │
+ *  │     • Accounting: garbage_bytes per sector + total live_bytes       │
+ *  │     • max_seq tracking from both sector headers and record seqs     │
+ *  │   Key insight: scanning newest→oldest guarantees the first          │
+ *  │   encounter of each key is the authoritative copy.  This merges    │
+ *  │   the previous 5 separate passes into a single O(R) scan.          │
  *  │                                                                      │
- *  │ **Phase 2** — Fixup stale records + recompute metadata:             │
- *  │   • Run fixup_stale() to mark all duplicate records DEAD            │
- *  │   • Algorithm: Reverse-scan ALL records, keep first occurrence      │
- *  │   • Recompute garbage_bytes per sector and total live_bytes         │
- *  │   • Key insight: O(N) reverse scan avoids O(N^2) forward duplicates │
- *  │   • This is the core of crash-recovery: deduplication               │
- *  │                                                                      │
- *  │ **Phase 3** — Select active sector [K-11 fix]:                      │
+ *  │ **Phase 3** — Select active sector :                      │
  *  │   • Candidate: sector with highest create_seq that has room         │
- *  │   • Wrap-safe comparison: use RDB_SEQ_GT (handles 32-bit wrap)      │
- *  │   • Seal all other non-erased sectors (prevent accidental append)   │
- *  │   • If no suitable active: allocate one from erased pool            │
- *  │   • Invariant: exactly one ACTIVE sector at end of Phase 3          │
+ *  │   • If all full: fallback to highest create_seq regardless          │
+ *  │   • If no ACTIVE/SEALED at all: rotate from erased pool            │
+ *  │   • Seal all other ACTIVE sectors (→ exactly one ACTIVE at exit)   │
  *  │                                                                      │
- *  │ **Phase 4** — Safety-watermark recovery:                            │
- *  │   • Check: count_erased >= gc_reserve + 1?                         │
- *  │   • If not: call gc_ensure_space(0, ...) to trigger GC                │
- *  │   • This brings system back to healthy GC state                     │
- *  │   • Handles: power-loss during GC (left system depleted)            │
+ *  │ **Corruption Recovery** (between Phase 3 and Phase 4):              │
+ *  │   • Erase all CORRUPT sectors → reclaim as ERASED                  │
+ *  │   • Erase failure: leave as CORRUPT, increment flash_errors        │
  *  │                                                                      │
- *  │ **Corruption Handling** (between Phase 3 & 4):                      │
- *  │   • Any CORRUPT sectors: attempt erase to reclaim as ERASED         │
- *  │   • Erase failure: leave as CORRUPT (won't use, triggers no fault) │
- *  │   • Success: increases erased pool, aids watermark recovery         │
+ *  │ **Phase 4** — Safety-watermark recovery design:            │
+ *  │   • If count_erased < gc_reserve + 1: trigger GC proactively       │
+ *  │   • Prevents deadlock: no-space ↔ no-erased-for-GC-target          │
  *  │                                                                      │
- *  │ **Power-Loss Scenarios**:                                            │
- *  │   Case A: Crash during Phase 1                                       │
- *  │     → Re-run init(), Phase 1 is idempotent (rescan works)           │
- *  │   Case B: Crash during Phase 2 (fixup_stale)                        │
- *  │     → Re-run init(), fixup_stale results same (deterministic)       │
- *  │   Case C: Crash during Phase 3 (active selection)                   │
- *  │     → Re-run init(), picks same active (high seq persists)          │
- *  │   Case D: Crash during Phase 4 (GC)                                │
- *  │     → Re-run init(), ensure_space runs again (idempotent)           │
- *  │                                                                      │
- *  │ **Key Insight**: All phases are idempotent!                          │
- *  │   Repeated init() after power-loss converges to same final state    │
+ *  │ **Power-Loss Idempotency**:                                          │
+ *  │   All phases are deterministic and idempotent.  Re-running init()   │
+ *  │   after any mid-phase power loss converges to the same final state. │
+ *  │   • Crash during scan:     re-scan produces same dedup result      │
+ *  │   • Crash during Phase 3:  same active sector selected             │
+ *  │   • Crash during GC:       gc_ensure_space re-runs safely          │
  *  │                                                                      │
  *  └──────────────────────────────────────────────────────────────────────┘
- *
- *  Boot sequence (five phases):
- *
- *  Phase 1 — Scan all sectors:
- *    Read sector headers, classify as ERASED / ACTIVE / CORRUPT.
- *    For each ACTIVE sector, recover WRITING records (CRC-based)
- *    and determine the maximum write sequence number.
- *
- *  Phase 2 — Fixup stale records + recompute metadata:
- *    Run fixup_stale() to mark all duplicate records DEAD.
- *    Recompute garbage_bytes per sector and total live_bytes.
- *
- *  Phase 3 — Select active sector [K-11 fix]:
- *    Choose the sector with the highest create_seq that still has
- *    room for new records.  Use RDB_SEQ_GT for wrap-safe comparison.
- *    Seal all other non-erased sectors.
- *
- *  Phase 4 — Safety-watermark recovery:
- *    If fewer than gc_reserve + 1 erased sectors remain, run
- *    gc_ensure_space(0, ...) to trigger GC without a specific write
- *    target, bringing the system back to a healthy state.
- *
- *  Recover CORRUPT sectors:
- *    Between Phase 3 and Phase 4, attempt to erase any CORRUPT
- *    sectors to reclaim them as ERASED, increasing available space.
  *
  *  @param db        Database handle (caller-allocated, zeroed on entry).
  *  @param part      Partition descriptor (must outlive the database).
@@ -2229,7 +2146,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
     db->gc_reserve = RDB_GC_RESERVE(scnt);
     db->active_sec = 0xFF; /* No active sector yet */
 
-    /* [K-EC-PERSIST fix]: save erase counts before zeroing metadata.
+    /*  save erase counts before zeroing metadata.
      * ERASED sectors have no flash header, so their erase count exists
      * only in RAM.  Zeroing them would discard accumulated wear history. */
     {
@@ -2244,9 +2161,18 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
     }
 
     /* ══════════════════════════════════════════════════════════════════
-     *  Phase 1: Scan all sectors — classify, recover WRITING, find max seq
+     *  Phase 1+2: Single-pass scan — classify, recover, dedup, bloom, account
+     *
+     *  Sectors are scanned newest-create_seq-first so the dedup table
+     *  always records the authoritative (newest) copy of each key.
+     *  Merges the previous 5 separate passes (writing_cb, fixup_cb,
+     *  bloom_build_cb, garbage_cb, live_cb) into one scan_sector call.
      * ══════════════════════════════════════════════════════════════════ */
-    uint32_t max_seq = 0;
+
+    /* Step A: read all sector headers, classify, collect live sectors */
+    uint8_t  order[RDB_MAX_SECTORS];
+    uint8_t  cnt = 0;
+    uint32_t max_seq = 0;  /* track max create_seq from sector headers */
 
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         rdb_kv_sector_hdr_t sh;
@@ -2272,16 +2198,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
             continue;
         }
         {
-            int crc_ok = 0;
-            if (sh.version == RDB_KV_VERSION) {
-                /* CRC covers bytes [0..5] and [8..15], skipping self-referential hdr_crc */
-                uint16_t calc = rdb_crc16(&sh, 6);
-                calc = rdb_crc16_cont(calc, ((const uint8_t*)&sh) + 8, 8);
-                crc_ok = (calc == sh.hdr_crc);
-            } else if (sh.version == RDB_KV_VERSION_OLD) {
-                crc_ok = (rdb_crc16(&sh, 6) == sh.hdr_crc);
-            }
-            if (!crc_ok) {
+            if (!kv_validate_sector_hdr(&sh)) {
                 db->sectors[s].status = RDB_SEC_CORRUPT;
                 db->stats.corrupt_sectors++;
                 continue;
@@ -2289,36 +2206,48 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
         }
 
         /* Valid sector header — load metadata.
-         * [K-EC-PERSIST fix]: take max of RAM and flash ec to prevent
-         * regression when RAM was restored from a stale snapshot. */
+         *  take max of RAM and flash ec. */
         if (sh.erase_cnt > db->sectors[s].erase_cnt)
             db->sectors[s].erase_cnt = sh.erase_cnt;
         db->sectors[s].create_seq = sh.create_seq;
         db->sectors[s].status = RDB_SEC_ACTIVE;
-
+        db->sectors[s].garbage_bytes = 0;  /* will accumulate during scan */
         if (RDB_SEQ_GT(sh.create_seq, max_seq))
             max_seq = sh.create_seq;
-
-        /* Scan sector: recover WRITING records + track max_seq + update write_off.
-           Merges three operations into one pass over the record chain. */
-        scan_sector(db, s, writing_cb, &max_seq, RDB_TRUE);
+        order[cnt++] = s;
     }
-    db->write_seq = max_seq;
 
-    /* ══════════════════════════════════════════════════════════════════
-     *  Phase 2: Fixup stale duplicates + recompute metadata
-     * ══════════════════════════════════════════════════════════════════ */
-    fixup_stale(db);
-    recalc_garbage_all(db);
-    reconcile_live(db);
+    /* Step B: sort live sectors by create_seq DESC (newest first) */
+    kv_sort_sectors_by_seq(db, order, cnt);
+    /* order[0]=oldest … order[cnt-1]=newest */
 
+    /* Step C: pre-clear bloom bitmaps for live sectors */
 #if RDB_BLOOM_BITS > 0
-    /* Rebuild per-sector bloom filters from the deduplicated state */
-    bloom_rebuild_all(db);
+    if (db->blooms) {
+        for (uint8_t i = 0; i < cnt; i++)
+            memset(db->blooms + (size_t)order[i] * RDB_BLOOM_BYTES,
+                   0, RDB_BLOOM_BYTES);
+    }
 #endif
 
+    /* Step D: single combined scan — newest-to-oldest for dedup correctness */
+    init_scan_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.max_seq = max_seq;   /* seed with max create_seq from headers */
+#if RDB_BLOOM_BITS > 0
+    ctx.blooms = db->blooms;
+#endif
+    dedup_init(&ctx.ds);
+
+    for (int16_t i = (int16_t)(cnt - 1); i >= 0; i--) {
+        scan_sector(db, order[(uint16_t)i], init_combined_cb, &ctx, RDB_TRUE);
+    }
+
+    db->write_seq = ctx.max_seq;
+    db->live_bytes = ctx.live;
+
     /* ══════════════════════════════════════════════════════════════════
-     *  Phase 3: Select active sector [K-11 fix]
+     *  Phase 3: Select active sector 
      *
      *  Choose the sector with the highest create_seq that still has
      *  writable space.  If no such sector exists (all sectors are
@@ -2415,11 +2344,11 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
  *  Preserves erase counts from flash headers (wear-leveling continuity).
  *  After format, sector 0 is the active sector with an empty record log.
  *
- *  [K-NEW-1 fix]: sector 0 is NOT erased in the loop (Pass 2); it is
+ *   sector 0 is NOT erased in the loop (Pass 2); it is
  *  erased inside init_sector() to avoid a double-erase that would
  *  increment its erase count twice.
  *
- *  [K-15 fix]: NULL guard for db->sectors to handle the case where
+ *  : NULL guard for db->sectors to handle the case where
  *  format is called before init (sectors pointer not yet assigned).
  *
  *  @param db  Database handle (must have part and sectors assigned).
@@ -2430,7 +2359,7 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
     if (!db || !db->part)
         return RDB_ERR_PARAM;
     if (!db->sectors)
-        return RDB_ERR_PARAM; /* [K-15 fix] */
+        return RDB_ERR_PARAM; /*  */
 
     /* Validate sector count fits in uint8_t */
     {
@@ -2454,15 +2383,9 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
         {
             int hdr_valid = 0;
             if (fl_read(db, sec_addr(db, s), &sh, sizeof(sh)) == 0 &&
-                sh.magic == RDB_KV_SECTOR_MAGIC) {
-                if (sh.version == RDB_KV_VERSION) {
-                    uint16_t calc = rdb_crc16(&sh, 6);
-                    calc = rdb_crc16_cont(calc, ((const uint8_t*)&sh) + 8, 8);
-                    hdr_valid = (calc == sh.hdr_crc);
-                } else if (sh.version == RDB_KV_VERSION_OLD) {
-                    hdr_valid = (rdb_crc16(&sh, 6) == sh.hdr_crc);
-                }
-            }
+                sh.magic == RDB_KV_SECTOR_MAGIC &&
+                kv_validate_sector_hdr(&sh))
+                hdr_valid = 1;
             if (hdr_valid && sh.erase_cnt > saved_ec[s])
                 saved_ec[s] = sh.erase_cnt;
         }
@@ -2513,11 +2436,11 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
  *  If power is lost during Phase A, the WRITING record will be
  *  recovered (or discarded) at the next init.
  *
- *  [K-4/K-5 fix]: After gc_ensure_space() (which may trigger GC and
+ *   After gc_ensure_space() (which may trigger GC and
  *  move records), re-find the old copy of the key to get its
  *  updated address/sector before invalidation.
  *
- *  [K-4-pad fix]: Value alignment padding is written in a loop of
+ *   Value alignment padding is written in a loop of
  *  8-byte chunks, correctly handling arbitrary write granularities
  *  and large alignment gaps.
  *
@@ -2642,7 +2565,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
         return rc;
     }
 
-    /* Step 2b [K-4/K-5 fix]: re-find after GC — the old record may
+    /* Step 2b  re-find after GC — the old record may
        have been moved to a different sector/address by migration. */
     find_latest(db, key, kl, &fc);
 
@@ -2742,7 +2665,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
     }
 #endif
 
-    /* Step 5 [K-4/K-5 fix]: invalidate old copy using refreshed fc.
+    /* Step 5  invalidate old copy using refreshed fc.
        The old record was located by the re-find in Step 2b, so its
        address is current even if GC moved it. */
     if (fc.found) {
@@ -2887,17 +2810,50 @@ read_value:
 /* ═══════════════════════════════════════════════════════════════════════════
  *  rdb_kvdb_delete — Delete all copies of a key
  *
- *  Scans every sector and marks ALL VALID records matching the key
- *  as DEAD.  This is an O(N) operation across the entire flash.
- *
- *  Unlike set() which leaves exactly one VALID copy, delete()
- *  guarantees that no VALID copy of the key remains after completion.
+ *  Uses scan_sector with kv_delete_cb to find and mark DEAD all VALID
+ *  copies of the key across every non-erased, non-corrupt sector.
+ *  Guarantees no VALID copy remains after completion.
  *
  *  @param db   Database handle.
  *  @param key  Null-terminated key string.
  *  @return     RDB_OK if at least one copy was found and deleted,
  *              RDB_ERR_NOT_FOUND if the key did not exist.
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** @brief Context for the delete scan callback. */
+typedef struct {
+    const char* key;     /**< Key to search for                    */
+    uint8_t     kl;      /**< Key length                           */
+    uint16_t    hash;    /**< Precomputed key hash                 */
+    int         found;   /**< Set to 1 if any copy was deleted     */
+} del_ctx_t;
+
+/** @brief scan_sector callback — mark all VALID copies of the target key DEAD. */
+static int kv_delete_cb(rdb_kvdb_t* db, uint8_t s,
+    const kv_rec_info_t* ri, void* arg) {
+    del_ctx_t* dx = (del_ctx_t*)arg;
+    if (ri->state != RDB_STATE_VALID ||
+        ri->key_len != dx->kl || ri->key_hash != dx->hash)
+        return RDB_ITER_CONTINUE;
+
+    uint8_t kb[RDB_MAX_KEY_LEN];
+    if (fl_read(db, ri->addr + KV_REC_SZ, kb, ri->key_len) != 0)
+        return RDB_ITER_CONTINUE;
+    if (memcmp(kb, dx->key, ri->key_len) != 0)
+        return RDB_ITER_CONTINUE;
+
+    if (kv_mark_dead(db, ri->addr) != 0) {
+        db->stats.flash_errors++;
+    } else {
+        db->sectors[s].garbage_bytes += ri->rsz;
+        if (db->live_bytes >= ri->rsz)
+            db->live_bytes -= ri->rsz;
+        else
+            db->live_bytes = 0;
+        dx->found = 1;
+    }
+    return RDB_ITER_CONTINUE; /* scan all sectors — find every copy */
+}
 
 rdb_err_t rdb_kvdb_delete(rdb_kvdb_t* db, const char* key) {
     if (!db || !db->initialized)
@@ -2907,67 +2863,26 @@ rdb_err_t rdb_kvdb_delete(rdb_kvdb_t* db, const char* key) {
 
     uint8_t kl;
     if (key_scan_len(key, &kl) != 0)
-        return RDB_ERR_PARAM;   /* empty, too long, or not null-terminated */
+        return RDB_ERR_PARAM;
 
     fl_lock(db);
 
-    uint16_t hash = rdb_hash16(key, kl);
-    int      found = 0;
-
+    del_ctx_t dx = { .key = key, .kl = kl, .hash = rdb_hash16(key, kl),
+                     .found = 0 };
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         if (db->sectors[s].status == RDB_SEC_ERASED ||
             db->sectors[s].status == RDB_SEC_CORRUPT)
             continue;
-
-        uint32_t base = sec_addr(db, s);
-        uint32_t off = data_start(db);
-        uint32_t ss = db->part->sector_size;
-
-        while (off + KV_REC_SZ <= ss) {
-            rdb_kv_record_hdr_t rh;
-            if (fl_read(db, base + off, &rh, sizeof(rh)) != 0)
-                break;
-            if (rh.magic == 0xFFu && rh.state == 0xFFu)
-                break;
-            if (rh.magic != RDB_KV_RECORD_MAGIC ||
-                rh.key_len < 1 || rh.key_len > RDB_MAX_KEY_LEN ||
-                rh.val_len > RDB_MAX_VAL_LEN) {
-                off += kv_corrupt_skip(db); /* [K-3 fix] */
-                continue;
-            }
-            uint32_t rsz = rec_size(db, rh.key_len, rh.val_len);
-            if (off + rsz > ss)
-                break;
-
-            if (rh.state == RDB_STATE_VALID &&
-                rh.key_len == kl && rh.key_hash == hash) {
-                /* Full key comparison from flash */
-                uint8_t kb[RDB_MAX_KEY_LEN];
-                if (fl_read(db, base + off + KV_REC_SZ, kb, kl) == 0 &&
-                    memcmp(kb, key, kl) == 0) {
-                    if (kv_mark_dead(db, base + off) != 0) {
-                        db->stats.flash_errors++;
-                    } else {
-                        db->sectors[s].garbage_bytes += rsz;
-                        if (db->live_bytes >= rsz)
-                            db->live_bytes -= rsz;
-                        else
-                            db->live_bytes = 0;
-                    }
-                    found = 1;
-                }
-            }
-            off += rsz;
-        }
+        scan_sector(db, s, kv_delete_cb, &dx, RDB_FALSE);
     }
 
-    if (found)
+    if (dx.found)
         kv_cache_invalidate(db, key, kl);
 
     db->stats.delete_ops++;
     db->iter_gen++;
     fl_unlock(db);
-    return found ? RDB_OK : RDB_ERR_NOT_FOUND;
+    return dx.found ? RDB_OK : RDB_ERR_NOT_FOUND;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
