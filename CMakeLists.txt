@@ -271,6 +271,7 @@ if(BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sim
     )
+    target_link_libraries(rocketdb_sim_support PUBLIC rocketdb)
     rocketdb_apply_warnings(rocketdb_sim_support)
     rocketdb_apply_optimization(rocketdb_sim_support)
     if(UNIX AND NOT APPLE)
