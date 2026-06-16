@@ -274,7 +274,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (matching KVDB format's validation pattern).  Removed overly strict `erase_cnts`
   NULL check that broke the init→format fallback path when caller passes NULL
   (which is valid per the API contract).
-- **W25QXX integration guide**: New comprehensive guide at `docs/W25QXX_GUIDE.md` covering
+- **W25QXX integration guide**: New comprehensive guide at `docs/architecture/W25QXX_GUIDE.md` covering
   SPI command opcodes, HAL implementation examples for read/write/erase/lock/unlock/yield,
   recommended configuration for W25Q32/Q64/Q128, timing characteristics, and multi-task
   SPI bus sharing considerations.

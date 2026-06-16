@@ -1403,7 +1403,7 @@ Windows 主机默认优先使用 LLVM/Clang，已安装路径为 `D:\Programs\LL
 3. 执行 `rdbdump inspect/verify/export`。
 4. 输出 `observable_dataset.json/csv`、`valid_dataset.json/csv`、`summary.json`、`anomalies.json`。
 
-集成测试使用 `tests/sim/test_rdbdump_dump.c` 从模拟 Flash 保存确定性 KVDB/TSDB 镜像。`build/run_all_tests.bat test` 在基础测试后执行 rdbdump 校验，导出目录为 `tests/out/rdbdump_export/<YYMMDD-HHMMSS>/kvdb` 和 `tests/out/rdbdump_export/<YYMMDD-HHMMSS>/tsdb`。详细设计见 `docs/offline_flash_analysis.md`。
+集成测试使用 `tests/sim/test_rdbdump_dump.c` 从模拟 Flash 保存确定性 KVDB/TSDB 镜像。`build/run_all_tests.bat test` 在基础测试后执行 rdbdump 校验，导出目录为 `tests/out/rdbdump_export/<YYMMDD-HHMMSS>/kvdb` 和 `tests/out/rdbdump_export/<YYMMDD-HHMMSS>/tsdb`。详细设计见 `docs/architecture/OFFLINE_ANALYSIS.md`。
 
 ---
 

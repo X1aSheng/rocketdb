@@ -6,7 +6,7 @@ RocketDB 是针对资源受限嵌入式系统的**双模 Flash 存储引擎**，
 
 本 SpecKit 是 RocketDB 从早期版本演进至当前生产级基线的项目管理体系，包括规格定义、实现现状、分阶段计划、任务跟踪、问题澄清、功能分析。
 
-> 当前构建、测试和离线分析状态以 `docs/Architecture.md`、`docs/test_plan.md`、`tests/sim/README.md`、`tests/perf/README.md` 和 `docs/offline_flash_analysis.md` 为准。本目录保留项目演进过程中的规格化材料，并已同步关键路径与当前工具链。
+> 当前构建、测试和离线分析状态以 `docs/architecture/ARCHITECTURE.md`、`docs/architecture/TEST_PLAN.md`、`tests/sim/README.md`、`tests/perf/README.md` 和 `docs/architecture/OFFLINE_ANALYSIS.md` 为准。本目录保留项目演进过程中的规格化材料，并已同步关键路径与当前工具链。
 
 ### 文档来源整合（2026-02-25 更新）
 

@@ -60,7 +60,7 @@ rocketdb/
 
 - Read the [README](README.md) for quick start
 - Review [rocketdb design.md](docs/rocketdb%20design.md) for architecture details
-- See [docs/test_plan.md](docs/test_plan.md) for test coverage
+- See [docs/architecture/TEST_PLAN.md](docs/architecture/TEST_PLAN.md) for test coverage
 
 ## License
 

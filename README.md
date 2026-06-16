@@ -190,11 +190,11 @@ Online API reference: [rocketdb.h](src/rocketdb.h) (Doxygen-formatted comments t
 
 Offline documents:
 
-- [`docs/Architecture.md`](docs/Architecture.md) — Full architecture and design manual
+- [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) — Full architecture and design manual
 - [`docs/README.md`](docs/README.md) — Documentation index
-- [`docs/W25QXX_GUIDE.md`](docs/W25QXX_GUIDE.md) — W25QXX SPI NOR Flash integration guide
-- [`docs/test_plan.md`](docs/test_plan.md) — Test plan and coverage assessment
-- [`docs/offline_flash_analysis.md`](docs/offline_flash_analysis.md) — Offline raw Flash dump analysis with `tools/rdbdump`
+- [`docs/architecture/W25QXX_GUIDE.md`](docs/architecture/W25QXX_GUIDE.md) — W25QXX SPI NOR Flash integration guide
+- [`docs/architecture/TEST_PLAN.md`](docs/architecture/TEST_PLAN.md) — Test plan and coverage assessment
+- [`docs/architecture/OFFLINE_ANALYSIS.md`](docs/architecture/OFFLINE_ANALYSIS.md) — Offline raw Flash dump analysis with `tools/rdbdump`
 - [`tests/sim/README.md`](tests/sim/README.md) — Simulation test methodology
 - [`tests/perf/README.md`](tests/perf/README.md) — Performance benchmark methodology
 

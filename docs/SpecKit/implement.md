@@ -253,7 +253,7 @@ if (count_erased(db) < gc_reserve + 1)
 1. **统一输出目录**：已完成，所有可控构建/测试/性能/rdbdump 产物输出到 `tests/out/`。
 2. **创建构建脚本**：已完成，覆盖 bat、Makefile、CMake。
 3. **统一测试日志格式**：已完成，使用 `YYMMDD-HHMMSS-*.log`。
-4. **更新测试文档**：已完成，见 `docs/test_plan.md`、`tests/sim/README.md`、`tests/perf/README.md`。
+4. **更新测试文档**：已完成，见 `docs/architecture/TEST_PLAN.md`、`tests/sim/README.md`、`tests/perf/README.md`。
 
 ### 短期（v0.0.2 完善）
 1. **补齐自动化测试**：构建 executable test suite，覆盖所有 Phase recovery 场景。

@@ -4,7 +4,7 @@
 
 - Reviewed repository file list: 86 tracked project files, 26,853 lines.
 - Reviewed core engine: `src/rocketdb.h`, `src/rocketdb_kvdb.c`, `src/rocketdb_tsdb.c`.
-- Reviewed HAL/template and W25QXX guidance: `interface/`, `docs/HAL_REFERENCE.md`, `docs/W25QXX_GUIDE.md`.
+- Reviewed HAL/template and W25QXX guidance: `interface/`, `docs/HAL_REFERENCE.md`, `docs/architecture/W25QXX_GUIDE.md`.
 - Reviewed examples, simulation framework, functional tests, performance benchmarks, CMake, Makefile, and Windows batch scripts.
 - No `tests/` or `scripts/` directory exists in this repository. The equivalent project directories are `test/` and `build/`.
 
@@ -39,9 +39,9 @@ Observed baseline issue: Windows Clang CMake configure fails without an explicit
 ### P3 - Documentation Is Stale Or Misleading
 
 - Evidence:
-  - `README.md` links `docs/rocketdb%20design.md`, which does not exist; current design manual is `docs/Architecture.md`.
+  - `README.md` links `docs/rocketdb%20design.md`, which does not exist; current design manual is `docs/architecture/ARCHITECTURE.md`.
   - `README.md` and `docs/BUILD_SCRIPTS.md` refer to `project/build/`; actual scripts live in `build/`.
-  - `docs/W25QXX_GUIDE.md` says RocketDB write calls are always `<=64` and therefore need no W25QXX page split; HAL examples should still split at 256-byte page boundaries.
+  - `docs/architecture/W25QXX_GUIDE.md` says RocketDB write calls are always `<=64` and therefore need no W25QXX page split; HAL examples should still split at 256-byte page boundaries.
   - TSDB write granularity test text says 1/2/4/8B, while implementation currently exercises supported 1/2B only.
 - Fix plan: update README, build script docs, W25QXX/HAL guidance, test plan, and simulator README to match current behavior and test results.
 - Verification: full test matrix plus link/path grep for stale names.
