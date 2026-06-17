@@ -1,6 +1,6 @@
 # RocketDB
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue)]()
+[![Version](https://img.shields.io/badge/version-1.6.0-blue)]()
 [![C99](https://img.shields.io/badge/C-99-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
@@ -67,16 +67,6 @@ Add RocketDB as a Zephyr module (see `zephyr/module.yml`):
 All external primitives (`rdb_crc16`, `rdb_hash16`, flash ops) are provided
 by `zephyr/rocketdb_port.c`.  No additional HAL code is needed.
 
-#### Docker
-
-A multi-stage Dockerfile is provided for Linux build and test:
-
-```bash
-docker build -t rocketdb:latest .
-docker run --rm rocketdb:latest
-docker-compose up
-```
-
 ### Build And Test
 
 Windows host builds use LLVM/Clang by default and fall back to GCC:
@@ -108,6 +98,9 @@ Additional CMake options:
 | `-DENABLE_SANITIZER=ON` | OFF | Enable AddressSanitizer + UndefinedBehaviorSanitizer |
 | `-DENABLE_DEBUG_LOGGING=ON` | OFF | Enable runtime debug trace output |
 | `-DBUILD_PERF=ON` | OFF | Build performance benchmark |
+| `-DRDB_KV_CACHE_SIZE=64` | 0 | KV key-to-address cache slots (64 = 1KB RAM, 0 = disabled) |
+| `-DRDB_BLOOM_BITS=256` | 0 | Per-sector Bloom filter width (256 bits = 32B/sector RAM) |
+| `-DRDB_DEDUP_SLOTS=16` | 16 | Init dedup hash table slots (16 = 256B stack) |
 
 CMake presets are also available for common configurations:
 
@@ -192,6 +185,9 @@ Offline documents:
 
 - [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) — Full architecture and design manual
 - [`docs/README.md`](docs/README.md) — Documentation index
+- [`docs/architecture/COMPARISON.md`](docs/architecture/COMPARISON.md) — RocketDB vs FlashDB vs LittleFS comparison
+- [`docs/architecture/RESOURCE-ANALYSIS-260616.md`](docs/architecture/RESOURCE-ANALYSIS-260616.md) — ROM/RAM/efficiency analysis
+- [`docs/architecture/KVDB-REVIEW-260617.md`](docs/architecture/KVDB-REVIEW-260617.md) — KVDB module review & optimization plan
 - [`docs/architecture/W25QXX_GUIDE.md`](docs/architecture/W25QXX_GUIDE.md) — W25QXX SPI NOR Flash integration guide
 - [`docs/architecture/TEST_PLAN.md`](docs/architecture/TEST_PLAN.md) — Test plan and coverage assessment
 - [`docs/architecture/OFFLINE_ANALYSIS.md`](docs/architecture/OFFLINE_ANALYSIS.md) — Offline raw Flash dump analysis with `tools/rdbdump`

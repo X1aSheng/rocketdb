@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] — 2026-06-17
+
+### Changed
+
+- **Default KV cache disabled** (`RDB_KV_CACHE_SIZE=0`): Reduced default KVDB RAM
+  from 1,108 B to 87 B (-92%). Users who need O(1) hot-key reads should explicitly
+  opt-in with `-DRDB_KV_CACHE_SIZE=64`.
+- **Dedup table configurable** (`RDB_DEDUP_SLOTS`): Default reduced from 32 to 16
+  slots (256 B stack, -50%). Configurable via compile definition.
+- **Init scan merged**: 5 separate sector scan passes (WRITING recovery, dedup,
+  Bloom rebuild, garbage recount, live recount) merged into a single pass,
+  reducing init Flash reads by 80%.
+- **GC cleanup merged**: Post-migration dedup + garbage + live accounting merged
+  into single-pass `gc_post_cleanup()`.
+- **Removed old sector format support** (`RDB_KV_VERSION_OLD`): Simplified CRC
+  validation path, -60 B ROM.
+- **TSDB init Phase 2/5 caching**: Reuse Phase 1 classification results, skipping
+  redundant Flash reads during sequence validation.
+
+### Added
+
+- **Shared helpers**: `kv_validate_sector_hdr()`, `kv_sort_sectors_by_seq()`,
+  `kv_delete_cb`, `gc_post_cleanup()`, `gc_cleanup_cb`.
+- **New documents**: `KVDB-REVIEW-260617.md` (module audit), `RESOURCE-ANALYSIS-260616.md`
+  (ROM/RAM/efficiency), `INIT-OPTIMIZATION-260616.md`, `OPTIMIZATION-1-IMPACT-260616.md`.
+
+### Fixed
+
+- **ODR in sim support**: `rocketdb_sim_support` now links PUBLIC against `rocketdb`,
+  fixing `rdb_kvdb_t` struct mismatch in `sim_trace.c` that caused Runtime Stats
+  to read garbage values.
+- **Test trace stats**: Fixed missing `trace_kvdb_stats`/`trace_tsdb_stats` calls
+  in post_test hooks for 4 test suites, ensuring Runtime Stats appear in all logs.
+- **WRITING recovery double-count**: Fixed garbage_bytes double-count in
+  `init_combined_cb` CRC failure path.
+
+### Removed
+
+- **Docker files**: `Dockerfile`, `docker-compose.yml`, `.dockerignore` removed
+  (embedded library — no containerization needed).
+- **9 dead functions**: `writing_cb`, `fixup_stale`, `fixup_cb`, `bloom_rebuild_all`,
+  `bloom_rebuild_sec`, `bloom_build_cb`, `recalc_garbage_all`, `dedup_mark_cb`,
+  `recalc_garbage`, `garbage_cb`, `live_cb`, `reconcile_live` eliminated through
+  scan merging.
+- **All fix annotations**: 45 `[K-* fix]`/`[T-* fix]` markers rewritten as design
+  descriptions.
+
+### Naming
+
+- `migrate_one` → `gc_migrate_one`, `rotate` → `kv_rotate`,
+  `write_sec_hdr` → `kv_write_sector_hdr` (namespace consistency).
+
+### ROM/RAM (post-optimization)
+
+| Metric | v1.5.2 | v1.6.0 | Change |
+|--------|--------|--------|--------|
+| KVDB .text (x86-64) | 26,818 B | **23,970 B** | -10.6% |
+| TSDB .text (x86-64) | 13,555 B | **13,507 B** | -0.4% |
+| KVDB handle (default) | 1,108 B | **87 B** | -92% |
+| Dedup table (stack) | 512 B | **256 B** | -50% |
+
+---
+
 ## [1.5.2] — 2026-06-16
 
 ### Added
