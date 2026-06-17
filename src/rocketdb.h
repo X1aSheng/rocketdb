@@ -185,6 +185,19 @@ extern "C" {
 #endif
 
 /**
+ * @brief Number of hash slots in the init dedup table.
+ *
+ * Each slot occupies 16 bytes (hash + klen + prefix + addr).
+ * Default 16 slots (256 B stack).  Overflow gracefully falls
+ * back to find_latest().
+ *
+ * Reduce to 8 for very small partitions (< 4 sectors).
+ */
+#ifndef RDB_DEDUP_SLOTS
+#define RDB_DEDUP_SLOTS 16u
+#endif
+
+/**
  * @brief Per-sector bloom filter width in bits.
  *
  * A 256-bit (32-byte) hash bucket bitmap that tracks which keys *may*
@@ -500,7 +513,7 @@ typedef enum {
 #define RDB_KV_SECTOR_MAGIC 0x4B564442u /**< KVDB sector header magic     */
 #define RDB_KV_RECORD_MAGIC 0xA5u       /**< KVDB record header magic     */
 #define RDB_KV_VERSION      0x0002u     /**< KVDB on-flash format version (CRC over 16B header) */
-#define RDB_KV_VERSION_OLD  0x0001u     /**< Previous format (CRC over 6B) accepted on init */
+/**< Current sector header format (CRC over bytes [0..5] + [8..15]) */
 
 #define RDB_TS_SECTOR_MAGIC 0x54534442u /**< TSDB sector header magic     */
 #define RDB_TS_RECORD_MAGIC 0xB6u       /**< TSDB record header magic     */

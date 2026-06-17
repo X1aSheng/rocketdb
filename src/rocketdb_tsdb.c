@@ -902,29 +902,31 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 
     /* ══════════════════════════════════════════════════════════════════
      *  Phase 1: Classify all sectors, find head/tail
+     *
+     *  Cache classification + seq locally so Phase 2 can validate
+     *  sequence continuity without re-reading sector headers.
      * ══════════════════════════════════════════════════════════════════ */
     int      has_data = 0;
     uint8_t  head_s = 0xFF, tail_s = 0xFF;
     uint16_t head_sq = 0, tail_sq = 0;
+    ts_cls_t cls_cache[RDB_MAX_SECTORS];
+    uint16_t seq_cache[RDB_MAX_SECTORS];
 
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         rdb_ts_sector_hdr_t h;
         ts_cls_t            cls = ts_classify(db, s, &h);
+        cls_cache[s] = cls;
+        seq_cache[s] = h.seq;
 
         if (cls == TS_CORRUPT) {
-            /* Attempt to reclaim corrupt sectors by erasing.
-             *  do NOT reset ec to 1 or 0.
-             * The prior ec_buf[s] value is the best estimate. */
             if (fl_erase(db, ts_sec_addr(db, s)) != 0)
                 db->stats.flash_errors++;
-            /* ec_buf[s] untouched — keep pre-existing wear history */
             continue;
         }
         if (cls == TS_EMPTY)
-            continue; /* ec_buf[s] untouched — keep pre-existing value */
+            continue;
 
         has_data = 1;
-        /*  take max of RAM and flash ec */
         if (ec_buf && h.erase_cnt > ec_buf[s])
             ec_buf[s] = h.erase_cnt;
 
@@ -948,10 +950,9 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
     /* ══════════════════════════════════════════════════════════════════
      *  Phase 2: Validate sequence continuity (tail → head)
      *
-     *   non-monotonic seq no longer triggers format.
-     *  Instead, increment data_gaps counter and continue.
-     *  This preserves all recoverable data after power-loss scenarios
-     *  that may have left gaps in the ring.
+     *  Uses cached classification from Phase 1 — no flash reads.
+     *  Non-monotonic seq increments data_gaps instead of triggering
+     *  format, preserving all recoverable data.
      * ══════════════════════════════════════════════════════════════════ */
     {
         uint8_t  s = tail_s;
@@ -959,19 +960,17 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
         int      first = 1;
 
         for (uint8_t i = 0; i < db->sector_cnt; i++) {
-            rdb_ts_sector_hdr_t h;
-            ts_cls_t            cls = ts_classify(db, s, &h);
+            ts_cls_t cls = cls_cache[s];
 
             if (cls == TS_ACTIVE || cls == TS_SEALED) {
-                if (!first && !RDB_SEQ16_GT(h.seq, prev_seq) &&
-                    h.seq != prev_seq) {
-                    /*  demoted from full format to warning */
+                uint16_t seq = seq_cache[s];
+                if (!first && !RDB_SEQ16_GT(seq, prev_seq) &&
+                    seq != prev_seq) {
                     db->stats.data_gaps++;
                 }
-                prev_seq = h.seq;
+                prev_seq = seq;
                 first = 0;
             } else if (cls == TS_EMPTY) {
-                /* EMPTY gap in ring — note but don't panic */
                 db->stats.data_gaps++;
             }
 

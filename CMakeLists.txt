@@ -210,10 +210,10 @@ add_library(rocketdb STATIC
 )
 rocketdb_configure_target(rocketdb)
 
-# KV key-to-address cache and bloom filter sizing.
-# PUBLIC so all consumers (tests, examples, embedded) agree on rdb_kvdb_t layout.
+# Bloom filter sizing (PUBLIC so all consumers agree on rdb_kvdb_t layout).
+# KV cache defaults to disabled (RDB_KV_CACHE_SIZE=0 in header); enable
+# with -DRDB_KV_CACHE_SIZE=64 for write-heavy workloads.
 target_compile_definitions(rocketdb PUBLIC
-    RDB_KV_CACHE_SIZE=64
     RDB_BLOOM_BITS=256
 )
 
