@@ -159,6 +159,36 @@ extern const rdb_flash_ops_t rocketdb_interface_ops;
  */
 void rocketdb_interface_debug_print(const char* const fmt, ...);
 
+/* Forward declaration (full definition in spi_flash.h) */
+typedef struct spi_flash_device spi_flash_device_t;
+
+/**
+ * @brief     Register a pre-initialised flash device with the HAL port.
+ * @param[in] dev  spi_flash_device_t* already initialised by main.c.
+ * @note      Must be called once after spi_flash_create()+spi_flash_init().
+ *            Sets the file-static device pointer used by all ops callbacks.
+ */
+void rocketdb_interface_init(spi_flash_device_t *dev);
+
+/**
+ * @brief     Return the registered flash device pointer (opaque).
+ * @return    void* suitable for assigning to rdb_partition_t.flash_ctx.
+ * @note      Call after rocketdb_interface_init().  Returns NULL if
+ *            init hasn't been called.
+ */
+void *rocketdb_interface_get_ctx(void);
+
+/**
+ * @brief     Probe a SPI Flash device using an already-initialised port.
+ * @param[in] port_ops  Pointer to pre-initialised spi_flash_port_ops_t.
+ * @return    Flash device pointer, or NULL on failure.
+ * @note      spi_flash_port_init() must have been called beforehand.
+ *            This internally calls spi_flash_create() + spi_flash_init().
+ *            Prefer rocketdb_interface_init() when main.c manages the device.
+ */
+spi_flash_device_t *rocketdb_interface_flash_probe(
+    const void *port_ops);
+
 /**
  * @}
  */
