@@ -37,9 +37,9 @@
 #ifndef ROCKETDB_INTERFACE_H
 #define ROCKETDB_INTERFACE_H
 
+#include "rocketdb.h"
 #include <stddef.h>
 #include <stdint.h>
-#include "rocketdb.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,7 +62,7 @@ extern "C" {
  *            - non-zero read failed
  * @note      Must handle unaligned addresses.
  */
-int rocketdb_interface_flash_read(void *ctx, uint32_t addr, uint8_t* buf, size_t len);
+int rocketdb_interface_flash_read(void* ctx, uint32_t addr, uint8_t* buf, size_t len);
 
 /**
  * @brief     Flash write operation
@@ -79,7 +79,7 @@ int rocketdb_interface_flash_read(void *ctx, uint32_t addr, uint8_t* buf, size_t
  *            (commit byte, mark_dead) occur at addr+1 regardless of
  *            write_gran and rely on NOR flash byte-program capability.
  */
-int rocketdb_interface_flash_write(void *ctx, uint32_t addr, const uint8_t* buf, size_t len);
+int rocketdb_interface_flash_write(void* ctx, uint32_t addr, const uint8_t* buf, size_t len);
 
 /**
  * @brief     Flash sector erase operation
@@ -91,28 +91,28 @@ int rocketdb_interface_flash_write(void *ctx, uint32_t addr, const uint8_t* buf,
  * @note      Erases the entire sector containing addr.
  *            All bytes in the sector become 0xFF after erase.
  */
-int rocketdb_interface_flash_erase(void *ctx, uint32_t addr);
+int rocketdb_interface_flash_erase(void* ctx, uint32_t addr);
 
 /**
  * @brief     Acquire flash mutex
  * @note      May be empty if single-threaded.
  *            Should disable interrupts or take a mutex.
  */
-void rocketdb_interface_flash_lock(void *ctx);
+void rocketdb_interface_flash_lock(void* ctx);
 
 /**
  * @brief     Release flash mutex
  * @note      May be empty if single-threaded.
  *            Should enable interrupts or release a mutex.
  */
-void rocketdb_interface_flash_unlock(void *ctx);
+void rocketdb_interface_flash_unlock(void* ctx);
 
 /**
  * @brief     Yield CPU during long operations
  * @note      May be empty.  Useful for feeding watchdog or
  *            yielding to RTOS scheduler during GC / rotation.
  */
-void rocketdb_interface_flash_yield(void *ctx);
+void rocketdb_interface_flash_yield(void* ctx);
 
 /**
  * @brief     Compute CRC-16 over a data block
@@ -168,7 +168,7 @@ typedef struct spi_flash_device spi_flash_device_t;
  * @note      Must be called once after spi_flash_create()+spi_flash_init().
  *            Sets the file-static device pointer used by all ops callbacks.
  */
-void rocketdb_interface_init(spi_flash_device_t *dev);
+void rocketdb_interface_init(spi_flash_device_t* dev);
 
 /**
  * @brief     Return the registered flash device pointer (opaque).
@@ -176,7 +176,7 @@ void rocketdb_interface_init(spi_flash_device_t *dev);
  * @note      Call after rocketdb_interface_init().  Returns NULL if
  *            init hasn't been called.
  */
-void *rocketdb_interface_get_ctx(void);
+void* rocketdb_interface_get_ctx(void);
 
 /**
  * @brief     Probe a SPI Flash device using an already-initialised port.
@@ -186,8 +186,7 @@ void *rocketdb_interface_get_ctx(void);
  *            This internally calls spi_flash_create() + spi_flash_init().
  *            Prefer rocketdb_interface_init() when main.c manages the device.
  */
-spi_flash_device_t *rocketdb_interface_flash_probe(
-    const void *port_ops);
+spi_flash_device_t* rocketdb_interface_flash_probe(const void* port_ops);
 
 /**
  * @}

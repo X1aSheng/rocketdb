@@ -8,36 +8,36 @@
  * References: T-310, T-311, T-314
  */
 
+#include "../../src/rocketdb.h"
 #include "sim_flash.h"
 #include "test_framework.h"
-#include "../../src/rocketdb.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define FLASH_SIZE      (128u * 1024u)
-#define SECTOR_SIZE     4096u
-#define PAGE_SIZE       256u
-#define DEFAULT_WG      0u
-#define TSDB_PART_SIZE  (64u * 1024u)
-#define TS_SECTOR_CNT   (TSDB_PART_SIZE / SECTOR_SIZE)
+#define FLASH_SIZE     (128u * 1024u)
+#define SECTOR_SIZE    4096u
+#define PAGE_SIZE      256u
+#define DEFAULT_WG     0u
+#define TSDB_PART_SIZE (64u * 1024u)
+#define TS_SECTOR_CNT  (TSDB_PART_SIZE / SECTOR_SIZE)
 
 /* ── Shared flash environment ──────────────────────────────────────────── */
 
-static uint8_t     g_flash_buf[FLASH_SIZE];
-static sim_flash_t g_flash;
+static uint8_t         g_flash_buf[FLASH_SIZE];
+static sim_flash_t     g_flash;
 static rdb_partition_t g_part;
-static rdb_tsdb_t  g_db;
-static uint32_t    g_ec[TS_SECTOR_CNT];
-static trace_ctx_t g_trace;
-static uint8_t     g_enforce_bounded_program;
-static uint32_t    g_max_write_len;
+static rdb_tsdb_t      g_db;
+static uint32_t        g_ec[TS_SECTOR_CNT];
+static trace_ctx_t     g_trace;
+static uint8_t         g_enforce_bounded_program;
+static uint32_t        g_max_write_len;
 
-static int fl_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {
+static int fl_read(void* ctx, uint32_t addr, uint8_t* buf, size_t len) {
     (void)ctx;
     return sim_flash_read(&g_flash, addr, buf, len);
 }
-static int fl_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
+static int fl_write(void* ctx, uint32_t addr, const uint8_t* buf, size_t len) {
     (void)ctx;
     if (len > g_max_write_len)
         g_max_write_len = (uint32_t)len;
@@ -45,55 +45,55 @@ static int fl_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
         return -1;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
-static int fl_erase(void *ctx, uint32_t addr) {
+static int fl_erase(void* ctx, uint32_t addr) {
     (void)ctx;
     return sim_flash_erase(&g_flash, addr);
 }
-static void fl_lock(void *ctx) { (void)ctx; }
-static void fl_unlock(void *ctx) { (void)ctx; }
-static void fl_yield(void *ctx) { (void)ctx; }
-
-static rdb_flash_ops_t g_ops = {
-    .read = fl_read, .write = fl_write, .erase = fl_erase,
-    .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
-};
-
-/* ── Trace wrappers ─────────────────────────────────────────────────── */
-static rdb_err_t trace_ts_append(rdb_tsdb_t *db, uint32_t ts,
-                                  const void *data, uint16_t dlen)
-{
-    trace_event(&g_trace, "  [TS-APPEND] time=%u dlen=%u",
-                (unsigned)ts, (unsigned)dlen);
-    return rdb_tsdb_append(db, ts, (const uint8_t *)data, dlen);
+static void fl_lock(void* ctx) {
+    (void)ctx;
+}
+static void fl_unlock(void* ctx) {
+    (void)ctx;
+}
+static void fl_yield(void* ctx) {
+    (void)ctx;
 }
 
-static rdb_err_t trace_ts_query(rdb_tsdb_t *db, uint32_t from, uint32_t to,
-                                 rdb_ts_cb_t cb, void *arg)
-{
-    trace_event(&g_trace, "  [TS-QUERY] from=%u to=%u",
-                (unsigned)from, (unsigned)to);
+static rdb_flash_ops_t g_ops = {
+    .read = fl_read, .write = fl_write, .erase = fl_erase, .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield};
+
+/* ── Trace wrappers ─────────────────────────────────────────────────── */
+static rdb_err_t trace_ts_append(rdb_tsdb_t* db, uint32_t ts, const void* data, uint16_t dlen) {
+    trace_event(&g_trace, "  [TS-APPEND] time=%u dlen=%u", (unsigned)ts, (unsigned)dlen);
+    return rdb_tsdb_append(db, ts, (const uint8_t*)data, dlen);
+}
+
+static rdb_err_t trace_ts_query(rdb_tsdb_t* db, uint32_t from, uint32_t to, rdb_ts_cb_t cb, void* arg) {
+    trace_event(&g_trace, "  [TS-QUERY] from=%u to=%u", (unsigned)from, (unsigned)to);
     return rdb_tsdb_query(db, from, to, cb, arg);
 }
 
-static rdb_err_t ts_reset(void)
-{
+static rdb_err_t ts_reset(void) {
     g_enforce_bounded_program = 0;
-    g_max_write_len = 0;
-    if (sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE,
-                       SECTOR_SIZE, PAGE_SIZE, DEFAULT_WG) != 0)
+    g_max_write_len           = 0;
+    if (sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, PAGE_SIZE, DEFAULT_WG) != 0)
         return RDB_ERR_FLASH;
-    g_part = (rdb_partition_t) {
-        .name = "TSDB", .base_addr = 0, .total_size = TSDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE, .write_gran = DEFAULT_WG, .ops = &g_ops
-    };
-    g_db.part = &g_part;
+    g_part          = (rdb_partition_t) {.name = "TSDB",
+                 .base_addr                    = 0,
+                 .total_size                   = TSDB_PART_SIZE,
+                 .sector_size                  = SECTOR_SIZE,
+                 .write_gran                   = DEFAULT_WG,
+                 .ops                          = &g_ops};
+    g_db.part       = &g_part;
     g_db.erase_cnts = g_ec;
     g_db.sector_cnt = (uint8_t)TS_SECTOR_CNT;
     trace_event(&g_trace, "TSDB format+init (basic)");
     rdb_err_t ret = rdb_tsdb_format(&g_db);
-    if (ret != RDB_OK) return ret;
+    if (ret != RDB_OK)
+        return ret;
     ret = rdb_tsdb_init(&g_db, &g_part, g_ec);
-    if (ret == RDB_OK) trace_tsdb_snapshot(&g_trace, &g_db);
+    if (ret == RDB_OK)
+        trace_tsdb_snapshot(&g_trace, &g_db);
     return ret;
 }
 
@@ -109,10 +109,10 @@ typedef struct {
     uint16_t expected_len;
 } ts_check_ctx_t;
 
-static int ts_check_cb(uint32_t t, const void *data, uint16_t len, void *arg)
-{
-    ts_check_ctx_t *ctx = (ts_check_ctx_t *)arg;
-    if (ctx->count == 0) ctx->first_time = t;
+static int ts_check_cb(uint32_t t, const void* data, uint16_t len, void* arg) {
+    ts_check_ctx_t* ctx = (ts_check_ctx_t*)arg;
+    if (ctx->count == 0)
+        ctx->first_time = t;
     ctx->last_time = t;
     ctx->count++;
     TEST_ASSERT_EQ(len, ctx->expected_len);
@@ -120,18 +120,18 @@ static int ts_check_cb(uint32_t t, const void *data, uint16_t len, void *arg)
     return RDB_ITER_CONTINUE;
 }
 
-TEST_CASE(ts_basic_append_query, "TSDB", "Append/query/latest/oldest/count/time_range")
-{
+TEST_CASE(ts_basic_append_query, "TSDB", "Append/query/latest/oldest/count/time_range") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
 
     uint8_t payload[16];
-    for (uint8_t i = 0; i < sizeof(payload); i++) payload[i] = (uint8_t)(0xA0u + i);
+    for (uint8_t i = 0; i < sizeof(payload); i++)
+        payload[i] = (uint8_t)(0xA0u + i);
 
     for (uint32_t i = 1; i <= TS_APPEND_COUNT; i++)
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, i, payload, (uint16_t)sizeof(payload)));
 
-    ts_check_ctx_t qctx = { 0 };
+    ts_check_ctx_t qctx = {0};
     memcpy(qctx.expected, payload, sizeof(payload));
     qctx.expected_len = (uint16_t)sizeof(payload);
 
@@ -146,28 +146,32 @@ TEST_CASE(ts_basic_append_query, "TSDB", "Append/query/latest/oldest/count/time_
     TEST_ASSERT_EQ(newest, TS_APPEND_COUNT);
     TEST_ASSERT_EQ(rdb_tsdb_count(&g_db), TS_APPEND_COUNT);
 
-    uint8_t out[16]; uint16_t out_len = 0; uint32_t out_time = 0;
+    uint8_t  out[16];
+    uint16_t out_len  = 0;
+    uint32_t out_time = 0;
     TEST_ASSERT_RDB_OK(rdb_tsdb_get_oldest(&g_db, &out_time, out, sizeof(out), &out_len));
     TEST_ASSERT_EQ(out_time, 1u);
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(payload));
     TEST_ASSERT_MEM_EQ(out, payload, sizeof(payload));
 
-    memset(out, 0, sizeof(out)); out_len = 0; out_time = 0;
+    memset(out, 0, sizeof(out));
+    out_len  = 0;
+    out_time = 0;
     TEST_ASSERT_RDB_OK(rdb_tsdb_get_latest(&g_db, &out_time, out, sizeof(out), &out_len));
     TEST_ASSERT_EQ(out_time, TS_APPEND_COUNT);
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(payload));
     TEST_ASSERT_MEM_EQ(out, payload, sizeof(payload));
 
     uint8_t small[4];
-    out_len = 0; out_time = 0;
-    TEST_ASSERT_RDB_ERR(rdb_tsdb_get_oldest(&g_db, &out_time,
-        small, sizeof(small), &out_len), RDB_ERR_TOO_LARGE);
+    out_len  = 0;
+    out_time = 0;
+    TEST_ASSERT_RDB_ERR(rdb_tsdb_get_oldest(&g_db, &out_time, small, sizeof(small), &out_len), RDB_ERR_TOO_LARGE);
     TEST_ASSERT_EQ(out_time, 1u);
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(payload));
 
-    out_len = 0; out_time = 0;
-    TEST_ASSERT_RDB_ERR(rdb_tsdb_get_latest(&g_db, &out_time,
-        small, sizeof(small), &out_len), RDB_ERR_TOO_LARGE);
+    out_len  = 0;
+    out_time = 0;
+    TEST_ASSERT_RDB_ERR(rdb_tsdb_get_latest(&g_db, &out_time, small, sizeof(small), &out_len), RDB_ERR_TOO_LARGE);
     TEST_ASSERT_EQ(out_time, TS_APPEND_COUNT);
     TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(payload));
     return 0;
@@ -181,38 +185,41 @@ typedef struct {
     uint32_t count, first_time, last_time;
 } ts_count_ctx_t;
 
-static int ts_count_cb(uint32_t t, const void *data, uint16_t len, void *arg)
-{
-    (void)data; (void)len;
-    ts_count_ctx_t *ctx = (ts_count_ctx_t *)arg;
-    if (ctx->count == 0) ctx->first_time = t;
+static int ts_count_cb(uint32_t t, const void* data, uint16_t len, void* arg) {
+    (void)data;
+    (void)len;
+    ts_count_ctx_t* ctx = (ts_count_ctx_t*)arg;
+    if (ctx->count == 0)
+        ctx->first_time = t;
     ctx->last_time = t;
     ctx->count++;
     return RDB_ITER_CONTINUE;
 }
 
-typedef struct { uint32_t n; } ts_wg_ctx_t;
+typedef struct {
+    uint32_t n;
+} ts_wg_ctx_t;
 
-static int ts_wg_query_cb(uint32_t t, const void* d, uint16_t l, void* a)
-{
-    (void)t; (void)d; (void)l;
+static int ts_wg_query_cb(uint32_t t, const void* d, uint16_t l, void* a) {
+    (void)t;
+    (void)d;
+    (void)l;
     ((ts_wg_ctx_t*)a)->n++;
     return RDB_ITER_CONTINUE;
 }
 
-TEST_CASE(ts_epoch_query_integrity, "TSDB", "Epoch reset keeps query integrity")
-{
+TEST_CASE(ts_epoch_query_integrity, "TSDB", "Epoch reset keeps query integrity") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
 
-    uint8_t data[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    uint8_t data[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     for (uint32_t i = 1; i <= 50; i++)
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, i, data, sizeof(data)));
     TEST_ASSERT_RDB_OK(rdb_tsdb_reset_epoch(&g_db));
     for (uint32_t i = 1; i <= 50; i++)
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, i, data, sizeof(data)));
 
-    ts_count_ctx_t qctx = { 0 };
+    ts_count_ctx_t qctx = {0};
     TEST_ASSERT_RDB_OK(trace_ts_query(&g_db, 1, 100, ts_count_cb, &qctx));
     TEST_ASSERT_EQ(qctx.count, 100u);
     TEST_ASSERT_EQ(qctx.first_time, 1u);
@@ -225,9 +232,7 @@ TEST_CASE(ts_epoch_query_integrity, "TSDB", "Epoch reset keeps query integrity")
     return 0;
 }
 
-TEST_CASE(ts_query_does_not_stop_across_epoch, "TSDB",
-          "Query keeps scanning after out-of-range old epoch")
-{
+TEST_CASE(ts_query_does_not_stop_across_epoch, "TSDB", "Query keeps scanning after out-of-range old epoch") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
 
@@ -237,7 +242,7 @@ TEST_CASE(ts_query_does_not_stop_across_epoch, "TSDB",
     TEST_ASSERT_RDB_OK(rdb_tsdb_reset_epoch(&g_db));
     TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 10, &new_data, 1));
 
-    ts_count_ctx_t qctx = { 0 };
+    ts_count_ctx_t qctx = {0};
     TEST_ASSERT_RDB_OK(trace_ts_query(&g_db, 1, 100, ts_count_cb, &qctx));
     TEST_ASSERT_EQ(qctx.count, 1u);
     TEST_ASSERT_EQ(qctx.first_time, 10u);
@@ -249,8 +254,7 @@ TEST_CASE(ts_query_does_not_stop_across_epoch, "TSDB",
  *  T-314: recount jitter control
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(ts_recount_jitter, "TSDB", "Recount occurs only per full ring")
-{
+TEST_CASE(ts_recount_jitter, "TSDB", "Recount occurs only per full ring") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
 
@@ -258,7 +262,7 @@ TEST_CASE(ts_recount_jitter, "TSDB", "Recount occurs only per full ring")
     memset(data, 0x3C, sizeof(data));
 
     uint32_t target_rot = g_db.sector_cnt * 2u;
-    uint32_t time = 1;
+    uint32_t time       = 1;
     while (g_db.stats.sector_rotations < target_rot)
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, time++, data, sizeof(data)));
 
@@ -272,8 +276,7 @@ TEST_CASE(ts_recount_jitter, "TSDB", "Recount occurs only per full ring")
  *  Per test plan 4.2: run append/query with each supported write_gran.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
-{
+TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B") {
     (void)ctx;
 
     /* wg=2 (4B) skipped — TSDB sector header has 2B fields
@@ -281,14 +284,15 @@ TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
        wg=3 (8B) skipped — TSDB headers (20B/12B) are not 8B-aligned. */
     for (uint8_t wg = 0; wg <= 1; wg++) {
         /* Re-init flash with this write_gran */
-        if (sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE,
-                           SECTOR_SIZE, PAGE_SIZE, wg) != 0)
+        if (sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, PAGE_SIZE, wg) != 0)
             TEST_ASSERT(0); /* sim_flash_init failed */
-        g_part = (rdb_partition_t) {
-            .name = "TSDB", .base_addr = 0, .total_size = TSDB_PART_SIZE,
-            .sector_size = SECTOR_SIZE, .write_gran = wg, .ops = &g_ops
-        };
-        g_db.part = &g_part;
+        g_part          = (rdb_partition_t) {.name = "TSDB",
+                     .base_addr                    = 0,
+                     .total_size                   = TSDB_PART_SIZE,
+                     .sector_size                  = SECTOR_SIZE,
+                     .write_gran                   = wg,
+                     .ops                          = &g_ops};
+        g_db.part       = &g_part;
         g_db.erase_cnts = g_ec;
         g_db.sector_cnt = (uint8_t)TS_SECTOR_CNT;
         TEST_ASSERT_RDB_OK(rdb_tsdb_format(&g_db));
@@ -300,8 +304,7 @@ TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
         uint32_t time = 1;
 
         for (uint32_t i = 0; i < 200; i++)
-            TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, time++, data,
-                (uint16_t)sizeof(data)));
+            TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, time++, data, (uint16_t)sizeof(data)));
 
         /* Verify records are readable and count is correct */
         uint32_t count = rdb_tsdb_count(&g_db);
@@ -309,27 +312,30 @@ TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
         TEST_ASSERT_EQ(count, g_db.total_count);
 
         /* Query full range — all records should be accessible */
-        ts_wg_ctx_t qx = { 0 };
+        ts_wg_ctx_t qx = {0};
         TEST_ASSERT_RDB_OK(trace_ts_query(&g_db, 1, time - 1, ts_wg_query_cb, &qx));
         TEST_ASSERT_EQ(qx.n, count);
 
         /* get_latest works */
-        uint32_t lt = 0; uint8_t lb[32]; uint16_t ll = 0;
+        uint32_t lt = 0;
+        uint8_t  lb[32];
+        uint16_t ll = 0;
         TEST_ASSERT_RDB_OK(rdb_tsdb_get_latest(&g_db, &lt, lb, sizeof(lb), &ll));
         TEST_ASSERT_EQ(ll, (uint16_t)sizeof(data));
         TEST_ASSERT_GE(lt, time - 1u);
     }
 
     for (uint8_t wg = 2; wg <= 3; wg++) {
-        if (sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE,
-                           SECTOR_SIZE, PAGE_SIZE, wg) != 0)
+        if (sim_flash_init(&g_flash, g_flash_buf, FLASH_SIZE, SECTOR_SIZE, PAGE_SIZE, wg) != 0)
             TEST_ASSERT(0);
-        g_part = (rdb_partition_t) {
-            .name = "TSDB", .base_addr = 0, .total_size = TSDB_PART_SIZE,
-            .sector_size = SECTOR_SIZE, .write_gran = wg, .ops = &g_ops
-        };
+        g_part = (rdb_partition_t) {.name = "TSDB",
+            .base_addr                    = 0,
+            .total_size                   = TSDB_PART_SIZE,
+            .sector_size                  = SECTOR_SIZE,
+            .write_gran                   = wg,
+            .ops                          = &g_ops};
         memset(&g_db, 0, sizeof(g_db));
-        g_db.part = &g_part;
+        g_db.part       = &g_part;
         g_db.erase_cnts = g_ec;
         g_db.sector_cnt = (uint8_t)TS_SECTOR_CNT;
         TEST_ASSERT_RDB_ERR(rdb_tsdb_format(&g_db), RDB_ERR_PARAM);
@@ -345,8 +351,7 @@ TEST_CASE(ts_write_gran_matrix, "TSDB", "Write granularity matrix 1/2B")
  *  returns RDB_ERR_TOO_LARGE.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test")
-{
+TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
 
@@ -363,7 +368,8 @@ TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test")
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 1, data, (uint16_t)max_dl));
         free(data);
 
-        uint32_t t = 0; uint16_t ol = 0;
+        uint32_t t  = 0;
+        uint16_t ol = 0;
         TEST_ASSERT_RDB_OK(rdb_tsdb_get_latest(&g_db, &t, NULL, 0, &ol));
         TEST_ASSERT_EQ(ol, (uint16_t)max_dl);
     }
@@ -393,13 +399,11 @@ TEST_CASE(ts_max_boundaries, "TSDB", "Maximum data length boundary test")
  *  W25QXX-style drivers can further respect their 256-byte page boundaries.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(ts_large_payload_bounded_program_chunks, "TSDB",
-          "Large payload writes use bounded SPI NOR program chunks")
-{
+TEST_CASE(ts_large_payload_bounded_program_chunks, "TSDB", "Large payload writes use bounded SPI NOR program chunks") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
     g_enforce_bounded_program = 1;
-    g_max_write_len = 0;
+    g_max_write_len           = 0;
 
     uint8_t data[600];
     uint8_t out[600];
@@ -409,7 +413,7 @@ TEST_CASE(ts_large_payload_bounded_program_chunks, "TSDB",
 
     TEST_ASSERT_RDB_OK(trace_ts_append(&g_db, 100, data, (uint16_t)sizeof(data)));
 
-    uint32_t t = 0;
+    uint32_t t       = 0;
     uint16_t out_len = 0;
     TEST_ASSERT_RDB_OK(rdb_tsdb_get_latest(&g_db, &t, out, sizeof(out), &out_len));
     TEST_ASSERT_EQ(t, 100u);
@@ -425,27 +429,28 @@ TEST_CASE(ts_large_payload_bounded_program_chunks, "TSDB",
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void post_test_tsdb_sectors(const char *name, int result, void *ctx)
-{
-    (void)name; (void)result; (void)ctx;
+static void post_test_tsdb_sectors(const char* name, int result, void* ctx) {
+    (void)name;
+    (void)result;
+    (void)ctx;
     trace_tsdb_sector_summary(&g_trace, &g_db);
     trace_tsdb_stats(&g_trace, &g_db);
 }
 
-int main(void)
-{
-    test_config_t config = {
-        .log_file = fopen(test_make_log_path("tsdb_basic"), "w"),
-        .verbose = 1, .stop_on_fail = 0, .filter = NULL,
-        .post_test_hook = post_test_tsdb_sectors, .hook_ctx = NULL
-    };
+int main(void) {
+    test_config_t config = {.log_file = fopen(test_make_log_path("tsdb_basic"), "w"),
+        .verbose                      = 1,
+        .stop_on_fail                 = 0,
+        .filter                       = NULL,
+        .post_test_hook               = post_test_tsdb_sectors,
+        .hook_ctx                     = NULL};
     test_framework_init(&config);
 
     trace_init(&g_trace, config.log_file, config.verbose);
     sim_flash_set_trace(&g_flash, &g_trace);
     trace_event(&g_trace, "=== TSDB Basic Test Suite Start ===");
 
-    test_suite_t *s = test_get_default_suite();
+    test_suite_t* s = test_get_default_suite();
     test_register_case(s, &test_case_ts_basic_append_query);
     test_register_case(s, &test_case_ts_epoch_query_integrity);
     test_register_case(s, &test_case_ts_query_does_not_stop_across_epoch);
@@ -460,8 +465,10 @@ int main(void)
     trace_tsdb_stats(&g_trace, &g_db);
 
     test_print_report();
-    if (config.log_file) fclose(config.log_file);
+    if (config.log_file)
+        fclose(config.log_file);
 
-    test_stats_t stats; test_get_stats(&stats);
+    test_stats_t stats;
+    test_get_stats(&stats);
     return (stats.failed_cases == 0) ? 0 : 1;
 }

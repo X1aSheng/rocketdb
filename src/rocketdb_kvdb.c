@@ -21,7 +21,7 @@
  *   Rule 2.9 —  Pointer safety & dedup erase protection in format()
  *
  *  See DESIGN_RATIONALE.md for full rationale behind each rule.
- * 
+ *
  * Copyright (c) 2015 XiaSheng(info@zhis.net)
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
@@ -171,8 +171,7 @@ static inline uint32_t data_cap(const rdb_kvdb_t* db) {
  * @param vl  Value length in bytes (unpadded).
  * @return    Total record size including all padding.
  */
-static inline uint32_t rec_size(const rdb_kvdb_t* db,
-    uint8_t kl, uint16_t vl) {
+static inline uint32_t rec_size(const rdb_kvdb_t* db, uint8_t kl, uint16_t vl) {
     uint32_t g = wr_gran(db);
     return KV_REC_SZ + RDB_ALIGN_UP(kl, g) + RDB_ALIGN_UP(vl, g);
 }
@@ -215,13 +214,13 @@ static int key_scan_len(const char* key, uint8_t* out_len) {
         if (key[i] == '\0') {
             if (i < 1u || i > (size_t)RDB_MAX_KEY_LEN) {
                 *out_len = (uint8_t)RDB_MIN(i, (size_t)RDB_MAX_KEY_LEN);
-                return 1;   /* empty or too long */
+                return 1; /* empty or too long */
             }
             *out_len = (uint8_t)i;
             return 0;
         }
     }
-    return -1;  /* not null-terminated within bounds */
+    return -1; /* not null-terminated within bounds */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -251,14 +250,12 @@ static inline void fl_yield(const rdb_kvdb_t* db) {
 }
 
 /** @brief Read `n` bytes from flash address `a` into buffer `b`. */
-static inline int fl_read(const rdb_kvdb_t* db,
-    uint32_t a, void* b, size_t n) {
+static inline int fl_read(const rdb_kvdb_t* db, uint32_t a, void* b, size_t n) {
     return db->part->ops->read(db->part->flash_ctx, a, (uint8_t*)b, n);
 }
 
 /** @brief Write `n` bytes from buffer `b` to flash address `a`. */
-static inline int fl_write(const rdb_kvdb_t* db,
-    uint32_t a, const void* b, size_t n) {
+static inline int fl_write(const rdb_kvdb_t* db, uint32_t a, const void* b, size_t n) {
     return db->part->ops->write(db->part->flash_ctx, a, (const uint8_t*)b, n);
 }
 
@@ -316,18 +313,16 @@ size_t rdb_tsdb_ec_size(uint8_t n) {
  *  @return 1 if valid, 0 if corrupt. */
 static int kv_validate_sector_hdr(const rdb_kv_sector_hdr_t* sh) {
     uint16_t calc = rdb_crc16(sh, 6);
-    calc = rdb_crc16_cont(calc, ((const uint8_t*)sh) + 8, 8);
+    calc          = rdb_crc16_cont(calc, ((const uint8_t*)sh) + 8, 8);
     return (calc == sh->hdr_crc);
 }
 
 /** @brief Sort sector indices by create_seq descending (newest first).
  *  Uses insertion sort — optimal for N ≤ 255. */
-static void kv_sort_sectors_by_seq(const rdb_kvdb_t* db,
-    uint8_t* order, uint8_t cnt) {
+static void kv_sort_sectors_by_seq(const rdb_kvdb_t* db, uint8_t* order, uint8_t cnt) {
     for (uint8_t i = 1; i < cnt; i++) {
         uint8_t key = order[i], j = i;
-        while (j > 0 && RDB_SEQ_GT(db->sectors[order[j - 1]].create_seq,
-                                     db->sectors[key].create_seq)) {
+        while (j > 0 && RDB_SEQ_GT(db->sectors[order[j - 1]].create_seq, db->sectors[key].create_seq)) {
             order[j] = order[j - 1];
             j--;
         }
@@ -350,7 +345,7 @@ static void kv_sort_sectors_by_seq(const rdb_kvdb_t* db,
 
 static int is_erased(const rdb_kvdb_t* db, uint8_t s) {
     uint32_t base = sec_addr(db, s);
-    uint32_t sz = db->part->sector_size;
+    uint32_t sz   = db->part->sector_size;
     uint8_t  b[4];
 
     /* Probe 1: first 4 bytes */
@@ -407,21 +402,20 @@ static uint8_t count_erased(const rdb_kvdb_t* db) {
  *  @return     0 on success, -1 on flash write failure.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int kv_write_sector_hdr(const rdb_kvdb_t* db, uint8_t s,
-    uint32_t ec, uint32_t cseq) {
+static int kv_write_sector_hdr(const rdb_kvdb_t* db, uint8_t s, uint32_t ec, uint32_t cseq) {
     rdb_kv_sector_hdr_t h;
-    h.magic = RDB_KV_SECTOR_MAGIC;
-    h.version = RDB_KV_VERSION;
-    h.hdr_crc = 0;
-    h.erase_cnt = ec;
+    h.magic      = RDB_KV_SECTOR_MAGIC;
+    h.version    = RDB_KV_VERSION;
+    h.hdr_crc    = 0;
+    h.erase_cnt  = ec;
     h.create_seq = cseq;
     /* CRC covers bytes [0..5] (magic + version) and [8..15] (erase_cnt + create_seq).
      * The hdr_crc field at offset 6 is excluded from the computation — including it
      * would create a self-referential CRC that never verifies after the CRC is written. */
     {
-        uint16_t crc = rdb_crc16(&h, 6);                   /* bytes [0..5]  */
-        crc = rdb_crc16_cont(crc, ((const uint8_t*)&h) + 8, 8); /* bytes [8..15] */
-        h.hdr_crc = crc;
+        uint16_t crc = rdb_crc16(&h, 6);                                 /* bytes [0..5]  */
+        crc          = rdb_crc16_cont(crc, ((const uint8_t*)&h) + 8, 8); /* bytes [8..15] */
+        h.hdr_crc    = crc;
     }
     return fl_write(db, sec_addr(db, s), &h, sizeof(h));
 }
@@ -445,12 +439,9 @@ static int kv_write_sector_hdr(const rdb_kvdb_t* db, uint8_t s,
  *  @return          0 on success, -1 on flash read failure.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int data_crc_flash(const rdb_kvdb_t* db,
-    uint32_t                                rec_addr,
-    uint8_t kl, uint16_t vl,
-    uint16_t* out) {
-    uint32_t g = wr_gran(db);
-    uint32_t ka = RDB_ALIGN_UP(kl, g);
+static int data_crc_flash(const rdb_kvdb_t* db, uint32_t rec_addr, uint8_t kl, uint16_t vl, uint16_t* out) {
+    uint32_t g   = wr_gran(db);
+    uint32_t ka  = RDB_ALIGN_UP(kl, g);
     uint16_t crc = rdb_crc16(NULL, 0); /* Initial CRC seed */
     uint8_t  buf[RDB_STACK_BUF_SIZE];
 
@@ -527,8 +518,7 @@ typedef struct {
  * @param ctx  User-provided context pointer.
  * @return     RDB_ITER_CONTINUE to keep scanning, RDB_ITER_STOP to abort.
  */
-typedef int (*kv_scan_cb_t)(rdb_kvdb_t* db, uint8_t sec,
-    const kv_rec_info_t* ri, void* ctx);
+typedef int (*kv_scan_cb_t)(rdb_kvdb_t* db, uint8_t sec, const kv_rec_info_t* ri, void* ctx);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Corrupt-record skip step
@@ -564,12 +554,10 @@ static inline uint32_t kv_corrupt_skip(const rdb_kvdb_t* db) {
  *                     detected write frontier.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void scan_sector(rdb_kvdb_t* db, uint8_t s,
-    kv_scan_cb_t cb, void* ctx,
-    int update_woff) {
+static void scan_sector(rdb_kvdb_t* db, uint8_t s, kv_scan_cb_t cb, void* ctx, int update_woff) {
     uint32_t base = sec_addr(db, s);
-    uint32_t off = data_start(db);
-    uint32_t ss = db->part->sector_size;
+    uint32_t off  = data_start(db);
+    uint32_t ss   = db->part->sector_size;
 
     while (off + KV_REC_SZ <= ss) {
         rdb_kv_record_hdr_t rh;
@@ -584,12 +572,9 @@ static void scan_sector(rdb_kvdb_t* db, uint8_t s,
            State must be one of the three NOR-safe values:
              0xFF (WRITING), 0xFE (VALID), 0xFC (DEAD).
            Any other pattern indicates bit-flip corruption. */
-        if (rh.magic != RDB_KV_RECORD_MAGIC ||
-            rh.key_len < 1 || rh.key_len > RDB_MAX_KEY_LEN ||
-            rh.val_len > RDB_MAX_VAL_LEN ||
-            (rh.state != RDB_STATE_WRITING &&
-             rh.state != RDB_STATE_VALID &&
-             rh.state != RDB_STATE_DEAD)) {
+        if (rh.magic != RDB_KV_RECORD_MAGIC || rh.key_len < 1 || rh.key_len > RDB_MAX_KEY_LEN
+            || rh.val_len > RDB_MAX_VAL_LEN
+            || (rh.state != RDB_STATE_WRITING && rh.state != RDB_STATE_VALID && rh.state != RDB_STATE_DEAD)) {
             /* Skip at least one full record header width
                to avoid byte-by-byte crawl through corrupt regions
                and reduce risk of mid-record false-positive parse. */
@@ -603,13 +588,13 @@ static void scan_sector(rdb_kvdb_t* db, uint8_t s,
 
         /* Populate record info for callback */
         kv_rec_info_t ri;
-        ri.addr = base + off;
-        ri.seq = rh.seq;
-        ri.rsz = rsz;
-        ri.val_len = rh.val_len;
+        ri.addr     = base + off;
+        ri.seq      = rh.seq;
+        ri.rsz      = rsz;
+        ri.val_len  = rh.val_len;
         ri.key_hash = rh.key_hash;
-        ri.key_len = rh.key_len;
-        ri.state = rh.state;
+        ri.key_len  = rh.key_len;
+        ri.state    = rh.state;
 
         if (cb && cb(db, s, &ri, ctx) == RDB_ITER_STOP)
             return;
@@ -654,8 +639,7 @@ typedef struct {
  * and create_seq maps to write_seq at sector creation time).  Stop
  * immediately — no need to continue scanning.
  */
-static int find_cb(rdb_kvdb_t* db, uint8_t s,
-    const kv_rec_info_t* ri, void* arg) {
+static int find_cb(rdb_kvdb_t* db, uint8_t s, const kv_rec_info_t* ri, void* arg) {
     find_ctx_t* fc = (find_ctx_t*)arg;
 
     /* Fast reject: state, length, hash */
@@ -676,10 +660,10 @@ static int find_cb(rdb_kvdb_t* db, uint8_t s,
     /* First match in newest-sector-first order IS the latest.
      * No need to keep scanning for a higher seq. */
     fc->best_addr = ri->addr;
-    fc->best_seq = ri->seq;
-    fc->best_rsz = ri->rsz;
-    fc->best_sec = s;
-    fc->found = 1;
+    fc->best_seq  = ri->seq;
+    fc->best_rsz  = ri->rsz;
+    fc->best_sec  = s;
+    fc->found     = 1;
     return RDB_ITER_STOP;
 }
 
@@ -699,25 +683,23 @@ static int find_cb(rdb_kvdb_t* db, uint8_t s,
  * @param kl   Key length in bytes.
  * @param[out] fc  Result context — fc->found indicates success.
  */
-static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
-    find_ctx_t* fc) {
-    fc->key = key;
-    fc->kl = kl;
-    fc->hash = rdb_hash16(key, kl);
+static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl, find_ctx_t* fc) {
+    fc->key       = key;
+    fc->kl        = kl;
+    fc->hash      = rdb_hash16(key, kl);
     fc->best_addr = RDB_ADDR_INVALID;
-    fc->best_seq = 0;
-    fc->best_rsz = 0;
-    fc->best_sec = 0;
-    fc->found = 0;
+    fc->best_seq  = 0;
+    fc->best_rsz  = 0;
+    fc->best_sec  = 0;
+    fc->found     = 0;
 
     /* ── Phase 1: scan active sector first (highest create_seq) ── */
-    if (db->active_sec < db->sector_cnt &&
-        db->sectors[db->active_sec].status != RDB_SEC_ERASED &&
-        db->sectors[db->active_sec].status != RDB_SEC_CORRUPT) {
+    if (db->active_sec < db->sector_cnt && db->sectors[db->active_sec].status != RDB_SEC_ERASED
+        && db->sectors[db->active_sec].status != RDB_SEC_CORRUPT) {
 #if RDB_BLOOM_BITS > 0
         if (db->blooms && RDB_BLOOM_MAYBE(db->blooms + (size_t)db->active_sec * RDB_BLOOM_BYTES, fc->hash))
 #endif
-        scan_sector(db, db->active_sec, find_cb, fc, RDB_FALSE);
+            scan_sector(db, db->active_sec, find_cb, fc, RDB_FALSE);
         if (fc->found)
             return;
     }
@@ -728,8 +710,7 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         if (s == db->active_sec)
             continue;
-        if (db->sectors[s].status == RDB_SEC_ERASED ||
-            db->sectors[s].status == RDB_SEC_CORRUPT)
+        if (db->sectors[s].status == RDB_SEC_ERASED || db->sectors[s].status == RDB_SEC_CORRUPT)
             continue;
         order[cnt++] = s;
     }
@@ -740,9 +721,8 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
        N ≤ 255, O(N²) worst case but tiny constant and cache-friendly. */
     for (uint8_t i = 1; i < cnt; i++) {
         uint8_t ks = order[i];
-        uint8_t j = i;
-        while (j > 0 && RDB_SEQ_GT(db->sectors[order[j - 1]].create_seq,
-                                     db->sectors[ks].create_seq)) {
+        uint8_t j  = i;
+        while (j > 0 && RDB_SEQ_GT(db->sectors[order[j - 1]].create_seq, db->sectors[ks].create_seq)) {
             order[j] = order[j - 1];
             j--;
         }
@@ -833,16 +813,16 @@ static void find_latest(rdb_kvdb_t* db, const char* key, uint8_t kl,
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /** @brief Return values for dedup_track(). */
-#define RDB_DEDUP_NEW   0   /**< First sighting — key was inserted       */
-#define RDB_DEDUP_SEEN  1   /**< Already tracked — duplicate key         */
+#define RDB_DEDUP_NEW  0    /**< First sighting — key was inserted       */
+#define RDB_DEDUP_SEEN 1    /**< Already tracked — duplicate key         */
 #define RDB_DEDUP_FULL (-1) /**< Hash set overflow — fall back to scan   */
 
 typedef struct {
-    uint16_t hash;         /**< Full key hash for collision detection     */
-    uint8_t  klen;         /**< Key length for fast mismatch rejection    */
-    uint8_t  prefix[8];    /**< First 8 key bytes for disambiguation      */
-    uint32_t addr;         /**< Address of tracked newest record          */
-    uint8_t  occupied;     /**< 1 if this slot is in use                  */
+    uint16_t hash;      /**< Full key hash for collision detection     */
+    uint8_t  klen;      /**< Key length for fast mismatch rejection    */
+    uint8_t  prefix[8]; /**< First 8 key bytes for disambiguation      */
+    uint32_t addr;      /**< Address of tracked newest record          */
+    uint8_t  occupied;  /**< 1 if this slot is in use                  */
 } rdb_dedup_slot_t;
 
 /** @brief Bounded hash set for key deduplication (stack-allocated). */
@@ -871,12 +851,12 @@ static void dedup_init(rdb_dedup_set_t* ds) {
  * @param klen  Key length in bytes.
  * @return      RDB_DEDUP_NEW, RDB_DEDUP_SEEN, or RDB_DEDUP_FULL.
  */
-static int dedup_track(rdb_dedup_set_t* ds, rdb_kvdb_t* db,
-    uint16_t hash, const uint8_t* key, uint8_t klen, uint32_t addr) {
+static int dedup_track(
+    rdb_dedup_set_t* ds, rdb_kvdb_t* db, uint16_t hash, const uint8_t* key, uint8_t klen, uint32_t addr) {
     if (ds->overflow)
         return RDB_DEDUP_FULL;
 
-    uint8_t idx = (uint8_t)(hash % RDB_DEDUP_SLOTS);
+    uint8_t idx   = (uint8_t)(hash % RDB_DEDUP_SLOTS);
     uint8_t start = idx;
 
     do {
@@ -888,7 +868,7 @@ static int dedup_track(rdb_dedup_set_t* ds, rdb_kvdb_t* db,
                 uint8_t pl = RDB_MIN(klen, (uint8_t)sizeof(sl->prefix));
                 memcpy(sl->prefix, key, pl);
             }
-            sl->addr = addr;
+            sl->addr     = addr;
             sl->occupied = 1;
             return RDB_DEDUP_NEW;
         }
@@ -936,8 +916,8 @@ static inline uint8_t kv_cache_idx(uint16_t hash) {
  * On hit the slot's CLOCK referenced bit (MSB of klen) is set so the
  * CLOCK eviction hand will not displace it on the next scan. */
 static uint32_t kv_cache_lookup(rdb_kvdb_t* db, const char* key, uint8_t kl) {
-    uint16_t hash = rdb_hash16(key, kl);
-    uint8_t  idx = kv_cache_idx(hash);
+    uint16_t hash  = rdb_hash16(key, kl);
+    uint8_t  idx   = kv_cache_idx(hash);
     uint8_t  start = idx;
 
     do {
@@ -947,7 +927,7 @@ static uint32_t kv_cache_lookup(rdb_kvdb_t* db, const char* key, uint8_t kl) {
         if ((sl->klen & 0x7Fu) == kl && sl->hash == hash) {
             uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
             if (memcmp(sl->prefix, key, pl) == 0) {
-                sl->klen |= 0x80u;  /* set CLOCK referenced bit */
+                sl->klen |= 0x80u; /* set CLOCK referenced bit */
                 return sl->addr;
             }
         }
@@ -966,10 +946,9 @@ static uint32_t kv_cache_lookup(rdb_kvdb_t* db, const char* key, uint8_t kl) {
  * table for a slot whose referenced bit is clear, clearing bits as it
  * passes.  This approximates LRU with minimal per-slot state.
  */
-static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
-    uint32_t addr) {
-    uint16_t hash = rdb_hash16(key, kl);
-    uint8_t  idx = kv_cache_idx(hash);
+static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl, uint32_t addr) {
+    uint16_t hash  = rdb_hash16(key, kl);
+    uint8_t  idx   = kv_cache_idx(hash);
     uint8_t  start = idx;
 
     /* Phase 1: probe home chain for empty slot or matching entry */
@@ -977,7 +956,7 @@ static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
         rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
         if (sl->klen == 0) {
             sl->hash = hash;
-            sl->klen = kl | 0x80u;  /* store actual length + set CLOCK bit */
+            sl->klen = kl | 0x80u; /* store actual length + set CLOCK bit */
             {
                 uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
                 memcpy(sl->prefix, key, pl);
@@ -988,8 +967,8 @@ static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
         if ((sl->klen & 0x7Fu) == kl && sl->hash == hash) {
             uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
             if (memcmp(sl->prefix, key, pl) == 0) {
-                sl->addr = addr;  /* update address in-place */
-                sl->klen |= 0x80u;  /* set CLOCK bit */
+                sl->addr = addr;   /* update address in-place */
+                sl->klen |= 0x80u; /* set CLOCK bit */
                 return;
             }
         }
@@ -1006,9 +985,9 @@ static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
                 goto fill;
             }
             if (sl->klen & 0x80u) {
-                sl->klen &= 0x7Fu;  /* clear referenced bit, give second chance */
+                sl->klen &= 0x7Fu; /* clear referenced bit, give second chance */
             } else {
-                idx = db->cache.clock_hand;  /* unreferenced — evict */
+                idx = db->cache.clock_hand; /* unreferenced — evict */
                 goto fill;
             }
             db->cache.clock_hand = (uint8_t)((db->cache.clock_hand + 1u) % RDB_KV_CACHE_SIZE);
@@ -1020,13 +999,13 @@ static void kv_cache_insert(rdb_kvdb_t* db, const char* key, uint8_t kl,
 fill:
     {
         rdb_kv_cache_slot_t* sl = &db->cache.slots[idx];
-        sl->hash = hash;
-        sl->klen = kl | 0x80u;
+        sl->hash                = hash;
+        sl->klen                = kl | 0x80u;
         {
             uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
             memcpy(sl->prefix, key, pl);
         }
-        sl->addr = addr;
+        sl->addr             = addr;
         db->cache.clock_hand = (uint8_t)((idx + 1u) % RDB_KV_CACHE_SIZE);
     }
 }
@@ -1038,8 +1017,8 @@ fill:
  * call even if the key is not in the cache.
  */
 static void kv_cache_invalidate(rdb_kvdb_t* db, const char* key, uint8_t kl) {
-    uint16_t hash = rdb_hash16(key, kl);
-    uint8_t  idx = kv_cache_idx(hash);
+    uint16_t hash  = rdb_hash16(key, kl);
+    uint8_t  idx   = kv_cache_idx(hash);
     uint8_t  start = idx;
 
     do {
@@ -1050,7 +1029,7 @@ static void kv_cache_invalidate(rdb_kvdb_t* db, const char* key, uint8_t kl) {
         if ((sl->klen & 0x7Fu) == kl && sl->hash == hash) {
             uint8_t pl = RDB_MIN(kl, (uint8_t)sizeof(sl->prefix));
             if (memcmp(sl->prefix, key, pl) == 0) {
-                sl->klen = 0;  /* invalidate */
+                sl->klen = 0; /* invalidate */
                 return;
             }
         }
@@ -1063,12 +1042,12 @@ static void kv_cache_flush(rdb_kvdb_t* db) {
     memset(&db->cache, 0, sizeof(db->cache));
 }
 
-#else  /* RDB_KV_CACHE_SIZE == 0 — compile out all cache calls */
+#else /* RDB_KV_CACHE_SIZE == 0 — compile out all cache calls */
 
-#define kv_cache_lookup(db, key, kl)   RDB_ADDR_INVALID
-#define kv_cache_insert(db, key, kl, addr)  ((void)0)
-#define kv_cache_invalidate(db, key, kl)     ((void)0)
-#define kv_cache_flush(db)                   ((void)0)
+#define kv_cache_lookup(db, key, kl)       RDB_ADDR_INVALID
+#define kv_cache_insert(db, key, kl, addr) ((void)0)
+#define kv_cache_invalidate(db, key, kl)   ((void)0)
+#define kv_cache_flush(db)                 ((void)0)
 
 #endif /* RDB_KV_CACHE_SIZE */
 
@@ -1104,10 +1083,8 @@ static int init_sector(rdb_kvdb_t* db, uint8_t s) {
     uint32_t ec = db->sectors[s].erase_cnt;
     {
         rdb_kv_sector_hdr_t oh;
-        if (fl_read(db, sec_addr(db, s), &oh, sizeof(oh)) == 0 &&
-            oh.magic == RDB_KV_SECTOR_MAGIC &&
-            rdb_crc16(&oh, 6) == oh.hdr_crc &&
-            oh.erase_cnt > ec)
+        if (fl_read(db, sec_addr(db, s), &oh, sizeof(oh)) == 0 && oh.magic == RDB_KV_SECTOR_MAGIC
+            && rdb_crc16(&oh, 6) == oh.hdr_crc && oh.erase_cnt > ec)
             ec = oh.erase_cnt;
     }
     ec++;
@@ -1119,11 +1096,11 @@ static int init_sector(rdb_kvdb_t* db, uint8_t s) {
     if (kv_write_sector_hdr(db, s, ec, db->write_seq) != 0)
         return -1;
 
-    db->sectors[s].erase_cnt = ec;
-    db->sectors[s].create_seq = db->write_seq;
+    db->sectors[s].erase_cnt     = ec;
+    db->sectors[s].create_seq    = db->write_seq;
     db->sectors[s].garbage_bytes = 0;
-    db->sectors[s].write_off = data_start(db);
-    db->sectors[s].status = RDB_SEC_ACTIVE;
+    db->sectors[s].write_off     = data_start(db);
+    db->sectors[s].status        = RDB_SEC_ACTIVE;
 #if RDB_BLOOM_BITS > 0
     /* Freshly erased sector has no keys — clear bloom */
     if (db->blooms)
@@ -1147,12 +1124,11 @@ static int init_sector(rdb_kvdb_t* db, uint8_t s) {
 
 static int kv_rotate(rdb_kvdb_t* db) {
     /* Find erased sector with lowest erase count */
-    uint8_t  best = 0xFF;
+    uint8_t  best    = 0xFF;
     uint32_t best_ec = 0xFFFFFFFFu;
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
-        if (db->sectors[s].status == RDB_SEC_ERASED &&
-            db->sectors[s].erase_cnt < best_ec) {
-            best = s;
+        if (db->sectors[s].status == RDB_SEC_ERASED && db->sectors[s].erase_cnt < best_ec) {
+            best    = s;
             best_ec = db->sectors[s].erase_cnt;
         }
     }
@@ -1163,12 +1139,11 @@ static int kv_rotate(rdb_kvdb_t* db) {
         return -1;
 
     /* Unconditionally seal old active — no write_off guard */
-    if (db->active_sec < db->sector_cnt &&
-        db->sectors[db->active_sec].status == RDB_SEC_ACTIVE)
+    if (db->active_sec < db->sector_cnt && db->sectors[db->active_sec].status == RDB_SEC_ACTIVE)
         db->sectors[db->active_sec].status = RDB_SEC_SEALED;
 
     db->active_sec = best;
-    db->write_off = db->sectors[best].write_off;
+    db->write_off  = db->sectors[best].write_off;
     return 0;
 }
 
@@ -1215,15 +1190,14 @@ static void gc_build_cache(rdb_kvdb_t* db, gc_prep_t* c) {
     uint32_t ds = data_start(db);
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         c[s].garbage = db->sectors[s].garbage_bytes;
-        c[s].ec = db->sectors[s].erase_cnt;
-        c[s].status = db->sectors[s].status;
-        c[s].idx = s;
-        c[s].live = 0;
+        c[s].ec      = db->sectors[s].erase_cnt;
+        c[s].status  = db->sectors[s].status;
+        c[s].idx     = s;
+        c[s].live    = 0;
 
-        if (c[s].status != RDB_SEC_ERASED &&
-            c[s].status != RDB_SEC_CORRUPT) {
+        if (c[s].status != RDB_SEC_ERASED && c[s].status != RDB_SEC_CORRUPT) {
             uint32_t used = db->sectors[s].write_off - ds;
-            c[s].live = (used > c[s].garbage) ? used - c[s].garbage : 0;
+            c[s].live     = (used > c[s].garbage) ? used - c[s].garbage : 0;
         }
         if ((s & 0x0Fu) == 0x0Fu)
             fl_yield(db);
@@ -1273,15 +1247,13 @@ static uint32_t gc_avail(rdb_kvdb_t* db, uint8_t victim) {
  * @param orig_data_crc  Original data CRC (re-used, not recomputed).
  * @return               0 on success, -1 on failure.
  */
-static int gc_migrate_one(rdb_kvdb_t* db, uint8_t src_sec,
-    const kv_rec_info_t* ri,
-    uint16_t             orig_data_crc,
-    uint32_t*            out_addr) {
+static int gc_migrate_one(
+    rdb_kvdb_t* db, uint8_t src_sec, const kv_rec_info_t* ri, uint16_t orig_data_crc, uint32_t* out_addr) {
     (void)src_sec; /* reserved for future use (e.g. cross-sector trace) */
     uint32_t rsz = ri->rsz;
-    uint32_t g = wr_gran(db);
-    uint32_t ka = RDB_ALIGN_UP(ri->key_len, g);
-    uint32_t va = RDB_ALIGN_UP(ri->val_len, g);
+    uint32_t g   = wr_gran(db);
+    uint32_t ka  = RDB_ALIGN_UP(ri->key_len, g);
+    uint32_t va  = RDB_ALIGN_UP(ri->val_len, g);
 
     /* Rotate if not enough room in current active sector */
     if (db->sectors[db->active_sec].write_off + rsz > db->part->sector_size) {
@@ -1289,21 +1261,20 @@ static int gc_migrate_one(rdb_kvdb_t* db, uint8_t src_sec,
             return -1;
     }
 
-    uint32_t dst = sec_addr(db, db->active_sec) +
-                   db->sectors[db->active_sec].write_off;
+    uint32_t dst = sec_addr(db, db->active_sec) + db->sectors[db->active_sec].write_off;
 
     /* Assign new sequence number */
     db->write_seq++;
     rdb_kv_record_hdr_t nh;
-    nh.magic = RDB_KV_RECORD_MAGIC;
-    nh.state = RDB_STATE_WRITING;
-    nh.key_len = ri->key_len;
-    nh._pad0 = 0xFF;
-    nh.val_len = ri->val_len;
+    nh.magic    = RDB_KV_RECORD_MAGIC;
+    nh.state    = RDB_STATE_WRITING;
+    nh.key_len  = ri->key_len;
+    nh._pad0    = 0xFF;
+    nh.val_len  = ri->val_len;
     nh.key_hash = ri->key_hash;
-    nh.seq = db->write_seq;
+    nh.seq      = db->write_seq;
     nh.data_crc = orig_data_crc;
-    nh._pad1 = 0xFFFF;
+    nh._pad1    = 0xFFFF;
 
     if (rsz <= RDB_STACK_BUF_SIZE) {
         /* Small record: assemble header + key + value in one stack
@@ -1337,7 +1308,7 @@ static int gc_migrate_one(rdb_kvdb_t* db, uint8_t src_sec,
         {
             uint32_t src_pos = ri->addr + KV_REC_SZ;
             uint32_t dst_pos = dst + KV_REC_SZ;
-            uint32_t total = ka + va;
+            uint32_t total   = ka + va;
             uint8_t  buf[RDB_STACK_BUF_SIZE];
 
             while (total) {
@@ -1385,8 +1356,7 @@ typedef struct {
  *   3. Migrate to active sector.
  *   4. Mark source record DEAD.
  */
-static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s,
-    const kv_rec_info_t* ri, void* arg) {
+static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s, const kv_rec_info_t* ri, void* arg) {
     gc_exec_ctx_t* gc = (gc_exec_ctx_t*)arg;
 
     if (ri->state != RDB_STATE_VALID)
@@ -1490,13 +1460,12 @@ static int gc_migrate_cb(rdb_kvdb_t* db, uint8_t s,
 
 /** @brief Context for the combined GC cleanup scan (dedup + garbage + live). */
 typedef struct {
-    rdb_dedup_set_t ds;        /**< Dedup fingerprint set                    */
-    uint32_t        live;      /**< Accumulated live bytes (VALID records)    */
+    rdb_dedup_set_t ds;   /**< Dedup fingerprint set                    */
+    uint32_t        live; /**< Accumulated live bytes (VALID records)    */
 } gc_cleanup_ctx_t;
 
 /** @brief Combined GC cleanup callback — dedup + garbage + live in one pass. */
-static int gc_cleanup_cb(rdb_kvdb_t* db, uint8_t s,
-    const kv_rec_info_t* ri, void* arg) {
+static int gc_cleanup_cb(rdb_kvdb_t* db, uint8_t s, const kv_rec_info_t* ri, void* arg) {
     gc_cleanup_ctx_t* gx = (gc_cleanup_ctx_t*)arg;
 
     if (ri->state != RDB_STATE_VALID) {
@@ -1528,7 +1497,7 @@ static int gc_cleanup_cb(rdb_kvdb_t* db, uint8_t s,
             db->sectors[s].garbage_bytes += ri->rsz;
             kv_cache_invalidate(db, (const char*)kb, ri->key_len);
         } else {
-            gx->live += ri->rsz;  /* authoritative copy */
+            gx->live += ri->rsz; /* authoritative copy */
         }
     } else {
         /* RDB_DEDUP_NEW — first encounter, keep */
@@ -1547,12 +1516,12 @@ static void gc_post_cleanup(rdb_kvdb_t* db, uint8_t victim) {
     uint8_t order[RDB_MAX_SECTORS];
     uint8_t cnt = 0;
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
-        if (s == victim) continue;
-        if (db->sectors[s].status == RDB_SEC_ERASED ||
-            db->sectors[s].status == RDB_SEC_CORRUPT)
+        if (s == victim)
             continue;
-        db->sectors[s].garbage_bytes = 0;  /* reset before accumulation */
-        order[cnt++] = s;
+        if (db->sectors[s].status == RDB_SEC_ERASED || db->sectors[s].status == RDB_SEC_CORRUPT)
+            continue;
+        db->sectors[s].garbage_bytes = 0; /* reset before accumulation */
+        order[cnt++]                 = s;
     }
     kv_sort_sectors_by_seq(db, order, cnt);
 
@@ -1581,7 +1550,7 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
 
     /* Pre-check: ensure migration target has enough space */
     {
-        uint32_t used = db->sectors[victim].write_off - data_start(db);
+        uint32_t used      = db->sectors[victim].write_off - data_start(db);
         uint32_t real_live = (used > db->sectors[victim].garbage_bytes) ? used - db->sectors[victim].garbage_bytes : 0;
         if (real_live > gc_avail(db, victim))
             return -1;
@@ -1603,11 +1572,11 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
         return -1;
 
     /* Update victim metadata */
-    db->sectors[victim].erase_cnt = ec;
-    db->sectors[victim].create_seq = 0;
+    db->sectors[victim].erase_cnt     = ec;
+    db->sectors[victim].create_seq    = 0;
     db->sectors[victim].garbage_bytes = 0;
-    db->sectors[victim].write_off = data_start(db);
-    db->sectors[victim].status = RDB_SEC_ERASED;
+    db->sectors[victim].write_off     = data_start(db);
+    db->sectors[victim].status        = RDB_SEC_ERASED;
 #if RDB_BLOOM_BITS > 0
     if (db->blooms)
         memset(db->blooms + (size_t)victim * RDB_BLOOM_BYTES, 0, RDB_BLOOM_BYTES);
@@ -1692,17 +1661,15 @@ static int gc_execute(rdb_kvdb_t* db, uint8_t victim) {
  * Find a sector with no live records but garbage to reclaim.
  * Prefer the least-erased among candidates for wear balance. */
 static uint8_t gc_select_zero_live(rdb_kvdb_t* db, const gc_prep_t* cache) {
-    uint8_t  best = 0xFF;
+    uint8_t  best    = 0xFF;
     uint32_t best_ec = 0xFFFFFFFFu;
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         if (s == db->active_sec)
             continue;
-        if (cache[s].status != RDB_SEC_ACTIVE &&
-            cache[s].status != RDB_SEC_SEALED)
+        if (cache[s].status != RDB_SEC_ACTIVE && cache[s].status != RDB_SEC_SEALED)
             continue;
-        if (cache[s].live == 0 && cache[s].garbage > 0 &&
-            cache[s].ec < best_ec) {
-            best = s;
+        if (cache[s].live == 0 && cache[s].garbage > 0 && cache[s].ec < best_ec) {
+            best    = s;
             best_ec = cache[s].ec;
         }
     }
@@ -1712,25 +1679,23 @@ static uint8_t gc_select_zero_live(rdb_kvdb_t* db, const gc_prep_t* cache) {
 /* ── GC Phase 2: scored selection ──
  * Adaptive garbage threshold based on erased-sector headroom.
  * Composite score: garbage% × W_GARBAGE + wear% × W_WEAR + capacity% × W_CAPACITY. */
-static uint8_t gc_select_scored(rdb_kvdb_t* db, const gc_prep_t* cache,
-    uint32_t g_min_ec, uint32_t ec_range) {
+static uint8_t gc_select_scored(rdb_kvdb_t* db, const gc_prep_t* cache, uint32_t g_min_ec, uint32_t ec_range) {
     uint8_t erased = count_erased(db);
     uint8_t thresh;
     if (erased > db->gc_reserve)
-        thresh = RDB_GC_GARBAGE_PCT;   /* Ample erased → strict threshold */
+        thresh = RDB_GC_GARBAGE_PCT; /* Ample erased → strict threshold */
     else if (erased == db->gc_reserve)
-        thresh = 5u;                    /* At margin → moderate threshold */
+        thresh = 5u; /* At margin → moderate threshold */
     else
-        thresh = 1u;                    /* Low on erased → aggressive GC */
+        thresh = 1u; /* Low on erased → aggressive GC */
 
-    uint8_t  best_v = 0xFF;
+    uint8_t  best_v     = 0xFF;
     uint32_t best_score = 0;
 
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         if (s == db->active_sec)
             continue;
-        if (cache[s].status != RDB_SEC_ACTIVE &&
-            cache[s].status != RDB_SEC_SEALED)
+        if (cache[s].status != RDB_SEC_ACTIVE && cache[s].status != RDB_SEC_SEALED)
             continue;
         if (cache[s].garbage == 0)
             continue;
@@ -1748,14 +1713,12 @@ static uint8_t gc_select_scored(rdb_kvdb_t* db, const gc_prep_t* cache,
 
         uint32_t wpct = ((cache[s].ec - g_min_ec) * 100u) / ec_range;
         uint32_t cpct = (cache[s].live == 0) ? 100u
-            : 100u - (uint32_t)RDB_MIN((cache[s].live * 100u) / data_cap(db), 100u);
+                                             : 100u - (uint32_t)RDB_MIN((cache[s].live * 100u) / data_cap(db), 100u);
 
-        uint32_t score = gpct * RDB_GC_W_GARBAGE +
-                         wpct * RDB_GC_W_WEAR +
-                         cpct * RDB_GC_W_CAPACITY;
+        uint32_t score = gpct * RDB_GC_W_GARBAGE + wpct * RDB_GC_W_WEAR + cpct * RDB_GC_W_CAPACITY;
         if (score > best_score) {
             best_score = score;
-            best_v = s;
+            best_v     = s;
         }
     }
     return best_v;
@@ -1765,13 +1728,12 @@ static uint8_t gc_select_scored(rdb_kvdb_t* db, const gc_prep_t* cache,
  * When no sector meets the score threshold, pick the one with the most
  * garbage among candidates that won't overflow available space. */
 static uint8_t gc_select_forced(rdb_kvdb_t* db, const gc_prep_t* cache) {
-    uint8_t  best = 0xFF;
+    uint8_t  best    = 0xFF;
     uint32_t best_gb = 0;
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         if (s == db->active_sec)
             continue;
-        if (cache[s].status != RDB_SEC_ACTIVE &&
-            cache[s].status != RDB_SEC_SEALED)
+        if (cache[s].status != RDB_SEC_ACTIVE && cache[s].status != RDB_SEC_SEALED)
             continue;
         if (cache[s].garbage == 0)
             continue;
@@ -1779,7 +1741,7 @@ static uint8_t gc_select_forced(rdb_kvdb_t* db, const gc_prep_t* cache) {
             continue;
         if (cache[s].garbage > best_gb) {
             best_gb = cache[s].garbage;
-            best = s;
+            best    = s;
         }
     }
     return best;
@@ -1803,7 +1765,7 @@ static uint8_t gc_select_wear_level(rdb_kvdb_t* db, const gc_prep_t* cache) {
         return 0xFF;
 
     /* Find least-worn non-erased, non-active sector */
-    uint8_t  min_s = 0xFF;
+    uint8_t  min_s      = 0xFF;
     uint32_t min_ec_nea = 0xFFFFFFFFu;
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         if (db->sectors[s].status == RDB_SEC_ERASED)
@@ -1812,7 +1774,7 @@ static uint8_t gc_select_wear_level(rdb_kvdb_t* db, const gc_prep_t* cache) {
             continue;
         if (db->sectors[s].erase_cnt < min_ec_nea) {
             min_ec_nea = db->sectors[s].erase_cnt;
-            min_s = s;
+            min_s      = s;
         }
     }
 
@@ -1821,8 +1783,7 @@ static uint8_t gc_select_wear_level(rdb_kvdb_t* db, const gc_prep_t* cache) {
     return 0xFF;
 }
 
-static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
-    uint32_t will_free, uint8_t free_sec) {
+static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need, uint32_t will_free, uint8_t free_sec) {
     /* Logical capacity check: even if all garbage were reclaimed,
        would the new data fit? */
     uint32_t eff = (db->live_bytes > will_free) ? db->live_bytes - will_free : 0;
@@ -1834,9 +1795,8 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
         return RDB_OK;
 
     /* Fast path 2  active sector has room AND erased > gc_reserve */
-    if (need > 0 &&
-        db->sectors[db->active_sec].write_off + need <= db->part->sector_size &&
-        count_erased(db) > db->gc_reserve)
+    if (need > 0 && db->sectors[db->active_sec].write_off + need <= db->part->sector_size
+        && count_erased(db) > db->gc_reserve)
         return RDB_OK;
 
     /* ── GC loop: run up to sector_cnt rounds of 4-phase victim selection ── */
@@ -1849,8 +1809,7 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
 
         /* Adjust cache for the record that will be freed after write */
         if (will_free > 0 && free_sec < db->sector_cnt) {
-            if (cache[free_sec].status == RDB_SEC_ACTIVE ||
-                cache[free_sec].status == RDB_SEC_SEALED) {
+            if (cache[free_sec].status == RDB_SEC_ACTIVE || cache[free_sec].status == RDB_SEC_SEALED) {
                 uint32_t adj = RDB_MIN(will_free, cache[free_sec].live);
                 cache[free_sec].garbage += adj;
                 cache[free_sec].live -= adj;
@@ -1887,8 +1846,7 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
     }
 
     /* Post-GC: check if the active sector now has room */
-    if (need > 0 &&
-        db->sectors[db->active_sec].write_off + need <= db->part->sector_size)
+    if (need > 0 && db->sectors[db->active_sec].write_off + need <= db->part->sector_size)
         return RDB_OK;
 
     /* Last resort: rotate to a fresh sector.
@@ -1923,18 +1881,17 @@ static rdb_err_t gc_ensure_space(rdb_kvdb_t* db, uint32_t need,
 
 /** @brief Context for the combined init scan callback. */
 typedef struct {
-    uint32_t         max_seq;   /**< Tracked maximum sequence number            */
-    rdb_dedup_set_t  ds;        /**< Dedup fingerprint set (newest first wins)  */
+    uint32_t        max_seq; /**< Tracked maximum sequence number            */
+    rdb_dedup_set_t ds;      /**< Dedup fingerprint set (newest first wins)  */
 #if RDB_BLOOM_BITS > 0
-    uint8_t*         blooms;    /**< Base pointer to per-sector bloom bitmaps   */
+    uint8_t* blooms; /**< Base pointer to per-sector bloom bitmaps   */
 #endif
-    uint32_t         live;      /**< Accumulated live bytes (VALID records)     */
+    uint32_t live; /**< Accumulated live bytes (VALID records)     */
 } init_scan_ctx_t;
 
 /** @brief Combined init scan callback — 5-in-1 pass over the record chain. */
-static int init_combined_cb(rdb_kvdb_t* db, uint8_t s,
-    const kv_rec_info_t* ri, void* arg) {
-    init_scan_ctx_t* ctx = (init_scan_ctx_t*)arg;
+static int init_combined_cb(rdb_kvdb_t* db, uint8_t s, const kv_rec_info_t* ri, void* arg) {
+    init_scan_ctx_t* ctx      = (init_scan_ctx_t*)arg;
     int              is_valid = (ri->state == RDB_STATE_VALID);
 
     /* ── 1. Track max sequence number ── */
@@ -1951,11 +1908,10 @@ static int init_combined_cb(rdb_kvdb_t* db, uint8_t s,
             db->sectors[s].garbage_bytes += ri->rsz;
         } else {
             uint16_t calc;
-            if (data_crc_flash(db, ri->addr, ri->key_len, ri->val_len,
-                               &calc) == 0 && calc == rh.data_crc) {
+            if (data_crc_flash(db, ri->addr, ri->key_len, ri->val_len, &calc) == 0 && calc == rh.data_crc) {
                 uint8_t v = RDB_STATE_VALID;
                 if (fl_write(db, ri->addr + 1, &v, 1) == 0)
-                    is_valid = 1;   /* promoted — treat as VALID below  */
+                    is_valid = 1; /* promoted — treat as VALID below  */
                 else
                     db->stats.flash_errors++;
             } else {
@@ -1977,8 +1933,7 @@ static int init_combined_cb(rdb_kvdb_t* db, uint8_t s,
             goto accounting;
 
         /* Dedup: newest-sector-first → first encounter is authoritative */
-        int r = dedup_track(&ctx->ds, db, ri->key_hash, kb,
-                            ri->key_len, ri->addr);
+        int r = dedup_track(&ctx->ds, db, ri->key_hash, kb, ri->key_len, ri->addr);
         if (r == RDB_DEDUP_SEEN) {
             /* Stale duplicate in an older sector */
             if (kv_mark_dead(db, ri->addr) != 0)
@@ -2003,8 +1958,8 @@ static int init_combined_cb(rdb_kvdb_t* db, uint8_t s,
 #if RDB_BLOOM_BITS > 0
         /* Bloom: set bits for this key in the current sector */
         if (ctx->blooms) {
-            uint16_t  h  = rdb_hash16(kb, ri->key_len);
-            uint8_t*  bm = ctx->blooms + (size_t)s * RDB_BLOOM_BYTES;
+            uint16_t h  = rdb_hash16(kb, ri->key_len);
+            uint8_t* bm = ctx->blooms + (size_t)s * RDB_BLOOM_BYTES;
             RDB_BLOOM_SET(bm, h);
         }
 #endif
@@ -2077,8 +2032,7 @@ accounting:
  *  @return          RDB_OK on success, or an error code.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
-    void* meta_buf) {
+rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part, void* meta_buf) {
     /* ── Parameter validation ── */
     if (!db || !part || !meta_buf || !part->ops)
         return RDB_ERR_PARAM;
@@ -2099,7 +2053,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
 
     /* ── Zero-initialise the handle ── */
     memset(db, 0, sizeof(*db));
-    db->part = part;
+    db->part    = part;
     db->sectors = (rdb_kv_sector_meta_t*)meta_buf;
 #if RDB_BLOOM_BITS > 0
     db->blooms = (uint8_t*)meta_buf + (size_t)scnt * sizeof(rdb_kv_sector_meta_t);
@@ -2133,8 +2087,8 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
 
     /* Step A: read all sector headers, classify, collect live sectors */
     uint8_t  order[RDB_MAX_SECTORS];
-    uint8_t  cnt = 0;
-    uint32_t max_seq = 0;  /* track max create_seq from sector headers */
+    uint8_t  cnt     = 0;
+    uint32_t max_seq = 0; /* track max create_seq from sector headers */
 
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         rdb_kv_sector_hdr_t sh;
@@ -2146,7 +2100,7 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
 
         /* All-0xFF magic → check if genuinely erased or corrupt */
         if (sh.magic == 0xFFFFFFFFu) {
-            db->sectors[s].status = is_erased(db, s) ? RDB_SEC_ERASED : RDB_SEC_CORRUPT;
+            db->sectors[s].status    = is_erased(db, s) ? RDB_SEC_ERASED : RDB_SEC_CORRUPT;
             db->sectors[s].write_off = data_start(db);
             if (db->sectors[s].status == RDB_SEC_CORRUPT)
                 db->stats.corrupt_sectors++;
@@ -2171,9 +2125,9 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
          *  take max of RAM and flash ec. */
         if (sh.erase_cnt > db->sectors[s].erase_cnt)
             db->sectors[s].erase_cnt = sh.erase_cnt;
-        db->sectors[s].create_seq = sh.create_seq;
-        db->sectors[s].status = RDB_SEC_ACTIVE;
-        db->sectors[s].garbage_bytes = 0;  /* will accumulate during scan */
+        db->sectors[s].create_seq    = sh.create_seq;
+        db->sectors[s].status        = RDB_SEC_ACTIVE;
+        db->sectors[s].garbage_bytes = 0; /* will accumulate during scan */
         if (RDB_SEQ_GT(sh.create_seq, max_seq))
             max_seq = sh.create_seq;
         order[cnt++] = s;
@@ -2187,15 +2141,14 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
 #if RDB_BLOOM_BITS > 0
     if (db->blooms) {
         for (uint8_t i = 0; i < cnt; i++)
-            memset(db->blooms + (size_t)order[i] * RDB_BLOOM_BYTES,
-                   0, RDB_BLOOM_BYTES);
+            memset(db->blooms + (size_t)order[i] * RDB_BLOOM_BYTES, 0, RDB_BLOOM_BYTES);
     }
 #endif
 
     /* Step D: single combined scan — newest-to-oldest for dedup correctness */
     init_scan_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
-    ctx.max_seq = max_seq;   /* seed with max create_seq from headers */
+    ctx.max_seq = max_seq; /* seed with max create_seq from headers */
 #if RDB_BLOOM_BITS > 0
     ctx.blooms = db->blooms;
 #endif
@@ -2205,11 +2158,11 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
         scan_sector(db, order[(uint16_t)i], init_combined_cb, &ctx, RDB_TRUE);
     }
 
-    db->write_seq = ctx.max_seq;
+    db->write_seq  = ctx.max_seq;
     db->live_bytes = ctx.live;
 
     /* ══════════════════════════════════════════════════════════════════
-     *  Phase 3: Select active sector 
+     *  Phase 3: Select active sector
      *
      *  Choose the sector with the highest create_seq that still has
      *  writable space.  If no such sector exists (all sectors are
@@ -2217,18 +2170,16 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
      *  regardless of remaining space, or rotate to a fresh sector.
      * ══════════════════════════════════════════════════════════════════ */
     {
-        uint8_t  best = 0xFF;
+        uint8_t  best    = 0xFF;
         uint32_t best_cs = 0;
 
         /* Prefer sectors with remaining write space */
         for (uint8_t s = 0; s < db->sector_cnt; s++) {
-            if (db->sectors[s].status != RDB_SEC_ACTIVE &&
-                db->sectors[s].status != RDB_SEC_SEALED)
+            if (db->sectors[s].status != RDB_SEC_ACTIVE && db->sectors[s].status != RDB_SEC_SEALED)
                 continue;
-            if (db->sectors[s].write_off < db->part->sector_size &&
-                (best == 0xFF ||
-                    RDB_SEQ_GT(db->sectors[s].create_seq, best_cs))) {
-                best = s;
+            if (db->sectors[s].write_off < db->part->sector_size
+                && (best == 0xFF || RDB_SEQ_GT(db->sectors[s].create_seq, best_cs))) {
+                best    = s;
                 best_cs = db->sectors[s].create_seq;
             }
         }
@@ -2236,12 +2187,10 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
         /* Fallback: any non-erased sector with highest create_seq */
         if (best == 0xFF) {
             for (uint8_t s = 0; s < db->sector_cnt; s++) {
-                if (db->sectors[s].status != RDB_SEC_ACTIVE &&
-                    db->sectors[s].status != RDB_SEC_SEALED)
+                if (db->sectors[s].status != RDB_SEC_ACTIVE && db->sectors[s].status != RDB_SEC_SEALED)
                     continue;
-                if (best == 0xFF ||
-                    RDB_SEQ_GT(db->sectors[s].create_seq, best_cs)) {
-                    best = s;
+                if (best == 0xFF || RDB_SEQ_GT(db->sectors[s].create_seq, best_cs)) {
+                    best    = s;
                     best_cs = db->sectors[s].create_seq;
                 }
             }
@@ -2252,15 +2201,14 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
             if (kv_rotate(db) != 0)
                 return RDB_ERR_CORRUPT;
         } else {
-            db->active_sec = best;
-            db->write_off = db->sectors[best].write_off;
+            db->active_sec           = best;
+            db->write_off            = db->sectors[best].write_off;
             db->sectors[best].status = RDB_SEC_ACTIVE;
 
             /* Seal all other ACTIVE sectors that have data */
             for (uint8_t s = 0; s < db->sector_cnt; s++) {
-                if (s != db->active_sec &&
-                    db->sectors[s].status == RDB_SEC_ACTIVE &&
-                    db->sectors[s].write_off > data_start(db))
+                if (s != db->active_sec && db->sectors[s].status == RDB_SEC_ACTIVE
+                    && db->sectors[s].write_off > data_start(db))
                     db->sectors[s].status = RDB_SEC_SEALED;
             }
         }
@@ -2271,10 +2219,10 @@ rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
         if (db->sectors[s].status == RDB_SEC_CORRUPT) {
             if (fl_erase(db, sec_addr(db, s)) == 0) {
                 db->sectors[s].erase_cnt++;
-                db->sectors[s].status = RDB_SEC_ERASED;
-                db->sectors[s].write_off = data_start(db);
+                db->sectors[s].status        = RDB_SEC_ERASED;
+                db->sectors[s].write_off     = data_start(db);
                 db->sectors[s].garbage_bytes = 0;
-                db->sectors[s].create_seq = 0;
+                db->sectors[s].create_seq    = 0;
             } else {
                 db->stats.flash_errors++;
             }
@@ -2344,9 +2292,8 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
         rdb_kv_sector_hdr_t sh;
         {
             int hdr_valid = 0;
-            if (fl_read(db, sec_addr(db, s), &sh, sizeof(sh)) == 0 &&
-                sh.magic == RDB_KV_SECTOR_MAGIC &&
-                kv_validate_sector_hdr(&sh))
+            if (fl_read(db, sec_addr(db, s), &sh, sizeof(sh)) == 0 && sh.magic == RDB_KV_SECTOR_MAGIC
+                && kv_validate_sector_hdr(&sh))
                 hdr_valid = 1;
             if (hdr_valid && sh.erase_cnt > saved_ec[s])
                 saved_ec[s] = sh.erase_cnt;
@@ -2359,11 +2306,11 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
             fl_unlock(db);
             return RDB_ERR_FLASH;
         }
-        db->sectors[s].erase_cnt = saved_ec[s] + 1;
-        db->sectors[s].create_seq = 0;
+        db->sectors[s].erase_cnt     = saved_ec[s] + 1;
+        db->sectors[s].create_seq    = 0;
         db->sectors[s].garbage_bytes = 0;
-        db->sectors[s].write_off = data_start(db);
-        db->sectors[s].status = RDB_SEC_ERASED;
+        db->sectors[s].write_off     = data_start(db);
+        db->sectors[s].status        = RDB_SEC_ERASED;
     }
 
     /* Sector 0: pre-load ec so init_sector picks it up */
@@ -2376,9 +2323,9 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
     }
 
     db->active_sec = 0;
-    db->write_off = data_start(db);
+    db->write_off  = data_start(db);
     db->live_bytes = 0;
-    db->iter_gen = 0;
+    db->iter_gen   = 0;
     kv_cache_flush(db);
     db->initialized = 1;
     memset(&db->stats, 0, sizeof(db->stats));
@@ -2420,11 +2367,8 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db) {
  *  flash operations.  On any write failure, marks the record dead and
  *  returns RDB_ERR_FLASH (caller must fl_unlock).
  * ═══════════════════════════════════════════════════════════════════════════ */
-static rdb_err_t kv_write_large_record(rdb_kvdb_t* db,
-    const rdb_kv_record_hdr_t* rh,
-    const char* key, uint8_t kl,
-    const void* val, uint16_t len,
-    uint32_t ka, uint32_t va, uint32_t g, uint32_t wa) {
+static rdb_err_t kv_write_large_record(rdb_kvdb_t* db, const rdb_kv_record_hdr_t* rh, const char* key, uint8_t kl,
+    const void* val, uint16_t len, uint32_t ka, uint32_t va, uint32_t g, uint32_t wa) {
     /* Write record header */
     if (fl_write(db, wa, rh, sizeof(*rh)) != 0) {
         db->stats.flash_errors++;
@@ -2450,10 +2394,10 @@ static rdb_err_t kv_write_large_record(rdb_kvdb_t* db,
     /* Write value data plus alignment padding in streaming chunks */
     if (len > 0) {
         uint32_t       max_chunk = RDB_STACK_BUF_SIZE;
-        uint32_t       rem = va;
-        uint32_t       data_pos = 0;
-        uint32_t       wpos = wa + KV_REC_SZ + ka;
-        const uint8_t* vp = (const uint8_t*)val;
+        uint32_t       rem       = va;
+        uint32_t       data_pos  = 0;
+        uint32_t       wpos      = wa + KV_REC_SZ + ka;
+        const uint8_t* vp        = (const uint8_t*)val;
         uint8_t        buf[RDB_STACK_BUF_SIZE];
 
         max_chunk -= max_chunk % g;
@@ -2488,26 +2432,28 @@ static rdb_err_t kv_write_large_record(rdb_kvdb_t* db,
     return RDB_OK;
 }
 
-rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
-    const void* val, uint16_t len) {
+rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key, const void* val, uint16_t len) {
     if (!db || !db->initialized)
         return RDB_ERR_NOT_INIT;
     if (!key)
         return RDB_ERR_PARAM;
 
     uint8_t kl;
-    {   int sr = key_scan_len(key, &kl);
-        if (sr == -1) return RDB_ERR_PARAM;
-        if (sr == 1)  return RDB_ERR_TOO_LARGE;
+    {
+        int sr = key_scan_len(key, &kl);
+        if (sr == -1)
+            return RDB_ERR_PARAM;
+        if (sr == 1)
+            return RDB_ERR_TOO_LARGE;
     }
     if (len > RDB_MAX_VAL_LEN)
         return RDB_ERR_TOO_LARGE;
     if (len > 0 && !val)
         return RDB_ERR_PARAM;
 
-    uint32_t g = wr_gran(db);
-    uint32_t ka = RDB_ALIGN_UP(kl, g);
-    uint32_t va = RDB_ALIGN_UP(len, g);
+    uint32_t g   = wr_gran(db);
+    uint32_t ka  = RDB_ALIGN_UP(kl, g);
+    uint32_t va  = RDB_ALIGN_UP(len, g);
     uint32_t rsz = KV_REC_SZ + ka + va;
     if (rsz > data_cap(db))
         return RDB_ERR_TOO_LARGE;
@@ -2520,8 +2466,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
     uint32_t old_rsz = fc.found ? fc.best_rsz : 0;
 
     /* Step 2: reserve space (may trigger GC) */
-    rdb_err_t rc = gc_ensure_space(db, rsz, old_rsz,
-        fc.found ? fc.best_sec : 0xFF);
+    rdb_err_t rc = gc_ensure_space(db, rsz, old_rsz, fc.found ? fc.best_sec : 0xFF);
     if (rc != RDB_OK) {
         fl_unlock(db);
         return rc;
@@ -2549,18 +2494,17 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
 
     /* Build record header */
     rdb_kv_record_hdr_t rh;
-    rh.magic = RDB_KV_RECORD_MAGIC;
-    rh.state = RDB_STATE_WRITING;
-    rh.key_len = kl;
-    rh._pad0 = 0xFF;
-    rh.val_len = len;
+    rh.magic    = RDB_KV_RECORD_MAGIC;
+    rh.state    = RDB_STATE_WRITING;
+    rh.key_len  = kl;
+    rh._pad0    = 0xFF;
+    rh.val_len  = len;
     rh.key_hash = rdb_hash16(key, kl);
-    rh.seq = db->write_seq;
+    rh.seq      = db->write_seq;
     rh.data_crc = dcrc;
-    rh._pad1 = 0xFFFF;
+    rh._pad1    = 0xFFFF;
 
-    uint32_t wa = sec_addr(db, db->active_sec) +
-                  db->sectors[db->active_sec].write_off;
+    uint32_t wa = sec_addr(db, db->active_sec) + db->sectors[db->active_sec].write_off;
 
     if (rsz <= RDB_STACK_BUF_SIZE) {
         /* Assemble the entire record (header + key + value) in a
@@ -2588,8 +2532,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
             return RDB_ERR_FLASH;
         }
     } else {
-        rc = kv_write_large_record(db, &rh, key, kl, val, len,
-            ka, va, g, wa);
+        rc = kv_write_large_record(db, &rh, key, kl, val, len, ka, va, g, wa);
         if (rc != RDB_OK) {
             fl_unlock(db);
             return rc;
@@ -2632,8 +2575,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
        address is current even if GC moved it. */
     if (fc.found) {
         rdb_kv_record_hdr_t oh;
-        if (fl_read(db, fc.best_addr, &oh, sizeof(oh)) == 0 &&
-            oh.state == RDB_STATE_VALID) {
+        if (fl_read(db, fc.best_addr, &oh, sizeof(oh)) == 0 && oh.state == RDB_STATE_VALID) {
             if (kv_mark_dead(db, fc.best_addr) != 0) {
                 db->stats.flash_errors++;
             } else {
@@ -2670,8 +2612,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
  *  @return         RDB_OK, RDB_ERR_NOT_FOUND, RDB_ERR_CRC, etc.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
-    void* buf, uint16_t buf_len, uint16_t* out_len) {
+rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key, void* buf, uint16_t buf_len, uint16_t* out_len) {
     if (!db || !db->initialized)
         return RDB_ERR_NOT_INIT;
     if (!key)
@@ -2679,7 +2620,7 @@ rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
 
     uint8_t kl;
     if (key_scan_len(key, &kl) != 0)
-        return RDB_ERR_PARAM;   /* empty, too long, or not null-terminated */
+        return RDB_ERR_PARAM; /* empty, too long, or not null-terminated */
 
     fl_lock(db);
 
@@ -2690,19 +2631,15 @@ rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
     uint32_t cached = kv_cache_lookup(db, key, kl);
     if (cached != RDB_ADDR_INVALID) {
         rdb_kv_record_hdr_t rh;
-        if (fl_read(db, cached, &rh, sizeof(rh)) == 0 &&
-            rh.state == RDB_STATE_VALID &&
-            rh.key_len == kl) {
+        if (fl_read(db, cached, &rh, sizeof(rh)) == 0 && rh.state == RDB_STATE_VALID && rh.key_len == kl) {
             /* Verify CRC — cache hit may be stale */
             uint16_t calc;
-            if (data_crc_flash(db, cached, rh.key_len, rh.val_len, &calc) == 0 &&
-                calc == rh.data_crc) {
+            if (data_crc_flash(db, cached, rh.key_len, rh.val_len, &calc) == 0 && calc == rh.data_crc) {
                 /* Verify key bytes match (cache may collide on hash+prefix) */
                 uint8_t kb[RDB_MAX_KEY_LEN];
-                if (fl_read(db, cached + KV_REC_SZ, kb, kl) == 0 &&
-                    memcmp(kb, key, kl) == 0) {
+                if (fl_read(db, cached + KV_REC_SZ, kb, kl) == 0 && memcmp(kb, key, kl) == 0) {
                     best_addr = cached;
-                    found = 1;
+                    found     = 1;
                     goto read_value;
                 }
             }
@@ -2722,8 +2659,7 @@ rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
     /* Populate cache for next access */
     kv_cache_insert(db, key, kl, fc.best_addr);
 
-read_value:
-    ; /* null statement — label before declaration in C99 */
+read_value:; /* null statement — label before declaration in C99 */
     /* Read the record header for val_len and data_crc */
     rdb_kv_record_hdr_t rh;
     if (fl_read(db, best_addr, &rh, sizeof(rh)) != 0) {
@@ -2751,7 +2687,7 @@ read_value:
     }
 
     /* Read value data */
-    uint32_t g = wr_gran(db);
+    uint32_t g  = wr_gran(db);
     uint32_t ka = RDB_ALIGN_UP(rh.key_len, g);
     uint32_t va = best_addr + KV_REC_SZ + ka; /* Value flash address */
     uint16_t rd = (uint16_t)RDB_MIN(buf_len, rh.val_len);
@@ -2784,18 +2720,16 @@ read_value:
 
 /** @brief Context for the delete scan callback. */
 typedef struct {
-    const char* key;     /**< Key to search for                    */
-    uint8_t     kl;      /**< Key length                           */
-    uint16_t    hash;    /**< Precomputed key hash                 */
-    int         found;   /**< Set to 1 if any copy was deleted     */
+    const char* key;   /**< Key to search for                    */
+    uint8_t     kl;    /**< Key length                           */
+    uint16_t    hash;  /**< Precomputed key hash                 */
+    int         found; /**< Set to 1 if any copy was deleted     */
 } del_ctx_t;
 
 /** @brief scan_sector callback — mark all VALID copies of the target key DEAD. */
-static int kv_delete_cb(rdb_kvdb_t* db, uint8_t s,
-    const kv_rec_info_t* ri, void* arg) {
+static int kv_delete_cb(rdb_kvdb_t* db, uint8_t s, const kv_rec_info_t* ri, void* arg) {
     del_ctx_t* dx = (del_ctx_t*)arg;
-    if (ri->state != RDB_STATE_VALID ||
-        ri->key_len != dx->kl || ri->key_hash != dx->hash)
+    if (ri->state != RDB_STATE_VALID || ri->key_len != dx->kl || ri->key_hash != dx->hash)
         return RDB_ITER_CONTINUE;
 
     uint8_t kb[RDB_MAX_KEY_LEN];
@@ -2829,11 +2763,9 @@ rdb_err_t rdb_kvdb_delete(rdb_kvdb_t* db, const char* key) {
 
     fl_lock(db);
 
-    del_ctx_t dx = { .key = key, .kl = kl, .hash = rdb_hash16(key, kl),
-                     .found = 0 };
+    del_ctx_t dx = {.key = key, .kl = kl, .hash = rdb_hash16(key, kl), .found = 0};
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
-        if (db->sectors[s].status == RDB_SEC_ERASED ||
-            db->sectors[s].status == RDB_SEC_CORRUPT)
+        if (db->sectors[s].status == RDB_SEC_ERASED || db->sectors[s].status == RDB_SEC_CORRUPT)
             continue;
         scan_sector(db, s, kv_delete_cb, &dx, RDB_FALSE);
     }
@@ -2863,7 +2795,7 @@ rdb_err_t rdb_kvdb_exists(rdb_kvdb_t* db, const char* key) {
         return RDB_ERR_PARAM;
     uint8_t kl;
     if (key_scan_len(key, &kl) != 0)
-        return RDB_ERR_PARAM;   /* empty, too long, or not null-terminated */
+        return RDB_ERR_PARAM; /* empty, too long, or not null-terminated */
 
     fl_lock(db);
     find_ctx_t fc;
@@ -2908,8 +2840,7 @@ rdb_err_t rdb_kvdb_gc(rdb_kvdb_t* db) {
  *  @param[out] avail  Available space in bytes (may be NULL).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-void rdb_kvdb_space_info(rdb_kvdb_t* db,
-    uint32_t* total, uint32_t* used, uint32_t* avail) {
+void rdb_kvdb_space_info(rdb_kvdb_t* db, uint32_t* total, uint32_t* used, uint32_t* avail) {
     if (!db || !db->initialized)
         return;
     fl_lock(db);
@@ -2937,8 +2868,7 @@ void rdb_kvdb_space_info(rdb_kvdb_t* db,
  *  @param[out] avg_ec  Average erase count (may be NULL).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-void rdb_kvdb_wear_info(rdb_kvdb_t* db,
-    uint32_t* min_ec, uint32_t* max_ec, uint32_t* avg_ec) {
+void rdb_kvdb_wear_info(rdb_kvdb_t* db, uint32_t* min_ec, uint32_t* max_ec, uint32_t* avg_ec) {
     if (!db || !db->initialized)
         return;
     fl_lock(db);
@@ -3059,16 +2989,14 @@ void rdb_kvdb_reset_stats(rdb_kvdb_t* db) {
 rdb_err_t rdb_kv_iter_init(rdb_kv_iter_t* it, rdb_kvdb_t* db) {
     if (!it || !db || !db->initialized)
         return RDB_ERR_PARAM;
-    it->db = db;
-    it->gen = db->iter_gen;
+    it->db     = db;
+    it->gen    = db->iter_gen;
     it->sector = 0;
     it->offset = data_start(db);
     return RDB_OK;
 }
 
-rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
-    char* key_buf, uint16_t key_cap,
-    void* val_buf, uint16_t val_cap,
+rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it, char* key_buf, uint16_t key_cap, void* val_buf, uint16_t val_cap,
     uint16_t* out_klen, uint16_t* out_vlen) {
     if (!it || !it->db || !it->db->initialized)
         return RDB_ERR_PARAM;
@@ -3090,7 +3018,7 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
         }
 
         uint32_t base = sec_addr(db, it->sector);
-        uint32_t ss = db->part->sector_size;
+        uint32_t ss   = db->part->sector_size;
 
         while ((uint32_t)it->offset + KV_REC_SZ <= ss) {
             rdb_kv_record_hdr_t rh;
@@ -3106,9 +3034,8 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
             }
 
             /* Corrupt record — skip */
-            if (rh.magic != RDB_KV_RECORD_MAGIC ||
-                rh.key_len < 1 || rh.key_len > RDB_MAX_KEY_LEN ||
-                rh.val_len > RDB_MAX_VAL_LEN) {
+            if (rh.magic != RDB_KV_RECORD_MAGIC || rh.key_len < 1 || rh.key_len > RDB_MAX_KEY_LEN
+                || rh.val_len > RDB_MAX_VAL_LEN) {
                 it->offset += kv_corrupt_skip(db);
                 continue;
             }

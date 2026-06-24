@@ -65,8 +65,7 @@
  *            - non-zero read failed
  * @note      Implement flash read for your hardware here.
  */
-int rocketdb_interface_flash_read(void *ctx, uint32_t addr, uint8_t* buf, size_t len)
-{
+int rocketdb_interface_flash_read(void* ctx, uint32_t addr, uint8_t* buf, size_t len) {
     /* TODO: Implement flash read for your hardware */
     (void)ctx;
     (void)addr;
@@ -89,8 +88,7 @@ int rocketdb_interface_flash_read(void *ctx, uint32_t addr, uint8_t* buf, size_t
  *            a 256-byte page boundary.  Preserve NOR 1->0 semantics and return
  *            non-zero if the target range was not erased enough for the write.
  */
-int rocketdb_interface_flash_write(void *ctx, uint32_t addr, const uint8_t* buf, size_t len)
-{
+int rocketdb_interface_flash_write(void* ctx, uint32_t addr, const uint8_t* buf, size_t len) {
     /* TODO: Implement flash write for your hardware */
     (void)ctx;
     (void)addr;
@@ -108,8 +106,7 @@ int rocketdb_interface_flash_write(void *ctx, uint32_t addr, const uint8_t* buf,
  *            - non-zero erase failed
  * @note      Implement flash erase for your hardware here.
  */
-int rocketdb_interface_flash_erase(void *ctx, uint32_t addr)
-{
+int rocketdb_interface_flash_erase(void* ctx, uint32_t addr) {
     /* TODO: Implement flash erase for your hardware */
     (void)ctx;
     (void)addr;
@@ -120,8 +117,7 @@ int rocketdb_interface_flash_erase(void *ctx, uint32_t addr)
  * @brief     Acquire flash mutex
  * @note      Implement lock for your hardware here.
  */
-void rocketdb_interface_flash_lock(void *ctx)
-{
+void rocketdb_interface_flash_lock(void* ctx) {
     /* TODO: Implement flash lock for your hardware (may be empty) */
     (void)ctx;
 }
@@ -130,8 +126,7 @@ void rocketdb_interface_flash_lock(void *ctx)
  * @brief     Release flash mutex
  * @note      Implement unlock for your hardware here.
  */
-void rocketdb_interface_flash_unlock(void *ctx)
-{
+void rocketdb_interface_flash_unlock(void* ctx) {
     /* TODO: Implement flash unlock for your hardware (may be empty) */
     (void)ctx;
 }
@@ -140,8 +135,7 @@ void rocketdb_interface_flash_unlock(void *ctx)
  * @brief     Yield CPU during long operations
  * @note      Implement yield for your hardware here (may be empty).
  */
-void rocketdb_interface_flash_yield(void *ctx)
-{
+void rocketdb_interface_flash_yield(void* ctx) {
     /* TODO: Implement yield for your hardware (may be empty) */
     (void)ctx;
 }
@@ -154,16 +148,14 @@ void rocketdb_interface_flash_yield(void *ctx)
  * @note      Implement CRC-16/MODBUS for your hardware here.
  *            rdb_crc16(NULL, 0) must return the initial seed 0xFFFF.
  */
-uint16_t rocketdb_interface_crc16(const void* data, size_t len)
-{
+uint16_t rocketdb_interface_crc16(const void* data, size_t len) {
     /* TODO: Implement CRC-16/MODBUS for your hardware */
     if (data == NULL && len == 0)
         return 0xFFFF;
 
-    uint16_t crc = 0xFFFF;
-    const uint8_t* p = (const uint8_t*)data;
-    for (size_t i = 0; i < len; i++)
-    {
+    uint16_t       crc = 0xFFFF;
+    const uint8_t* p   = (const uint8_t*)data;
+    for (size_t i = 0; i < len; i++) {
         crc ^= p[i];
         for (int j = 0; j < 8; j++)
             crc = (crc >> 1) ^ ((crc & 1) ? 0xA001 : 0);
@@ -179,12 +171,10 @@ uint16_t rocketdb_interface_crc16(const void* data, size_t len)
  * @return    updated 16-bit CRC value
  * @note      Implement CRC-16/MODBUS continuation for your hardware here.
  */
-uint16_t rocketdb_interface_crc16_cont(uint16_t crc, const void* data, size_t len)
-{
+uint16_t rocketdb_interface_crc16_cont(uint16_t crc, const void* data, size_t len) {
     /* TODO: Implement CRC-16/MODBUS continuation for your hardware */
     const uint8_t* p = (const uint8_t*)data;
-    for (size_t i = 0; i < len; i++)
-    {
+    for (size_t i = 0; i < len; i++) {
         crc ^= p[i];
         for (int j = 0; j < 8; j++)
             crc = (crc >> 1) ^ ((crc & 1) ? 0xA001 : 0);
@@ -202,13 +192,11 @@ uint16_t rocketdb_interface_crc16_cont(uint16_t crc, const void* data, size_t le
  *            across bare-metal, simulator, and Zephyr builds so existing
  *            flash contents remain portable.
  */
-uint16_t rocketdb_interface_hash16(const void* data, size_t len)
-{
+uint16_t rocketdb_interface_hash16(const void* data, size_t len) {
     /* TODO: Replace with a hardware-accelerated equivalent if available */
-    uint32_t h = 2166136261u;
+    uint32_t       h = 2166136261u;
     const uint8_t* p = (const uint8_t*)data;
-    for (size_t i = 0; i < len; i++)
-    {
+    for (size_t i = 0; i < len; i++) {
         h ^= p[i];
         h *= 16777619u;
     }
@@ -218,18 +206,15 @@ uint16_t rocketdb_interface_hash16(const void* data, size_t len)
 /* Symbols consumed by RocketDB core.  Applications may either compile this
  * template as-is after filling in the flash operations, or provide equivalent
  * rdb_* functions elsewhere. */
-uint16_t rdb_crc16(const void* data, size_t len)
-{
+uint16_t rdb_crc16(const void* data, size_t len) {
     return rocketdb_interface_crc16(data, len);
 }
 
-uint16_t rdb_crc16_cont(uint16_t crc, const void* data, size_t len)
-{
+uint16_t rdb_crc16_cont(uint16_t crc, const void* data, size_t len) {
     return rocketdb_interface_crc16_cont(crc, data, len);
 }
 
-uint16_t rdb_hash16(const void* data, size_t len)
-{
+uint16_t rdb_hash16(const void* data, size_t len) {
     return rocketdb_interface_hash16(data, len);
 }
 
@@ -248,8 +233,7 @@ const rdb_flash_ops_t rocketdb_interface_ops = {
  * @param[in] ... variable arguments
  * @note      Implement debug print for your hardware here.
  */
-void rocketdb_interface_debug_print(const char* const fmt, ...)
-{
+void rocketdb_interface_debug_print(const char* const fmt, ...) {
     /* TODO: Implement debug print for your hardware (may be empty) */
     (void)fmt;
 }

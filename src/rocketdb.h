@@ -48,7 +48,7 @@
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
  * @version 1.2.0
- * 
+ *
  *****************************************************************************/
 #ifndef ROCKETDB_H
 #define ROCKETDB_H
@@ -68,12 +68,10 @@
 #define RDB_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
 #else
 #define RDB_STATIC_ASSERT_JOIN_(a, b) a##b
-#define RDB_STATIC_ASSERT_JOIN(a, b) RDB_STATIC_ASSERT_JOIN_(a, b)
-#define RDB_STATIC_ASSERT(cond, msg) \
-    typedef char RDB_STATIC_ASSERT_JOIN(rdb_static_assert_, __LINE__)[(cond) ? 1 : -1]
+#define RDB_STATIC_ASSERT_JOIN(a, b)  RDB_STATIC_ASSERT_JOIN_(a, b)
+#define RDB_STATIC_ASSERT(cond, msg)  typedef char RDB_STATIC_ASSERT_JOIN(rdb_static_assert_, __LINE__)[(cond) ? 1 : -1]
 #endif
 #endif
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -158,13 +156,14 @@ extern "C" {
  * write address.  No-op when RDB_FLASH_PAGE_SIZE == 0.
  */
 #if RDB_FLASH_PAGE_SIZE > 0
-#define RDB_PAGE_CLAMP(io_chunk, wpos) \
-    do { \
+#define RDB_PAGE_CLAMP(io_chunk, wpos)                                            \
+    do {                                                                          \
         uint32_t _po = (uint32_t)((wpos) & ((uint32_t)RDB_FLASH_PAGE_SIZE - 1u)); \
-        if (_po > 0u) { \
-            uint32_t _pr = (uint32_t)RDB_FLASH_PAGE_SIZE - _po; \
-            if ((io_chunk) > _pr) (io_chunk) = _pr; \
-        } \
+        if (_po > 0u) {                                                           \
+            uint32_t _pr = (uint32_t)RDB_FLASH_PAGE_SIZE - _po;                   \
+            if ((io_chunk) > _pr)                                                 \
+                (io_chunk) = _pr;                                                 \
+        }                                                                         \
     } while (0)
 #else
 #define RDB_PAGE_CLAMP(io_chunk, wpos) ((void)0)
@@ -211,30 +210,29 @@ extern "C" {
  * Must be a power of 2 when > 0.
  */
 #ifndef RDB_BLOOM_BITS
-#define RDB_BLOOM_BITS 0u  /* 0 = disabled; W25QXX-class workloads: 256 */
+#define RDB_BLOOM_BITS 0u /* 0 = disabled; W25QXX-class workloads: 256 */
 #endif
 #if RDB_BLOOM_BITS > 0
 #define RDB_BLOOM_BYTES (RDB_BLOOM_BITS / 8u)
 /** @brief Set two hash bits in a per-sector bloom bitmap for key hash @p h. */
-#define RDB_BLOOM_SET(bm, h) \
-    do { \
-        (bm)[(h) & 0x1Fu] |= (uint8_t)(1u << (((h) >> 5) & 7u)); \
+#define RDB_BLOOM_SET(bm, h)                                                   \
+    do {                                                                       \
+        (bm)[(h) & 0x1Fu] |= (uint8_t)(1u << (((h) >> 5) & 7u));               \
         (bm)[((h) >> 8) & 0x1Fu] |= (uint8_t)(1u << ((((h) >> 8) >> 5) & 7u)); \
     } while (0)
 /** @brief Test whether key hash @p h *may* exist in the sector.  0 = absent. */
-#define RDB_BLOOM_MAYBE(bm, h) \
-    ((int)(((bm)[(h) & 0x1Fu] & (uint8_t)(1u << (((h) >> 5) & 7u))) != 0u && \
-           ((bm)[((h) >> 8) & 0x1Fu] & (uint8_t)(1u << ((((h) >> 8) >> 5) & 7u))) != 0u))
+#define RDB_BLOOM_MAYBE(bm, h)                                            \
+    ((int)(((bm)[(h) & 0x1Fu] & (uint8_t)(1u << (((h) >> 5) & 7u))) != 0u \
+           && ((bm)[((h) >> 8) & 0x1Fu] & (uint8_t)(1u << ((((h) >> 8) >> 5) & 7u))) != 0u))
 #else
-#define RDB_BLOOM_BYTES 0u
-#define RDB_BLOOM_SET(bm, h)       ((void)0)
-#define RDB_BLOOM_MAYBE(bm, h)     1  /* Always "may exist" when disabled */
+#define RDB_BLOOM_BYTES        0u
+#define RDB_BLOOM_SET(bm, h)   ((void)0)
+#define RDB_BLOOM_MAYBE(bm, h) 1 /* Always "may exist" when disabled */
 #endif
 
 /* Bloom filter sizing: the 0x1F mask in RDB_BLOOM_SET/MAYBE is hardcoded
    for 256 bits (32 bytes).  Reject any other non-zero value at compile time. */
-RDB_STATIC_ASSERT(RDB_BLOOM_BITS == 0 || RDB_BLOOM_BITS == 256,
-    "RDB_BLOOM_BITS must be 0 (disabled) or 256");
+RDB_STATIC_ASSERT(RDB_BLOOM_BITS == 0 || RDB_BLOOM_BITS == 256, "RDB_BLOOM_BITS must be 0 (disabled) or 256");
 
 /** @brief Key fingerprint slot for the KV cache.
  *
@@ -242,10 +240,10 @@ RDB_STATIC_ASSERT(RDB_BLOOM_BITS == 0 || RDB_BLOOM_BITS == 256,
  * the absolute flash address of the VALID record.  The fingerprint format
  * is identical to the one used by rdb_dedup_set_t for collision detection. */
 typedef struct {
-    uint16_t hash;       /**< Full 16-bit key hash (FNV-1a folded)     */
-    uint8_t  klen;       /**< Key length in bytes (0 = empty slot)     */
-    uint8_t  prefix[8];  /**< First 8 key bytes for disambiguation     */
-    uint32_t addr;       /**< Absolute flash address of VALID record   */
+    uint16_t hash;      /**< Full 16-bit key hash (FNV-1a folded)     */
+    uint8_t  klen;      /**< Key length in bytes (0 = empty slot)     */
+    uint8_t  prefix[8]; /**< First 8 key bytes for disambiguation     */
+    uint32_t addr;      /**< Absolute flash address of VALID record   */
 } rdb_kv_cache_slot_t;
 
 /** @brief KVDB key-to-address cache (embedded in rdb_kvdb_t).
@@ -351,16 +349,11 @@ typedef struct {
 #endif
 
 /* Compile-time validation */
-RDB_STATIC_ASSERT(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 32u,
-    "RDB_MAX_KEY_LEN must be 1..32");
-RDB_STATIC_ASSERT(RDB_STACK_BUF_SIZE >= 32u,
-    "RDB_STACK_BUF_SIZE must be >= 32 (record header + minimum payload)");
-RDB_STATIC_ASSERT(RDB_MAX_SECTORS <= 255,
-    "RDB_MAX_SECTORS must be <= 255 (sector indices are uint8_t)");
-RDB_STATIC_ASSERT((RDB_MIN_SECTOR_SIZE & (RDB_MIN_SECTOR_SIZE - 1u)) == 0,
-    "RDB_MIN_SECTOR_SIZE must be a power of 2");
-RDB_STATIC_ASSERT(RDB_FLASH_PAGE_SIZE == 0 ||
-    (RDB_FLASH_PAGE_SIZE & (RDB_FLASH_PAGE_SIZE - 1u)) == 0,
+RDB_STATIC_ASSERT(RDB_MAX_KEY_LEN >= 1u && RDB_MAX_KEY_LEN <= 32u, "RDB_MAX_KEY_LEN must be 1..32");
+RDB_STATIC_ASSERT(RDB_STACK_BUF_SIZE >= 32u, "RDB_STACK_BUF_SIZE must be >= 32 (record header + minimum payload)");
+RDB_STATIC_ASSERT(RDB_MAX_SECTORS <= 255, "RDB_MAX_SECTORS must be <= 255 (sector indices are uint8_t)");
+RDB_STATIC_ASSERT((RDB_MIN_SECTOR_SIZE & (RDB_MIN_SECTOR_SIZE - 1u)) == 0, "RDB_MIN_SECTOR_SIZE must be a power of 2");
+RDB_STATIC_ASSERT(RDB_FLASH_PAGE_SIZE == 0 || (RDB_FLASH_PAGE_SIZE & (RDB_FLASH_PAGE_SIZE - 1u)) == 0,
     "RDB_FLASH_PAGE_SIZE must be 0 or a power of 2");
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -390,20 +383,20 @@ RDB_STATIC_ASSERT(RDB_FLASH_PAGE_SIZE == 0 ||
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 typedef enum {
-    RDB_OK = 0,                  /**< Success                            */
-    RDB_ERR_PARAM = -1,          /**< Invalid parameter                  */
-    RDB_ERR_FLASH = -2,          /**< Flash read/write/erase failed      */
-    RDB_ERR_NO_SPACE = -3,       /**< No space available (legacy)        */
-    RDB_ERR_NOT_FOUND = -4,      /**< Key or record not found            */
-    RDB_ERR_TOO_LARGE = -5,      /**< Data exceeds configured limit      */
-    RDB_ERR_CRC = -6,            /**< CRC verification failed            */
-    RDB_ERR_CORRUPT = -7,        /**< Unrecoverable flash corruption     */
-    RDB_ERR_NOT_INIT = -8,       /**< Database not initialised           */
-    RDB_ERR_GC_FAIL = -9,        /**< Garbage collection failed          */
-    RDB_ERR_ITER_END = -10,      /**< No more records to iterate         */
-    RDB_ERR_FULL = -11,          /**< Logical capacity fully used        */
-    RDB_ERR_BUSY = -12,          /**< DB modified during iteration       */
-    RDB_ERR_TIME_EXHAUSTED = -13 /**< Timestamp range exhausted          */
+    RDB_OK                 = 0,   /**< Success                            */
+    RDB_ERR_PARAM          = -1,  /**< Invalid parameter                  */
+    RDB_ERR_FLASH          = -2,  /**< Flash read/write/erase failed      */
+    RDB_ERR_NO_SPACE       = -3,  /**< No space available (legacy)        */
+    RDB_ERR_NOT_FOUND      = -4,  /**< Key or record not found            */
+    RDB_ERR_TOO_LARGE      = -5,  /**< Data exceeds configured limit      */
+    RDB_ERR_CRC            = -6,  /**< CRC verification failed            */
+    RDB_ERR_CORRUPT        = -7,  /**< Unrecoverable flash corruption     */
+    RDB_ERR_NOT_INIT       = -8,  /**< Database not initialised           */
+    RDB_ERR_GC_FAIL        = -9,  /**< Garbage collection failed          */
+    RDB_ERR_ITER_END       = -10, /**< No more records to iterate         */
+    RDB_ERR_FULL           = -11, /**< Logical capacity fully used        */
+    RDB_ERR_BUSY           = -12, /**< DB modified during iteration       */
+    RDB_ERR_TIME_EXHAUSTED = -13  /**< Timestamp range exhausted          */
 } rdb_err_t;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -550,12 +543,12 @@ typedef enum {
  * bare-metal single-instance use (backward compatible).
  */
 typedef struct {
-    int  (*read)  (void* ctx, uint32_t addr, uint8_t* buf, size_t len); /**< Read    */
-    int  (*write) (void* ctx, uint32_t addr, const uint8_t* buf, size_t len); /**< Write */
-    int  (*erase) (void* ctx, uint32_t addr);                           /**< Erase   */
-    void (*lock)  (void* ctx);          /**< Acquire flash lock (NULL = no-op)         */
-    void (*unlock)(void* ctx);          /**< Release flash lock (NULL = no-op)         */
-    void (*yield) (void* ctx);          /**< Yield CPU (NULL = no-op)                  */
+    int (*read)(void* ctx, uint32_t addr, uint8_t* buf, size_t len);        /**< Read    */
+    int (*write)(void* ctx, uint32_t addr, const uint8_t* buf, size_t len); /**< Write */
+    int (*erase)(void* ctx, uint32_t addr);                                 /**< Erase   */
+    void (*lock)(void* ctx);   /**< Acquire flash lock (NULL = no-op)         */
+    void (*unlock)(void* ctx); /**< Release flash lock (NULL = no-op)         */
+    void (*yield)(void* ctx);  /**< Yield CPU (NULL = no-op)                  */
 } rdb_flash_ops_t;
 
 /**
@@ -570,15 +563,15 @@ typedef struct {
  *        sector_size must be a power of 2 and ≥ RDB_MIN_SECTOR_SIZE.
  */
 typedef struct {
-    const char*           name;      /**< Human-readable name (debug)   */
-    uint32_t              base_addr; /**< Absolute flash start address  */
-    uint32_t              total_size;/**< Total partition size (bytes)  */
-    uint32_t              sector_size;/**< Erase block size (bytes)     */
-    uint8_t               write_gran;/**< Write granularity exponent:
-                                          0→1B, 1→2B, 2→4B, 3→8B      */
-    const rdb_flash_ops_t* ops;      /**< Flash operation callbacks     */
-    void*                 flash_ctx; /**< Opaque pointer passed to every
-                                          ops callback (NULL = no ctx)  */
+    const char* name;                 /**< Human-readable name (debug)   */
+    uint32_t    base_addr;            /**< Absolute flash start address  */
+    uint32_t    total_size;           /**< Total partition size (bytes)  */
+    uint32_t    sector_size;          /**< Erase block size (bytes)     */
+    uint8_t     write_gran;           /**< Write granularity exponent:
+                                           0→1B, 1→2B, 2→4B, 3→8B      */
+    const rdb_flash_ops_t* ops;       /**< Flash operation callbacks     */
+    void*                  flash_ctx; /**< Opaque pointer passed to every
+                                           ops callback (NULL = no ctx)  */
 } rdb_partition_t;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -767,10 +760,10 @@ RDB_STATIC_ASSERT(offsetof(rdb_ts_sector_hdr_t, hdr_crc) == 18u, "TS sector CRC 
  * Used by both KVDB sector metadata and GC to determine sector state.
  */
 typedef enum {
-    RDB_SEC_ERASED = 0, /**< Sector is fully erased (available)        */
-    RDB_SEC_ACTIVE = 1, /**< Sector has valid header, accepting writes */
-    RDB_SEC_SEALED = 2, /**< Sector is full, read-only until GC        */
-    RDB_SEC_CORRUPT = 3 /**< Sector header is invalid/unreadable       */
+    RDB_SEC_ERASED  = 0, /**< Sector is fully erased (available)        */
+    RDB_SEC_ACTIVE  = 1, /**< Sector has valid header, accepting writes */
+    RDB_SEC_SEALED  = 2, /**< Sector is full, read-only until GC        */
+    RDB_SEC_CORRUPT = 3  /**< Sector header is invalid/unreadable       */
 } rdb_sec_status_t;
 
 /**
@@ -831,7 +824,7 @@ typedef struct {
     rdb_kv_cache_t         cache;       /**< Key-to-address cache (disabled if size=0)  */
     rdb_kv_stats_t         stats;       /**< Runtime statistics                         */
 #if RDB_BLOOM_BITS > 0
-    uint8_t*               blooms;      /**< Per-sector bloom bitmaps, RDB_BLOOM_BYTES×sector_cnt */
+    uint8_t* blooms; /**< Per-sector bloom bitmaps, RDB_BLOOM_BYTES×sector_cnt */
 #endif
 } rdb_kvdb_t;
 
@@ -855,11 +848,11 @@ typedef struct {
  *   }
  */
 typedef struct {
-    rdb_kvdb_t* db;     /**< Parent database handle                       */
-    uint32_t    gen;    /**< Snapshot of db->iter_gen at init time         */
-    uint8_t     sector; /**< Current sector index being iterated           */
-    uint8_t     _pad[3];/**< Padding for alignment                         */
-    uint32_t    offset; /**< Current byte offset within the sector         */
+    rdb_kvdb_t* db;      /**< Parent database handle                       */
+    uint32_t    gen;     /**< Snapshot of db->iter_gen at init time         */
+    uint8_t     sector;  /**< Current sector index being iterated           */
+    uint8_t     _pad[3]; /**< Padding for alignment                         */
+    uint32_t    offset;  /**< Current byte offset within the sector         */
 } rdb_kv_iter_t;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -884,8 +877,7 @@ typedef struct {
  * @return      RDB_ITER_CONTINUE (0) to keep iterating,
  *              RDB_ITER_STOP (1) to abort the query.
  */
-typedef int (*rdb_ts_cb_t)(uint32_t ts, const void* data,
-    uint16_t len, void* arg);
+typedef int (*rdb_ts_cb_t)(uint32_t ts, const void* data, uint16_t len, void* arg);
 
 /**
  * @brief TSDB runtime statistics.
@@ -1057,8 +1049,7 @@ size_t rdb_tsdb_ec_size(uint8_t sector_cnt);
  * @param meta_buf  Buffer for sector metadata; size from rdb_kvdb_meta_size().
  * @return          RDB_OK on success.
  */
-rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part,
-    void* meta_buf);
+rdb_err_t rdb_kvdb_init(rdb_kvdb_t* db, const rdb_partition_t* part, void* meta_buf);
 
 /**
  * @brief Erase all sectors and create a fresh KVDB.
@@ -1085,8 +1076,7 @@ rdb_err_t rdb_kvdb_format(rdb_kvdb_t* db);
  * @param len  Value length in bytes (0..RDB_MAX_VAL_LEN).
  * @return     RDB_OK, RDB_ERR_FULL, RDB_ERR_TOO_LARGE, etc.
  */
-rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
-    const void* val, uint16_t len);
+rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key, const void* val, uint16_t len);
 
 /**
  * @brief Read the value associated with a key.
@@ -1101,8 +1091,7 @@ rdb_err_t rdb_kvdb_set(rdb_kvdb_t* db, const char* key,
  * @param out_len  Receives the actual value length (may be NULL).
  * @return         RDB_OK, RDB_ERR_NOT_FOUND, RDB_ERR_CRC, etc.
  */
-rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key,
-    void* buf, uint16_t buf_len, uint16_t* out_len);
+rdb_err_t rdb_kvdb_get(rdb_kvdb_t* db, const char* key, void* buf, uint16_t buf_len, uint16_t* out_len);
 
 /**
  * @brief Delete all copies of a key.
@@ -1146,8 +1135,7 @@ rdb_err_t rdb_kvdb_gc(rdb_kvdb_t* db);
  * @param used   Used space (live_bytes) in bytes (may be NULL).
  * @param avail  Available space in bytes (may be NULL).
  */
-void rdb_kvdb_space_info(rdb_kvdb_t* db,
-    uint32_t* total, uint32_t* used, uint32_t* avail);
+void rdb_kvdb_space_info(rdb_kvdb_t* db, uint32_t* total, uint32_t* used, uint32_t* avail);
 
 /**
  * @brief Query flash wear statistics.
@@ -1157,8 +1145,7 @@ void rdb_kvdb_space_info(rdb_kvdb_t* db,
  * @param max_ec  Maximum erase count across all sectors (may be NULL).
  * @param avg_ec  Average erase count across all sectors (may be NULL).
  */
-void rdb_kvdb_wear_info(rdb_kvdb_t* db,
-    uint32_t* min_ec, uint32_t* max_ec, uint32_t* avg_ec);
+void rdb_kvdb_wear_info(rdb_kvdb_t* db, uint32_t* min_ec, uint32_t* max_ec, uint32_t* avg_ec);
 
 /**
  * @brief Copy runtime statistics to a caller buffer.
@@ -1200,9 +1187,7 @@ rdb_err_t rdb_kv_iter_init(rdb_kv_iter_t* it, rdb_kvdb_t* db);
  * @return          RDB_OK on success, RDB_ERR_ITER_END when exhausted,
  *                  RDB_ERR_BUSY if database was modified since init.
  */
-rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
-    char* key_buf, uint16_t key_cap,
-    void* val_buf, uint16_t val_cap,
+rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it, char* key_buf, uint16_t key_cap, void* val_buf, uint16_t val_cap,
     uint16_t* out_klen, uint16_t* out_vlen);
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1229,8 +1214,7 @@ rdb_err_t rdb_kv_iter_next(rdb_kv_iter_t* it,
  *                May be NULL if erase count tracking is not needed.
  * @return        RDB_OK on success.
  */
-rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
-    uint32_t* ec_buf);
+rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part, uint32_t* ec_buf);
 
 /**
  * @brief Erase all sectors and create a fresh TSDB.
@@ -1258,8 +1242,7 @@ rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db);
  * @param len   Data length in bytes (1..max_data_len).
  * @return      RDB_OK, RDB_ERR_TOO_LARGE, RDB_ERR_TIME_EXHAUSTED, etc.
  */
-rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
-    const void* data, uint16_t len);
+rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time, const void* data, uint16_t len);
 
 /**
  * @brief Force a time epoch boundary.
@@ -1292,8 +1275,7 @@ rdb_err_t rdb_tsdb_reset_epoch(rdb_tsdb_t* db);
  * @param arg   User context pointer passed to cb.
  * @return      RDB_OK on success (even if no records matched).
  */
-rdb_err_t rdb_tsdb_query(rdb_tsdb_t* db, uint32_t from, uint32_t to,
-    rdb_ts_cb_t cb, void* arg);
+rdb_err_t rdb_tsdb_query(rdb_tsdb_t* db, uint32_t from, uint32_t to, rdb_ts_cb_t cb, void* arg);
 
 /**
  * @brief Query records with a user-provided read buffer.
@@ -1311,9 +1293,8 @@ rdb_err_t rdb_tsdb_query(rdb_tsdb_t* db, uint32_t from, uint32_t to,
  * @param buf_len   Size of read_buf in bytes.
  * @return          RDB_OK on success.
  */
-rdb_err_t rdb_tsdb_query_ex(rdb_tsdb_t* db, uint32_t from, uint32_t to,
-    rdb_ts_cb_t cb, void* arg,
-    void* read_buf, uint16_t buf_len);
+rdb_err_t rdb_tsdb_query_ex(
+    rdb_tsdb_t* db, uint32_t from, uint32_t to, rdb_ts_cb_t cb, void* arg, void* read_buf, uint16_t buf_len);
 
 /**
  * @brief Retrieve the most recent record.
@@ -1328,8 +1309,7 @@ rdb_err_t rdb_tsdb_query_ex(rdb_tsdb_t* db, uint32_t from, uint32_t to,
  * @param out_len  Receives actual data length (may be NULL).
  * @return         RDB_OK, RDB_ERR_NOT_FOUND, RDB_ERR_CRC, etc.
  */
-rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
-    void* buf, uint16_t buf_len, uint16_t* out_len);
+rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time, void* buf, uint16_t buf_len, uint16_t* out_len);
 
 /**
  * @brief Retrieve the oldest record.
@@ -1344,8 +1324,7 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
  * @param out_len  Receives actual data length (may be NULL).
  * @return         RDB_OK, RDB_ERR_NOT_FOUND, RDB_ERR_CRC, etc.
  */
-rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time,
-    void* buf, uint16_t buf_len, uint16_t* out_len);
+rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time, void* buf, uint16_t buf_len, uint16_t* out_len);
 
 /**
  * @brief Get the total number of VALID records in the database.
@@ -1376,8 +1355,7 @@ void rdb_tsdb_time_range(rdb_tsdb_t* db, uint32_t* oldest, uint32_t* newest);
  * @param max_ec  Maximum erase count across all sectors (may be NULL).
  * @param avg_ec  Average erase count across all sectors (may be NULL).
  */
-void rdb_tsdb_wear_info(rdb_tsdb_t* db,
-    uint32_t* min_ec, uint32_t* max_ec, uint32_t* avg_ec);
+void rdb_tsdb_wear_info(rdb_tsdb_t* db, uint32_t* min_ec, uint32_t* max_ec, uint32_t* avg_ec);
 
 /**
  * @brief Copy runtime statistics to a caller buffer.

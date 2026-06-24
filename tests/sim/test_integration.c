@@ -7,167 +7,168 @@
  * References: T-400, T-401, T-402, T-403, T-404
  */
 
-#include "sim_flash.h"
-#include "sim_fault.h"
-#include "sim_dist.h"
-#include "test_framework.h"
 #include "../../src/rocketdb.h"
+#include "sim_dist.h"
+#include "sim_fault.h"
+#include "sim_flash.h"
+#include "test_framework.h"
 #include <stdio.h>
 #include <string.h>
 
-#define FLASH_SIZE      (128u * 1024u)
-#define SECTOR_SIZE     4096u
-#define PAGE_SIZE       256u
-#define DEFAULT_WG      0u
-#define KVDB_PART_SIZE  (64u * 1024u)
-#define TSDB_PART_SIZE  (64u * 1024u)
-#define KV_SECTOR_CNT   (KVDB_PART_SIZE / SECTOR_SIZE)
-#define TS_SECTOR_CNT   (TSDB_PART_SIZE / SECTOR_SIZE)
+#define FLASH_SIZE     (128u * 1024u)
+#define SECTOR_SIZE    4096u
+#define PAGE_SIZE      256u
+#define DEFAULT_WG     0u
+#define KVDB_PART_SIZE (64u * 1024u)
+#define TSDB_PART_SIZE (64u * 1024u)
+#define KV_SECTOR_CNT  (KVDB_PART_SIZE / SECTOR_SIZE)
+#define TS_SECTOR_CNT  (TSDB_PART_SIZE / SECTOR_SIZE)
 
 /* ── KV flash ──────────────────────────────────────────────────────────── */
 
-static uint8_t            g_kv_flash_buf[FLASH_SIZE];
-static sim_flash_t        g_kv_flash;
-static fault_ctx_t        g_kv_fault;
-static rdb_partition_t    g_kv_part;
-static rdb_kvdb_t         g_kv_db;
+static uint8_t         g_kv_flash_buf[FLASH_SIZE];
+static sim_flash_t     g_kv_flash;
+static fault_ctx_t     g_kv_fault;
+static rdb_partition_t g_kv_part;
+static rdb_kvdb_t      g_kv_db;
 /* Meta buffer sized for sector metadata + bloom filter bitmaps */
 #define META_BUF_SZ (KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES))
 static uint8_t               g_kv_meta_buf[META_BUF_SZ];
-static rdb_kv_sector_meta_t *g_kv_meta = (rdb_kv_sector_meta_t *)g_kv_meta_buf;
+static rdb_kv_sector_meta_t* g_kv_meta = (rdb_kv_sector_meta_t*)g_kv_meta_buf;
 
-static int kv_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {
+static int kv_read(void* ctx, uint32_t addr, uint8_t* buf, size_t len) {
     (void)ctx;
     return sim_flash_read(&g_kv_flash, addr, buf, len);
 }
-static int kv_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
+static int kv_write(void* ctx, uint32_t addr, const uint8_t* buf, size_t len) {
     (void)ctx;
     return sim_flash_write(&g_kv_flash, addr, buf, len);
 }
-static int kv_erase(void *ctx, uint32_t addr) {
+static int kv_erase(void* ctx, uint32_t addr) {
     (void)ctx;
     return sim_flash_erase(&g_kv_flash, addr);
 }
-static void kv_lock(void *ctx) { (void)ctx; }
-static void kv_unlock(void *ctx) { (void)ctx; }
-static void kv_yield(void *ctx) { (void)ctx; }
+static void kv_lock(void* ctx) {
+    (void)ctx;
+}
+static void kv_unlock(void* ctx) {
+    (void)ctx;
+}
+static void kv_yield(void* ctx) {
+    (void)ctx;
+}
 
 static rdb_flash_ops_t g_kv_ops = {
-    .read = kv_read, .write = kv_write, .erase = kv_erase,
-    .lock = kv_lock, .unlock = kv_unlock, .yield = kv_yield
-};
+    .read = kv_read, .write = kv_write, .erase = kv_erase, .lock = kv_lock, .unlock = kv_unlock, .yield = kv_yield};
 
 /* ── TS flash ──────────────────────────────────────────────────────────── */
 
-static uint8_t     g_ts_flash_buf[FLASH_SIZE];
-static sim_flash_t g_ts_flash;
-static fault_ctx_t g_ts_fault;
+static uint8_t         g_ts_flash_buf[FLASH_SIZE];
+static sim_flash_t     g_ts_flash;
+static fault_ctx_t     g_ts_fault;
 static rdb_partition_t g_ts_part;
-static rdb_tsdb_t  g_ts_db;
-static uint32_t    g_ts_ec[TS_SECTOR_CNT];
-static trace_ctx_t g_trace;
+static rdb_tsdb_t      g_ts_db;
+static uint32_t        g_ts_ec[TS_SECTOR_CNT];
+static trace_ctx_t     g_trace;
 
-static int ts_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len) {
+static int ts_read(void* ctx, uint32_t addr, uint8_t* buf, size_t len) {
     (void)ctx;
     return sim_flash_read(&g_ts_flash, addr, buf, len);
 }
-static int ts_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len) {
+static int ts_write(void* ctx, uint32_t addr, const uint8_t* buf, size_t len) {
     (void)ctx;
     return sim_flash_write(&g_ts_flash, addr, buf, len);
 }
-static int ts_erase(void *ctx, uint32_t addr) {
+static int ts_erase(void* ctx, uint32_t addr) {
     (void)ctx;
     return sim_flash_erase(&g_ts_flash, addr);
 }
-static void ts_lock(void *ctx) { (void)ctx; }
-static void ts_unlock(void *ctx) { (void)ctx; }
-static void ts_yield(void *ctx) { (void)ctx; }
-
-static rdb_flash_ops_t g_ts_ops = {
-    .read = ts_read, .write = ts_write, .erase = ts_erase,
-    .lock = ts_lock, .unlock = ts_unlock, .yield = ts_yield
-};
-
-/* ── Trace wrappers ─────────────────────────────────────────────────── */
-static rdb_err_t trace_kv_set(rdb_kvdb_t *db, const char *key,
-                               const void *val, uint16_t vlen)
-{
-    trace_event(&g_trace, "  [KV-WRITE] key=%s vsz=%u", key, (unsigned)vlen);
-    return rdb_kvdb_set(db, key, (const uint8_t *)val, vlen);
+static void ts_lock(void* ctx) {
+    (void)ctx;
+}
+static void ts_unlock(void* ctx) {
+    (void)ctx;
+}
+static void ts_yield(void* ctx) {
+    (void)ctx;
 }
 
-static rdb_err_t trace_kv_get(rdb_kvdb_t *db, const char *key,
-                               void *buf, uint16_t buf_len, uint16_t *out_len)
-{
+static rdb_flash_ops_t g_ts_ops = {
+    .read = ts_read, .write = ts_write, .erase = ts_erase, .lock = ts_lock, .unlock = ts_unlock, .yield = ts_yield};
+
+/* ── Trace wrappers ─────────────────────────────────────────────────── */
+static rdb_err_t trace_kv_set(rdb_kvdb_t* db, const char* key, const void* val, uint16_t vlen) {
+    trace_event(&g_trace, "  [KV-WRITE] key=%s vsz=%u", key, (unsigned)vlen);
+    return rdb_kvdb_set(db, key, (const uint8_t*)val, vlen);
+}
+
+static rdb_err_t trace_kv_get(rdb_kvdb_t* db, const char* key, void* buf, uint16_t buf_len, uint16_t* out_len) {
     trace_event(&g_trace, "  [KV-READ]  key=%s", key);
     return rdb_kvdb_get(db, key, buf, buf_len, out_len);
 }
 
-static rdb_err_t trace_kv_del(rdb_kvdb_t *db, const char *key)
-{
+static rdb_err_t trace_kv_del(rdb_kvdb_t* db, const char* key) {
     trace_event(&g_trace, "  [KV-DEL]   key=%s", key);
     return rdb_kvdb_delete(db, key);
 }
 
-static rdb_err_t trace_ts_append(rdb_tsdb_t *db, uint32_t ts,
-                                  const void *data, uint16_t dlen)
-{
-    trace_event(&g_trace, "  [TS-APPEND] time=%u dlen=%u",
-                (unsigned)ts, (unsigned)dlen);
-    return rdb_tsdb_append(db, ts, (const uint8_t *)data, dlen);
+static rdb_err_t trace_ts_append(rdb_tsdb_t* db, uint32_t ts, const void* data, uint16_t dlen) {
+    trace_event(&g_trace, "  [TS-APPEND] time=%u dlen=%u", (unsigned)ts, (unsigned)dlen);
+    return rdb_tsdb_append(db, ts, (const uint8_t*)data, dlen);
 }
 
-static rdb_err_t trace_ts_query(rdb_tsdb_t *db, uint32_t from, uint32_t to,
-                                 rdb_ts_cb_t cb, void *arg)
-{
-    trace_event(&g_trace, "  [TS-QUERY] from=%u to=%u",
-                (unsigned)from, (unsigned)to);
+static rdb_err_t trace_ts_query(rdb_tsdb_t* db, uint32_t from, uint32_t to, rdb_ts_cb_t cb, void* arg) {
+    trace_event(&g_trace, "  [TS-QUERY] from=%u to=%u", (unsigned)from, (unsigned)to);
     return rdb_tsdb_query(db, from, to, cb, arg);
 }
 
 /* ── Reset helpers ─────────────────────────────────────────────────────── */
 
-static rdb_err_t kv_reset(void)
-{
-    if (sim_flash_init(&g_kv_flash, g_kv_flash_buf, FLASH_SIZE,
-                       SECTOR_SIZE, PAGE_SIZE, DEFAULT_WG) != 0)
+static rdb_err_t kv_reset(void) {
+    if (sim_flash_init(&g_kv_flash, g_kv_flash_buf, FLASH_SIZE, SECTOR_SIZE, PAGE_SIZE, DEFAULT_WG) != 0)
         return RDB_ERR_FLASH;
     fault_init(&g_kv_fault, 0xA5A5A5A5u);
     sim_flash_set_fault_ctx(&g_kv_flash, &g_kv_fault);
-    g_kv_part = (rdb_partition_t) {
-        .name = "KVDB", .base_addr = 0, .total_size = KVDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE, .write_gran = DEFAULT_WG, .ops = &g_kv_ops
-    };
-    g_kv_db.part = &g_kv_part;
-    g_kv_db.sectors = g_kv_meta;
+    g_kv_part          = (rdb_partition_t) {.name = "KVDB",
+                 .base_addr                       = 0,
+                 .total_size                      = KVDB_PART_SIZE,
+                 .sector_size                     = SECTOR_SIZE,
+                 .write_gran                      = DEFAULT_WG,
+                 .ops                             = &g_kv_ops};
+    g_kv_db.part       = &g_kv_part;
+    g_kv_db.sectors    = g_kv_meta;
     g_kv_db.sector_cnt = (uint8_t)KV_SECTOR_CNT;
     trace_event(&g_trace, "KVDB format+init (integration)");
     rdb_err_t ret = rdb_kvdb_format(&g_kv_db);
-    if (ret != RDB_OK) return ret;
+    if (ret != RDB_OK)
+        return ret;
     ret = rdb_kvdb_init(&g_kv_db, &g_kv_part, g_kv_meta);
-    if (ret == RDB_OK) trace_kvdb_snapshot(&g_trace, &g_kv_db);
+    if (ret == RDB_OK)
+        trace_kvdb_snapshot(&g_trace, &g_kv_db);
     return ret;
 }
 
-static rdb_err_t ts_reset(void)
-{
-    if (sim_flash_init(&g_ts_flash, g_ts_flash_buf, FLASH_SIZE,
-                       SECTOR_SIZE, PAGE_SIZE, DEFAULT_WG) != 0)
+static rdb_err_t ts_reset(void) {
+    if (sim_flash_init(&g_ts_flash, g_ts_flash_buf, FLASH_SIZE, SECTOR_SIZE, PAGE_SIZE, DEFAULT_WG) != 0)
         return RDB_ERR_FLASH;
     fault_init(&g_ts_fault, 0x5A5A5A5Au);
     sim_flash_set_fault_ctx(&g_ts_flash, &g_ts_fault);
-    g_ts_part = (rdb_partition_t) {
-        .name = "TSDB", .base_addr = 0, .total_size = TSDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE, .write_gran = DEFAULT_WG, .ops = &g_ts_ops
-    };
-    g_ts_db.part = &g_ts_part;
+    g_ts_part          = (rdb_partition_t) {.name = "TSDB",
+                 .base_addr                       = 0,
+                 .total_size                      = TSDB_PART_SIZE,
+                 .sector_size                     = SECTOR_SIZE,
+                 .write_gran                      = DEFAULT_WG,
+                 .ops                             = &g_ts_ops};
+    g_ts_db.part       = &g_ts_part;
     g_ts_db.erase_cnts = g_ts_ec;
     g_ts_db.sector_cnt = (uint8_t)TS_SECTOR_CNT;
     trace_event(&g_trace, "TSDB format+init (integration)");
     rdb_err_t ret = rdb_tsdb_format(&g_ts_db);
-    if (ret != RDB_OK) return ret;
+    if (ret != RDB_OK)
+        return ret;
     ret = rdb_tsdb_init(&g_ts_db, &g_ts_part, g_ts_ec);
-    if (ret == RDB_OK) trace_tsdb_snapshot(&g_trace, &g_ts_db);
+    if (ret == RDB_OK)
+        trace_tsdb_snapshot(&g_trace, &g_ts_db);
     return ret;
 }
 
@@ -178,8 +179,7 @@ static rdb_err_t ts_reset(void)
 
 static uint32_t g_int_sz_prng = INT_SIZE_SEED;
 
-static uint16_t mix_sz_next(void)
-{
+static uint16_t mix_sz_next(void) {
     g_int_sz_prng ^= g_int_sz_prng << 13;
     g_int_sz_prng ^= g_int_sz_prng >> 17;
     g_int_sz_prng ^= g_int_sz_prng << 5;
@@ -187,12 +187,15 @@ static uint16_t mix_sz_next(void)
 }
 
 /* ── TS query helper (shared across test cases) ─────────────────────── */
-typedef struct { uint32_t n; } ts_wg_ctx_t;
+typedef struct {
+    uint32_t n;
+} ts_wg_ctx_t;
 
-static int ts_wg_query_cb(uint32_t t, const void *d, uint16_t l, void *a)
-{
-    (void)t; (void)d; (void)l;
-    ((ts_wg_ctx_t *)a)->n++;
+static int ts_wg_query_cb(uint32_t t, const void* d, uint16_t l, void* a) {
+    (void)t;
+    (void)d;
+    (void)l;
+    ((ts_wg_ctx_t*)a)->n++;
     return RDB_ITER_CONTINUE;
 }
 
@@ -200,19 +203,17 @@ static int ts_wg_query_cb(uint32_t t, const void *d, uint16_t l, void *a)
  *  T-400: GC/Rotation cycle stress
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define CYCLE_GC_TARGET   100u
-#define CYCLE_ROT_TARGET  100u
-#define CYCLE_MAX_LOOPS   800000u
+#define CYCLE_GC_TARGET  100u
+#define CYCLE_ROT_TARGET 100u
+#define CYCLE_MAX_LOOPS  800000u
 
-TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles: write+read+delete during GC >=100")
-{
+TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles: write+read+delete during GC >=100") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(kv_reset());
     g_int_sz_prng = INT_SIZE_SEED;
-    trace_event(&g_trace, "  [INT-KV-GC] start: target=%u seed=0x%08X",
-                CYCLE_GC_TARGET, g_int_sz_prng);
+    trace_event(&g_trace, "  [INT-KV-GC] start: target=%u seed=0x%08X", CYCLE_GC_TARGET, g_int_sz_prng);
 
-    char key[4] = { 'K', '0', '0', 0 };
+    char    key[4] = {'K', '0', '0', 0};
     uint8_t val[512], readback[512];
     memset(val, 0xA5, sizeof(val));
 
@@ -230,8 +231,8 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles: write+read+delete during GC >
 
             /* Read verification: every 3rd key (33% rate) */
             if ((i % 3) == 0) {
-                uint16_t out_len = 0;
-                rdb_err_t r = trace_kv_get(&g_kv_db, key, readback, sizeof(readback), &out_len);
+                uint16_t  out_len = 0;
+                rdb_err_t r       = trace_kv_get(&g_kv_db, key, readback, sizeof(readback), &out_len);
                 TEST_ASSERT_RDB_OK(r);
                 TEST_ASSERT_EQ(out_len, vsz);
                 TEST_ASSERT_MEM_EQ(readback, val, out_len);
@@ -243,7 +244,8 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles: write+read+delete during GC >
             if ((i % 10) == 0 && i > 0) {
                 TEST_ASSERT_RDB_OK(trace_kv_del(&g_kv_db, key));
                 TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, key, val, vsz));
-                n_del++; n_set++;
+                n_del++;
+                n_set++;
             }
 
             ops++;
@@ -254,21 +256,19 @@ TEST_CASE(kv_gc_cycles_stress, "KVDB", "GC cycles: write+read+delete during GC >
         }
         loops++;
     }
-    printf("KVDB GC runs: %u (loops=%u, ops=%u, set=%u get=%u del=%u)\n",
-           g_kv_db.stats.gc_runs, loops, ops, n_set, n_get, n_del);
+    printf("KVDB GC runs: %u (loops=%u, ops=%u, set=%u get=%u del=%u)\n", g_kv_db.stats.gc_runs, loops, ops, n_set,
+        n_get, n_del);
     TEST_ASSERT_GE(g_kv_db.stats.gc_runs, CYCLE_GC_TARGET);
     TEST_ASSERT_GT(n_get, 0u);
     TEST_ASSERT_GT(n_del, 0u);
     return 0;
 }
 
-TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles: append+query during rotation >=100")
-{
+TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles: append+query during rotation >=100") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(ts_reset());
     g_int_sz_prng = INT_SIZE_SEED;
-    trace_event(&g_trace, "  [INT-TS-ROT] start: target=%u seed=0x%08X",
-                CYCLE_ROT_TARGET, g_int_sz_prng);
+    trace_event(&g_trace, "  [INT-TS-ROT] start: target=%u seed=0x%08X", CYCLE_ROT_TARGET, g_int_sz_prng);
 
     uint8_t data[512];
     memset(data, 0x5A, sizeof(data));
@@ -282,9 +282,8 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles: append+query duri
 
         /* Periodic query: every 200 appends, scan recent records */
         if ((n_append % 200) == 0 && time > 100u) {
-            ts_wg_ctx_t qctx = { 0 };
-            TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db,
-                time - 100u, time - 1u, ts_wg_query_cb, &qctx));
+            ts_wg_ctx_t qctx = {0};
+            TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db, time - 100u, time - 1u, ts_wg_query_cb, &qctx));
             TEST_ASSERT_GT(qctx.n, 0u);
             n_query++;
         }
@@ -292,9 +291,10 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles: append+query duri
         /* Periodic latest/oldest: every 500 appends.
            Skip if the DB is empty (transient state right after rotation). */
         if ((n_append % 500) == 0 && rdb_tsdb_count(&g_ts_db) > 0u) {
-            uint32_t lt = 0, ot = 0;
-            uint8_t lb[64]; uint16_t ll = 0;
-            rdb_err_t r = rdb_tsdb_get_latest(&g_ts_db, &lt, lb, sizeof(lb), &ll);
+            uint32_t  lt = 0, ot = 0;
+            uint8_t   lb[64];
+            uint16_t  ll = 0;
+            rdb_err_t r  = rdb_tsdb_get_latest(&g_ts_db, &lt, lb, sizeof(lb), &ll);
             if (r == RDB_OK) {
                 TEST_ASSERT_GT(ll, 0u);
                 n_latest++;
@@ -311,8 +311,8 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles: append+query duri
             trace_tsdb_rot_event(&g_trace, &g_ts_db, prev_rot, loops);
         }
     }
-    printf("TSDB rotations: %u (loops=%u, append=%u query=%u latest=%u oldest=%u)\n",
-           g_ts_db.stats.sector_rotations, loops, n_append, n_query, n_latest, n_oldest);
+    printf("TSDB rotations: %u (loops=%u, append=%u query=%u latest=%u oldest=%u)\n", g_ts_db.stats.sector_rotations,
+        loops, n_append, n_query, n_latest, n_oldest);
     TEST_ASSERT_GE(g_ts_db.stats.sector_rotations, CYCLE_ROT_TARGET);
     TEST_ASSERT_GT(n_query, 0u);
     TEST_ASSERT_GT(n_latest, 0u);
@@ -323,40 +323,41 @@ TEST_CASE(ts_rotation_cycles_stress, "TSDB", "Rotation cycles: append+query duri
  *  T-401: mixed workload
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define MIX_KEY_POOL     64u
-#define MIX_MAX_VAL      64u
-#define MIX_TOTAL_OPS    10000u
-#define MIX_QUERY_INTV   250u
+#define MIX_KEY_POOL   64u
+#define MIX_MAX_VAL    64u
+#define MIX_TOTAL_OPS  10000u
+#define MIX_QUERY_INTV 250u
 
 static uint8_t  g_mix_kv_vals[MIX_KEY_POOL][MIX_MAX_VAL];
 static uint16_t g_mix_kv_lens[MIX_KEY_POOL];
 static uint8_t  g_mix_kv_present[MIX_KEY_POOL];
 static uint32_t g_mix_prng = MIX_SEED;
 
-static uint32_t mix_rand(void)
-{
+static uint32_t mix_rand(void) {
     g_mix_prng = (g_mix_prng * 1664525u) + 1013904223u;
     return g_mix_prng;
 }
 
-static rdb_err_t mix_reset(void)
-{
+static rdb_err_t mix_reset(void) {
     rdb_err_t ret = kv_reset();
-    if (ret != RDB_OK) return ret;
+    if (ret != RDB_OK)
+        return ret;
     return ts_reset();
 }
 
-typedef struct { uint32_t count; } mix_ts_ctx_t;
+typedef struct {
+    uint32_t count;
+} mix_ts_ctx_t;
 
-static int mix_ts_cb(uint32_t ts, const void *data, uint16_t len, void *arg)
-{
-    (void)ts; (void)data; (void)len;
-    ((mix_ts_ctx_t *)arg)->count++;
+static int mix_ts_cb(uint32_t ts, const void* data, uint16_t len, void* arg) {
+    (void)ts;
+    (void)data;
+    (void)len;
+    ((mix_ts_ctx_t*)arg)->count++;
     return RDB_ITER_CONTINUE;
 }
 
-TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
-{
+TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(mix_reset());
     g_mix_prng = MIX_SEED;
@@ -371,22 +372,23 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
     uint32_t ts_appends = 0, ts_queries = 0;
 
     for (uint32_t op = 1; op <= MIX_TOTAL_OPS; op++) {
-        uint32_t roll = mix_rand() % 100u;
+        uint32_t roll    = mix_rand() % 100u;
         uint32_t key_idx = mix_rand() % MIX_KEY_POOL;
-        char key[8];
+        char     key[8];
         snprintf(key, sizeof(key), "K%03u", (unsigned)key_idx);
 
         if (roll < 55u) {
             uint16_t vlen = (uint16_t)sim_dist_next(&kv_len_dist);
             for (uint16_t i = 0; i < vlen; i++)
                 g_mix_kv_vals[key_idx][i] = (uint8_t)(i + (uint8_t)op);
-            g_mix_kv_lens[key_idx] = vlen;
+            g_mix_kv_lens[key_idx]    = vlen;
             g_mix_kv_present[key_idx] = 1;
             TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, key, g_mix_kv_vals[key_idx], vlen));
             kv_sets++;
         } else if (roll < 75u) {
-            uint8_t buf[MIX_MAX_VAL]; uint16_t out_len = 0;
-            rdb_err_t ret = trace_kv_get(&g_kv_db, key, buf, sizeof(buf), &out_len);
+            uint8_t   buf[MIX_MAX_VAL];
+            uint16_t  out_len = 0;
+            rdb_err_t ret     = trace_kv_get(&g_kv_db, key, buf, sizeof(buf), &out_len);
             if (g_mix_kv_present[key_idx]) {
                 TEST_ASSERT_RDB_OK(ret);
                 TEST_ASSERT_EQ(out_len, g_mix_kv_lens[key_idx]);
@@ -406,7 +408,7 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
             kv_dels++;
         } else {
             uint16_t len = (uint16_t)sim_dist_next(&ts_len_dist);
-            uint8_t data[MIX_MAX_VAL];
+            uint8_t  data[MIX_MAX_VAL];
             for (uint16_t i = 0; i < len; i++)
                 data[i] = (uint8_t)(0x55u + i + (uint8_t)op);
             TEST_ASSERT_RDB_OK(trace_ts_append(&g_ts_db, time++, data, len));
@@ -414,15 +416,15 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
         }
 
         if ((op % MIX_QUERY_INTV) == 0u && ts_appends > 0u) {
-            uint32_t from = (time > 200u) ? (time - 200u) : 1u;
-            mix_ts_ctx_t qctx = { 0 };
+            uint32_t     from = (time > 200u) ? (time - 200u) : 1u;
+            mix_ts_ctx_t qctx = {0};
             TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db, from, time - 1u, mix_ts_cb, &qctx));
             ts_queries++;
         }
     }
 
-    printf("Mixed workload: set=%u get=%u del=%u ts_append=%u ts_query=%u\n",
-           kv_sets, kv_gets, kv_dels, ts_appends, ts_queries);
+    printf("Mixed workload: set=%u get=%u del=%u ts_append=%u ts_query=%u\n", kv_sets, kv_gets, kv_dels, ts_appends,
+        ts_queries);
     TEST_ASSERT_GT(kv_sets, 0u);
     TEST_ASSERT_GT(ts_appends, 0u);
     return 0;
@@ -434,8 +436,7 @@ TEST_CASE(mixed_workload, "MIXED", "KVDB/TSDB mixed workload")
 
 #define PL_ITERATIONS 50u
 
-TEST_CASE(kv_power_loss_stress, "KVDB", "KV power-loss stress over 50 iterations")
-{
+TEST_CASE(kv_power_loss_stress, "KVDB", "KV power-loss stress over 50 iterations") {
     (void)ctx;
     uint8_t val[32];
     memset(val, 0x3Cu, sizeof(val));
@@ -451,7 +452,8 @@ TEST_CASE(kv_power_loss_stress, "KVDB", "KV power-loss stress over 50 iterations
         TEST_ASSERT_RDB_OK(rdb_kvdb_init(&g_kv_db, &g_kv_part, g_kv_meta));
         TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, "KOK", val, (uint16_t)sizeof(val)));
 
-        uint8_t out[32]; uint16_t out_len = 0;
+        uint8_t  out[32];
+        uint16_t out_len = 0;
         TEST_ASSERT_RDB_OK(trace_kv_get(&g_kv_db, "KOK", out, sizeof(out), &out_len));
         TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(val));
         TEST_ASSERT_MEM_EQ(out, val, sizeof(val));
@@ -465,8 +467,7 @@ TEST_CASE(kv_power_loss_stress, "KVDB", "KV power-loss stress over 50 iterations
     return 0;
 }
 
-TEST_CASE(ts_power_loss_stress, "TSDB", "TS power-loss stress over 50 iterations")
-{
+TEST_CASE(ts_power_loss_stress, "TSDB", "TS power-loss stress over 50 iterations") {
     (void)ctx;
     uint8_t data[16];
     memset(data, 0x7Bu, sizeof(data));
@@ -482,14 +483,16 @@ TEST_CASE(ts_power_loss_stress, "TSDB", "TS power-loss stress over 50 iterations
         TEST_ASSERT_RDB_OK(rdb_tsdb_init(&g_ts_db, &g_ts_part, g_ts_ec));
         TEST_ASSERT_RDB_OK(trace_ts_append(&g_ts_db, 2u, data, (uint16_t)sizeof(data)));
 
-        uint32_t out_time = 0; uint8_t out_buf[16]; uint16_t out_len = 0;
+        uint32_t out_time = 0;
+        uint8_t  out_buf[16];
+        uint16_t out_len = 0;
         TEST_ASSERT_RDB_OK(rdb_tsdb_get_latest(&g_ts_db, &out_time, out_buf, sizeof(out_buf), &out_len));
         TEST_ASSERT_EQ(out_time, 2u);
         TEST_ASSERT_EQ(out_len, (uint16_t)sizeof(data));
         TEST_ASSERT_MEM_EQ(out_buf, data, sizeof(data));
 
         /* Verify range query works after power-loss recovery */
-        ts_wg_ctx_t qctx = { 0 };
+        ts_wg_ctx_t qctx = {0};
         TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db, 1u, 2u, ts_wg_query_cb, &qctx));
         TEST_ASSERT_GT(qctx.n, 0u);
     }
@@ -500,39 +503,35 @@ TEST_CASE(ts_power_loss_stress, "TSDB", "TS power-loss stress over 50 iterations
  *  T-404: wear-leveling heatmap
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define WEAR_KV_GC_TGT   100u
-#define WEAR_TS_ROT_TGT  100u
-#define WEAR_MAX_LOOPS   500000u
+#define WEAR_KV_GC_TGT  100u
+#define WEAR_TS_ROT_TGT 100u
+#define WEAR_MAX_LOOPS  500000u
 
-static void print_kv_heatmap(void)
-{
+static void print_kv_heatmap(void) {
     printf("\n── KV Wear Heatmap ──────────────────────────────\n");
     printf("%-6s %11s %6s %13s\n", "sector", "erase_count", "status", "garbage_bytes");
     for (uint32_t i = 0; i < KV_SECTOR_CNT; i++)
-        printf("%-6u %11u %6u %13u\n", i, g_kv_meta[i].erase_cnt,
-               g_kv_meta[i].status, g_kv_meta[i].garbage_bytes);
+        printf("%-6u %11u %6u %13u\n", i, g_kv_meta[i].erase_cnt, g_kv_meta[i].status, g_kv_meta[i].garbage_bytes);
 }
 
-static void print_ts_heatmap(void)
-{
+static void print_ts_heatmap(void) {
     printf("\n── TS Wear Heatmap ──────────────────────────────\n");
     printf("%-6s %11s\n", "sector", "erase_count");
     for (uint32_t i = 0; i < TS_SECTOR_CNT; i++)
         printf("%-6u %11u\n", i, g_ts_ec[i]);
 }
 
-TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
-{
+TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap") {
     (void)ctx;
     TEST_ASSERT_RDB_OK(kv_reset());
     TEST_ASSERT_RDB_OK(ts_reset());
 
-    char key[4] = { 'W', '0', '0', 0 };
+    char    key[4] = {'W', '0', '0', 0};
     uint8_t val[64];
     memset(val, 0x9Au, sizeof(val));
 
     uint32_t kv_loops = 0, kv_gets = 0, kv_dels = 0;
-    uint8_t readback[64];
+    uint8_t  readback[64];
     while (g_kv_db.stats.gc_runs < WEAR_KV_GC_TGT && kv_loops < WEAR_MAX_LOOPS) {
         for (int i = 0; i < 30; i++) {
             key[1] = (char)('0' + (i / 10));
@@ -559,15 +558,15 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
     }
     /* Final readback: all 30 keys should be readable after GC cycles */
     for (int i = 0; i < 30; i++) {
-        key[1] = (char)('0' + (i / 10));
-        key[2] = (char)('0' + (i % 10));
+        key[1]           = (char)('0' + (i / 10));
+        key[2]           = (char)('0' + (i % 10));
         uint16_t out_len = 0;
         TEST_ASSERT_RDB_OK(trace_kv_get(&g_kv_db, key, readback, sizeof(readback), &out_len));
         TEST_ASSERT_MEM_EQ(readback, val, sizeof(val));
         kv_gets++;
     }
-    trace_event(&g_trace, "  [WEAR-KV] GC=%u loops=%u gets=%u dels=%u",
-                g_kv_db.stats.gc_runs, kv_loops, kv_gets, kv_dels);
+    trace_event(
+        &g_trace, "  [WEAR-KV] GC=%u loops=%u gets=%u dels=%u", g_kv_db.stats.gc_runs, kv_loops, kv_gets, kv_dels);
 
     uint8_t data[128];
     memset(data, 0x6Cu, sizeof(data));
@@ -578,39 +577,40 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
 
         /* Periodic TS query: every 1000 appends */
         if ((ts_loops % 1000) == 0 && ts_loops > 0 && time > 100u) {
-            ts_wg_ctx_t qctx = { 0 };
-            TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db,
-                time - 50u, time - 1u, ts_wg_query_cb, &qctx));
+            ts_wg_ctx_t qctx = {0};
+            TEST_ASSERT_RDB_OK(trace_ts_query(&g_ts_db, time - 50u, time - 1u, ts_wg_query_cb, &qctx));
             TEST_ASSERT_GT(qctx.n, 0u);
             ts_queries++;
         }
         ts_loops++;
     }
-    trace_event(&g_trace, "  [WEAR-TS] rotations=%u loops=%u queries=%u",
-                g_ts_db.stats.sector_rotations, ts_loops, ts_queries);
+    trace_event(
+        &g_trace, "  [WEAR-TS] rotations=%u loops=%u queries=%u", g_ts_db.stats.sector_rotations, ts_loops, ts_queries);
 
     uint32_t kv_min = 0xFFFFFFFFu, kv_max = 0, kv_sum = 0;
     for (uint32_t i = 0; i < KV_SECTOR_CNT; i++) {
         uint32_t ec = g_kv_meta[i].erase_cnt;
-        if (ec < kv_min) kv_min = ec;
-        if (ec > kv_max) kv_max = ec;
+        if (ec < kv_min)
+            kv_min = ec;
+        if (ec > kv_max)
+            kv_max = ec;
         kv_sum += ec;
     }
 
     uint32_t ts_min = 0xFFFFFFFFu, ts_max = 0, ts_sum = 0;
     for (uint32_t i = 0; i < TS_SECTOR_CNT; i++) {
         uint32_t ec = g_ts_ec[i];
-        if (ec < ts_min) ts_min = ec;
-        if (ec > ts_max) ts_max = ec;
+        if (ec < ts_min)
+            ts_min = ec;
+        if (ec > ts_max)
+            ts_max = ec;
         ts_sum += ec;
     }
 
     uint32_t kv_spread = kv_max - kv_min;
     uint32_t ts_spread = ts_max - ts_min;
-    printf("KV wear: min=%u max=%u avg=%u spread=%u\n",
-           kv_min, kv_max, kv_sum / KV_SECTOR_CNT, kv_spread);
-    printf("TS wear: min=%u max=%u avg=%u spread=%u\n",
-           ts_min, ts_max, ts_sum / TS_SECTOR_CNT, ts_spread);
+    printf("KV wear: min=%u max=%u avg=%u spread=%u\n", kv_min, kv_max, kv_sum / KV_SECTOR_CNT, kv_spread);
+    printf("TS wear: min=%u max=%u avg=%u spread=%u\n", ts_min, ts_max, ts_sum / TS_SECTOR_CNT, ts_spread);
     TEST_ASSERT_GE(g_kv_db.stats.gc_runs, WEAR_KV_GC_TGT);
     TEST_ASSERT_GE(g_ts_db.stats.sector_rotations, WEAR_TS_ROT_TGT);
     TEST_ASSERT_GT(kv_sum, KV_SECTOR_CNT);
@@ -627,22 +627,23 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap")
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void post_test_integration_sectors(const char *name, int result, void *ctx)
-{
-    (void)name; (void)result; (void)ctx;
+static void post_test_integration_sectors(const char* name, int result, void* ctx) {
+    (void)name;
+    (void)result;
+    (void)ctx;
     trace_kvdb_sector_summary(&g_trace, &g_kv_db);
     trace_kvdb_stats(&g_trace, &g_kv_db);
     trace_tsdb_sector_summary(&g_trace, &g_ts_db);
     trace_tsdb_stats(&g_trace, &g_ts_db);
 }
 
-int main(void)
-{
-    test_config_t config = {
-        .log_file = fopen(test_make_log_path("integration"), "w"),
-        .verbose = 1, .stop_on_fail = 0, .filter = NULL,
-        .post_test_hook = post_test_integration_sectors, .hook_ctx = NULL
-    };
+int main(void) {
+    test_config_t config = {.log_file = fopen(test_make_log_path("integration"), "w"),
+        .verbose                      = 1,
+        .stop_on_fail                 = 0,
+        .filter                       = NULL,
+        .post_test_hook               = post_test_integration_sectors,
+        .hook_ctx                     = NULL};
     test_framework_init(&config);
 
     trace_init(&g_trace, config.log_file, config.verbose);
@@ -650,7 +651,7 @@ int main(void)
     sim_flash_set_trace(&g_ts_flash, &g_trace);
     trace_event(&g_trace, "=== Integration Test Suite Start ===");
 
-    test_suite_t *s = test_get_default_suite();
+    test_suite_t* s = test_get_default_suite();
     test_register_case(s, &test_case_kv_gc_cycles_stress);
     test_register_case(s, &test_case_ts_rotation_cycles_stress);
     test_register_case(s, &test_case_mixed_workload);
@@ -665,8 +666,10 @@ int main(void)
     trace_tsdb_stats(&g_trace, &g_ts_db);
 
     test_print_report();
-    if (config.log_file) fclose(config.log_file);
+    if (config.log_file)
+        fclose(config.log_file);
 
-    test_stats_t stats; test_get_stats(&stats);
+    test_stats_t stats;
+    test_get_stats(&stats);
     return (stats.failed_cases == 0) ? 0 : 1;
 }

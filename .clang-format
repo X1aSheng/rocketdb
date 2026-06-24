@@ -1,0 +1,126 @@
+# =============================================================================
+# clang-format 配置文件
+# 参考 CODE_STYLE.md v2.0 及 Linux Kernel Coding Style 惯例
+# =============================================================================
+# 使用方法:
+#   clang-format -i file.c          # 格式化单个文件
+#   clang-format -i src/*.c src/*.h # 格式化多个文件
+#   find . -name '*.[ch]' -exec clang-format -i {} +  # 格式化所有源文件
+# =============================================================================
+
+# Language: C                   # clang-format 14+ only (ARMCLANG v6.22 doesn't support)
+BasedOnStyle: LLVM
+
+# =============================================================================
+# 缩进
+# =============================================================================
+IndentWidth: 4                # CODE_STYLE: 4 空格缩进
+TabWidth: 4                   # Tab 宽度（禁用 Tab，仅为兼容性设置）
+UseTab: Never                 # CODE_STYLE: 禁止使用 Tab
+ContinuationIndentWidth: 4    # 续行缩进与普通缩进一致
+
+# =============================================================================
+# 行宽
+# =============================================================================
+ColumnLimit: 120              # CODE_STYLE: 单行不超过 120 字符
+
+# =============================================================================
+# 大括号风格 (K&R, Attach)
+# =============================================================================
+BreakBeforeBraces: Attach     # K&R：左大括号不换行
+AllowShortIfStatementsOnASingleLine: false     # if 单行语句也加 {}，禁止压缩
+AllowShortLoopsOnASingleLine: false            # 循环同
+AllowShortFunctionsOnASingleLine: Empty        # 仅空函数可放一行
+AllowShortBlocksOnASingleLine: false           # 禁止块放一行
+AllowShortCaseLabelsOnASingleLine: false       # case 标签禁止放一行
+
+# =============================================================================
+# switch-case
+# =============================================================================
+IndentCaseLabels: true        # case 标签缩进（与 switch 对齐后缩进）
+IndentCaseBlocks: true        # case 内的 {} 缩进
+
+# =============================================================================
+# 对齐
+# =============================================================================
+AlignAfterOpenBracket: DontAlign       # 括号内参数不自动对齐续行
+AlignConsecutiveAssignments: {Enabled: true, AcrossEmptyLines: false, AcrossComments: false}  # 对齐连续赋值（enum = 等）
+AlignConsecutiveDeclarations: true     # CODE_STYLE: 对齐连续声明
+AlignConsecutiveMacros: AcrossEmptyLinesAndComments  # 对齐连续宏定义（跨空行和注释）
+AlignConsecutiveBitFields: false      # 不对齐位域
+AlignTrailingComments: true           # CODE_STYLE: 对齐尾部注释
+AlignOperands: Align                  # 对齐二元/三元表达式操作数
+AlignEscapedNewlines: Left            # 反斜杠换行靠左对齐
+
+# =============================================================================
+# 指针与引用
+# =============================================================================
+PointerAlignment: Left        # CODE_STYLE: * 靠左（uint8_t *p_buf）
+DerivePointerAlignment: false # 不根据上下文推导指针对齐方式
+ReferenceAlignment: Left      # & 靠左
+
+# =============================================================================
+# 空格
+# =============================================================================
+SpaceAfterCStyleCast: false           # 强制类型转换后不加空格: (uint32_t)p
+SpaceBeforeParens: ControlStatements  # 函数名后不加空格，关键字后加: if () / func()
+SpaceInEmptyParentheses: false        # 空括号内无空格
+SpacesInParentheses: false            # 括号内无空格
+SpacesInSquareBrackets: false         # 方括号内无空格
+SpacesBeforeTrailingComments: 2       # 尾随注释前 2 空格
+SpaceBeforeAssignmentOperators: true  # 赋值运算符前后空格
+SpaceBeforeCpp11BracedList: true      # C++11 列表初始化空格
+
+# 二元/三元运算符前后空格（clang-format 默认行为）
+BreakBeforeBinaryOperators: NonAssignment  # 二元运算符断行：非赋值类运算符留在行尾
+
+# =============================================================================
+# 注释
+# =============================================================================
+ReflowComments: true          # CODE_STYLE: 允许重新排版注释（仅格式化时调整换行）
+FixNamespaceComments: true    # 纠正 namespace 尾部注释（C++ 兼容）
+
+# =============================================================================
+# 包含文件排序
+# =============================================================================
+SortIncludes: true            # CODE_STYLE: 排序 #include
+SortUsingDeclarations: true   # 排序 using 声明（C++）
+IncludeBlocks: Preserve       # 保留 #include 分组，组内排序
+
+# =============================================================================
+# 函数
+# =============================================================================
+AlwaysBreakAfterReturnType: None  # 返回值类型后不强制换行
+# BreakAfterReturnType: None        # (clang-format 18+ only, not supported by ARMCLANG v6)
+AlwaysBreakBeforeMultilineStrings: false  # 多行字符串前不强制换行
+
+# =============================================================================
+# 其他
+# =============================================================================
+KeepEmptyLinesAtTheStartOfBlocks: false   # 块开头不留空行
+MaxEmptyLinesToKeep: 1                    # 最多保留 1 个连续空行
+PenaltyBreakAssignment: 10                # 赋值断行惩罚
+PenaltyBreakBeforeFirstCallParameter: 30  # 函数调用参数断行惩罚
+PenaltyBreakComment: 60                   # 注释断行惩罚
+PenaltyBreakFirstLessLess: 20             # << 断行惩罚
+PenaltyBreakString: 30                    # 字符串断行惩罚
+PenaltyExcessCharacter: 20                # 超字符惩罚
+PenaltyReturnTypeOnItsOwnLine: 60         # 返回值类型单独一行惩罚
+
+# =============================================================================
+# C++ 兼容性
+# =============================================================================
+AccessModifierOffset: -4          # C++ 访问修饰符缩进（-4 = public: 左对齐）
+ConstructorInitializerIndentWidth: 4  # 构造初始化列表缩进
+BreakConstructorInitializers: BeforeColon  # 构造初始化列表在冒号前断行
+
+# =============================================================================
+# while(0) 宏处理
+# =============================================================================
+# clang-format 将 do { } while (0) 视为普通代码块，无需额外配置。
+# 宏定义中的缩进受 AlignConsecutiveMacros 和 UseTab 控制。
+
+# =============================================================================
+# 禁用自动调整的选项（保持手动控制）
+# =============================================================================
+DisableFormat: false          # 不禁用格式化

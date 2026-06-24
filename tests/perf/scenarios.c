@@ -3,62 +3,56 @@
  * @brief RocketDB performance benchmark scenarios.
  */
 
-#include "perf_benchmark.h"
 #include "../../src/rocketdb.h"
 #include "../sim/sim_flash.h"
+#include "perf_benchmark.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define PERF_FLASH_SIZE  (512u * 1024u)
-#define PERF_SECTOR_SIZE 4096u
-#define PERF_PAGE_SIZE   256u
-#define PERF_WRITE_GRAN  0u
-#define PERF_SECTOR_CNT  (PERF_FLASH_SIZE / PERF_SECTOR_SIZE)
+#define PERF_FLASH_SIZE   (512u * 1024u)
+#define PERF_SECTOR_SIZE  4096u
+#define PERF_PAGE_SIZE    256u
+#define PERF_WRITE_GRAN   0u
+#define PERF_SECTOR_CNT   (PERF_FLASH_SIZE / PERF_SECTOR_SIZE)
 
 #define PERF_KV_PART_SIZE (256u * 1024u)
 #define PERF_TS_PART_SIZE (256u * 1024u)
 #define PERF_PART_SECTORS (PERF_KV_PART_SIZE / PERF_SECTOR_SIZE)
 
-static uint8_t g_flash_buf[PERF_FLASH_SIZE];
-static sim_flash_t g_flash;
+static uint8_t              g_flash_buf[PERF_FLASH_SIZE];
+static sim_flash_t          g_flash;
 static rdb_kv_sector_meta_t g_kv_meta[PERF_SECTOR_CNT];
 static rdb_kv_sector_meta_t g_mixed_kv_meta[PERF_PART_SECTORS];
-static uint32_t g_ts_ec[PERF_SECTOR_CNT];
-static uint32_t g_mixed_ts_ec[PERF_PART_SECTORS];
-static uint32_t g_query_count;
+static uint32_t             g_ts_ec[PERF_SECTOR_CNT];
+static uint32_t             g_mixed_ts_ec[PERF_PART_SECTORS];
+static uint32_t             g_query_count;
 
-static int perf_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len)
-{
+static int perf_read(void* ctx, uint32_t addr, uint8_t* buf, size_t len) {
     (void)ctx;
     return sim_flash_read(&g_flash, addr, buf, len);
 }
 
-static int perf_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len)
-{
+static int perf_write(void* ctx, uint32_t addr, const uint8_t* buf, size_t len) {
     (void)ctx;
     return sim_flash_write(&g_flash, addr, buf, len);
 }
 
-static int perf_erase(void *ctx, uint32_t addr)
-{
+static int perf_erase(void* ctx, uint32_t addr) {
     (void)ctx;
     return sim_flash_erase(&g_flash, addr);
 }
 
-static void perf_lock(void *ctx)
-{
+static void perf_lock(void* ctx) {
     (void)ctx;
 }
 
-static void perf_unlock(void *ctx)
-{
+static void perf_unlock(void* ctx) {
     (void)ctx;
 }
 
-static void perf_yield(void *ctx)
-{
+static void perf_yield(void* ctx) {
     (void)ctx;
 }
 
@@ -71,8 +65,7 @@ static const rdb_flash_ops_t g_ops = {
     perf_yield,
 };
 
-static int query_count_cb(uint32_t ts, const void *data, uint16_t len, void *arg)
-{
+static int query_count_cb(uint32_t ts, const void* data, uint16_t len, void* arg) {
     (void)ts;
     (void)data;
     (void)len;
@@ -81,61 +74,55 @@ static int query_count_cb(uint32_t ts, const void *data, uint16_t len, void *arg
     return RDB_ITER_CONTINUE;
 }
 
-static int flash_reset(void)
-{
-    return sim_flash_init(&g_flash, g_flash_buf, PERF_FLASH_SIZE,
-                          PERF_SECTOR_SIZE, PERF_PAGE_SIZE, PERF_WRITE_GRAN);
+static int flash_reset(void) {
+    return sim_flash_init(&g_flash, g_flash_buf, PERF_FLASH_SIZE, PERF_SECTOR_SIZE, PERF_PAGE_SIZE, PERF_WRITE_GRAN);
 }
 
-static rdb_partition_t make_part(const char *name, uint32_t base, uint32_t size)
-{
+static rdb_partition_t make_part(const char* name, uint32_t base, uint32_t size) {
     rdb_partition_t part;
 
-    part.name = name;
-    part.base_addr = base;
-    part.total_size = size;
+    part.name        = name;
+    part.base_addr   = base;
+    part.total_size  = size;
     part.sector_size = PERF_SECTOR_SIZE;
-    part.write_gran = PERF_WRITE_GRAN;
-    part.ops = &g_ops;
+    part.write_gran  = PERF_WRITE_GRAN;
+    part.ops         = &g_ops;
     return part;
 }
 
-static int kv_open(rdb_kvdb_t *db, rdb_partition_t *part, void *meta_buf,
-                   const char *name, uint32_t base, uint32_t size)
-{
+static int kv_open(
+    rdb_kvdb_t* db, rdb_partition_t* part, void* meta_buf, const char* name, uint32_t base, uint32_t size) {
     rdb_err_t ret;
 
     memset(db, 0, sizeof(*db));
-    *part = make_part(name, base, size);
-    db->part = part;
-    db->sectors = (rdb_kv_sector_meta_t *)meta_buf;
+    *part          = make_part(name, base, size);
+    db->part       = part;
+    db->sectors    = (rdb_kv_sector_meta_t*)meta_buf;
     db->sector_cnt = (uint8_t)(size / PERF_SECTOR_SIZE);
-    ret = rdb_kvdb_format(db);
+    ret            = rdb_kvdb_format(db);
     if (ret != RDB_OK) {
         return ret;
     }
     return rdb_kvdb_init(db, part, meta_buf);
 }
 
-static int ts_open(rdb_tsdb_t *db, rdb_partition_t *part, uint32_t *ec_buf,
-                   const char *name, uint32_t base, uint32_t size)
-{
+static int ts_open(
+    rdb_tsdb_t* db, rdb_partition_t* part, uint32_t* ec_buf, const char* name, uint32_t base, uint32_t size) {
     rdb_err_t ret;
 
     memset(db, 0, sizeof(*db));
-    *part = make_part(name, base, size);
-    db->part = part;
+    *part          = make_part(name, base, size);
+    db->part       = part;
     db->erase_cnts = ec_buf;
     db->sector_cnt = (uint8_t)(size / PERF_SECTOR_SIZE);
-    ret = rdb_tsdb_format(db);
+    ret            = rdb_tsdb_format(db);
     if (ret != RDB_OK) {
         return ret;
     }
     return rdb_tsdb_init(db, part, ec_buf);
 }
 
-static int add_elapsed_sample(perf_stats_t *stats, perf_timer_t *timer)
-{
+static int add_elapsed_sample(perf_stats_t* stats, perf_timer_t* timer) {
     uint64_t elapsed_ns = perf_elapsed_ns(timer);
     uint64_t elapsed_us = (elapsed_ns + 999u) / 1000u;
 
@@ -149,8 +136,7 @@ static int add_elapsed_sample(perf_stats_t *stats, perf_timer_t *timer)
     return 0;
 }
 
-static int print_and_free(perf_stats_t *stats)
-{
+static int print_and_free(perf_stats_t* stats) {
     if (stats == NULL) {
         return -1;
     }
@@ -160,17 +146,15 @@ static int print_and_free(perf_stats_t *stats)
     return 0;
 }
 
-static int scenario_p100_basic_set_get(void)
-{
-    rdb_kvdb_t db;
+static int scenario_p100_basic_set_get(void) {
+    rdb_kvdb_t      db;
     rdb_partition_t part;
-    perf_timer_t timer;
-    perf_stats_t *stats_set;
-    perf_stats_t *stats_get;
-    int i;
+    perf_timer_t    timer;
+    perf_stats_t*   stats_set;
+    perf_stats_t*   stats_get;
+    int             i;
 
-    if (flash_reset() != 0 ||
-        kv_open(&db, &part, g_kv_meta, "perf-kv", 0u, PERF_FLASH_SIZE) != RDB_OK) {
+    if (flash_reset() != 0 || kv_open(&db, &part, g_kv_meta, "perf-kv", 0u, PERF_FLASH_SIZE) != RDB_OK) {
         return -1;
     }
 
@@ -197,8 +181,8 @@ static int scenario_p100_basic_set_get(void)
     }
 
     for (i = 0; i < 1000; ++i) {
-        char key[24];
-        char buf[40];
+        char     key[24];
+        char     buf[40];
         uint16_t out_len = 0u;
 
         snprintf(key, sizeof(key), "key_%05d", i);
@@ -213,16 +197,14 @@ static int scenario_p100_basic_set_get(void)
     return print_and_free(stats_set) || print_and_free(stats_get);
 }
 
-static int scenario_p101_gc_stress(void)
-{
-    rdb_kvdb_t db;
+static int scenario_p101_gc_stress(void) {
+    rdb_kvdb_t      db;
     rdb_partition_t part;
-    perf_timer_t timer;
-    perf_stats_t *stats;
-    int cycle;
+    perf_timer_t    timer;
+    perf_stats_t*   stats;
+    int             cycle;
 
-    if (flash_reset() != 0 ||
-        kv_open(&db, &part, g_kv_meta, "perf-kv-gc", 0u, PERF_FLASH_SIZE) != RDB_OK) {
+    if (flash_reset() != 0 || kv_open(&db, &part, g_kv_meta, "perf-kv-gc", 0u, PERF_FLASH_SIZE) != RDB_OK) {
         return -1;
     }
 
@@ -255,17 +237,15 @@ static int scenario_p101_gc_stress(void)
     return print_and_free(stats);
 }
 
-static int scenario_p102_large_value(void)
-{
-    rdb_kvdb_t db;
+static int scenario_p102_large_value(void) {
+    rdb_kvdb_t      db;
     rdb_partition_t part;
-    uint8_t large_val[2048];
-    perf_timer_t timer;
-    perf_stats_t *stats;
-    int i;
+    uint8_t         large_val[2048];
+    perf_timer_t    timer;
+    perf_stats_t*   stats;
+    int             i;
 
-    if (flash_reset() != 0 ||
-        kv_open(&db, &part, g_kv_meta, "perf-kv-large", 0u, PERF_FLASH_SIZE) != RDB_OK) {
+    if (flash_reset() != 0 || kv_open(&db, &part, g_kv_meta, "perf-kv-large", 0u, PERF_FLASH_SIZE) != RDB_OK) {
         return -1;
     }
 
@@ -290,16 +270,14 @@ static int scenario_p102_large_value(void)
     return print_and_free(stats);
 }
 
-static int scenario_p103_random_access(void)
-{
-    rdb_kvdb_t db;
+static int scenario_p103_random_access(void) {
+    rdb_kvdb_t      db;
     rdb_partition_t part;
-    perf_timer_t timer;
-    perf_stats_t *stats;
-    int i;
+    perf_timer_t    timer;
+    perf_stats_t*   stats;
+    int             i;
 
-    if (flash_reset() != 0 ||
-        kv_open(&db, &part, g_kv_meta, "perf-kv-random", 0u, PERF_FLASH_SIZE) != RDB_OK) {
+    if (flash_reset() != 0 || kv_open(&db, &part, g_kv_meta, "perf-kv-random", 0u, PERF_FLASH_SIZE) != RDB_OK) {
         return -1;
     }
 
@@ -321,8 +299,8 @@ static int scenario_p103_random_access(void)
     }
 
     for (i = 0; i < 1000; ++i) {
-        char key[24];
-        char buf[32];
+        char     key[24];
+        char     buf[32];
         uint16_t out_len = 0u;
 
         snprintf(key, sizeof(key), "rand_%03d", rand() % 100);
@@ -337,16 +315,14 @@ static int scenario_p103_random_access(void)
     return print_and_free(stats);
 }
 
-static int scenario_p104_tsdb_append(void)
-{
-    rdb_tsdb_t db;
+static int scenario_p104_tsdb_append(void) {
+    rdb_tsdb_t      db;
     rdb_partition_t part;
-    perf_timer_t timer;
-    perf_stats_t *stats;
-    int i;
+    perf_timer_t    timer;
+    perf_stats_t*   stats;
+    int             i;
 
-    if (flash_reset() != 0 ||
-        ts_open(&db, &part, g_ts_ec, "perf-ts", 0u, PERF_FLASH_SIZE) != RDB_OK) {
+    if (flash_reset() != 0 || ts_open(&db, &part, g_ts_ec, "perf-ts", 0u, PERF_FLASH_SIZE) != RDB_OK) {
         return -1;
     }
 
@@ -369,16 +345,14 @@ static int scenario_p104_tsdb_append(void)
     return print_and_free(stats);
 }
 
-static int scenario_p105_tsdb_query(void)
-{
-    rdb_tsdb_t db;
+static int scenario_p105_tsdb_query(void) {
+    rdb_tsdb_t      db;
     rdb_partition_t part;
-    perf_timer_t timer;
-    perf_stats_t *stats;
-    int i;
+    perf_timer_t    timer;
+    perf_stats_t*   stats;
+    int             i;
 
-    if (flash_reset() != 0 ||
-        ts_open(&db, &part, g_ts_ec, "perf-ts-query", 0u, PERF_FLASH_SIZE) != RDB_OK) {
+    if (flash_reset() != 0 || ts_open(&db, &part, g_ts_ec, "perf-ts-query", 0u, PERF_FLASH_SIZE) != RDB_OK) {
         return -1;
     }
 
@@ -397,7 +371,7 @@ static int scenario_p105_tsdb_query(void)
 
     for (i = 0; i < 100; ++i) {
         uint32_t start = 1000000u + (uint32_t)(i * 5);
-        uint32_t end = start + 100u;
+        uint32_t end   = start + 100u;
 
         g_query_count = 0u;
         perf_start(&timer);
@@ -411,21 +385,17 @@ static int scenario_p105_tsdb_query(void)
     return print_and_free(stats);
 }
 
-static int scenario_p106_mixed_workload(void)
-{
-    rdb_kvdb_t kvdb;
-    rdb_tsdb_t tsdb;
+static int scenario_p106_mixed_workload(void) {
+    rdb_kvdb_t      kvdb;
+    rdb_tsdb_t      tsdb;
     rdb_partition_t kv_part;
     rdb_partition_t ts_part;
-    perf_timer_t timer;
-    perf_stats_t *stats;
-    int i;
+    perf_timer_t    timer;
+    perf_stats_t*   stats;
+    int             i;
 
-    if (flash_reset() != 0 ||
-        kv_open(&kvdb, &kv_part, g_mixed_kv_meta,
-                "perf-mixed-kv", 0u, PERF_KV_PART_SIZE) != RDB_OK ||
-        ts_open(&tsdb, &ts_part, g_mixed_ts_ec,
-                "perf-mixed-ts", PERF_KV_PART_SIZE, PERF_TS_PART_SIZE) != RDB_OK) {
+    if (flash_reset() != 0 || kv_open(&kvdb, &kv_part, g_mixed_kv_meta, "perf-mixed-kv", 0u, PERF_KV_PART_SIZE) != RDB_OK
+        || ts_open(&tsdb, &ts_part, g_mixed_ts_ec, "perf-mixed-ts", PERF_KV_PART_SIZE, PERF_TS_PART_SIZE) != RDB_OK) {
         return -1;
     }
 
@@ -451,16 +421,14 @@ static int scenario_p106_mixed_workload(void)
         } else if (op_type < 80) {
             float temp = 20.0f + (float)(i % 10);
 
-            if (rdb_tsdb_append(&tsdb, 2000000u + (uint32_t)i,
-                                &temp, sizeof(temp)) != RDB_OK) {
+            if (rdb_tsdb_append(&tsdb, 2000000u + (uint32_t)i, &temp, sizeof(temp)) != RDB_OK) {
                 return -1;
             }
         } else {
             uint32_t start = 2000000u + (uint32_t)(i / 5);
 
             g_query_count = 0u;
-            if (rdb_tsdb_query(&tsdb, start, start + 50u,
-                               query_count_cb, NULL) != RDB_OK) {
+            if (rdb_tsdb_query(&tsdb, start, start + 50u, query_count_cb, NULL) != RDB_OK) {
                 return -1;
             }
         }
@@ -471,17 +439,12 @@ static int scenario_p106_mixed_workload(void)
     return print_and_free(stats);
 }
 
-int main(void)
-{
+int main(void) {
     printf("scenario_id,operation,count,avg_us,min_us,max_us,p95_us,throughput_ops_per_sec\n");
 
-    if (scenario_p100_basic_set_get() != 0 ||
-        scenario_p101_gc_stress() != 0 ||
-        scenario_p102_large_value() != 0 ||
-        scenario_p103_random_access() != 0 ||
-        scenario_p104_tsdb_append() != 0 ||
-        scenario_p105_tsdb_query() != 0 ||
-        scenario_p106_mixed_workload() != 0) {
+    if (scenario_p100_basic_set_get() != 0 || scenario_p101_gc_stress() != 0 || scenario_p102_large_value() != 0
+        || scenario_p103_random_access() != 0 || scenario_p104_tsdb_append() != 0 || scenario_p105_tsdb_query() != 0
+        || scenario_p106_mixed_workload() != 0) {
         fprintf(stderr, "benchmark failed\n");
         return 1;
     }

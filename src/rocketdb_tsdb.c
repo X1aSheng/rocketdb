@@ -23,12 +23,12 @@
  *   - Each epoch maps to exactly one Flash sector
  *
  *  See DESIGN_RATIONALE.md for full rationale behind each rule.
- * 
+ *
  * Copyright (c) 2015 XiaSheng(info@zhis.net)
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
  * @version 1.2.0
- * 
+ *
  *****************************************************************************/
 
 #include "rocketdb.h"
@@ -130,8 +130,7 @@ static inline int fl_read(const rdb_tsdb_t* db, uint32_t a, void* b, size_t n) {
 }
 
 /** @brief Write `n` bytes from buffer `b` to flash address `a`. */
-static inline int fl_write(const rdb_tsdb_t* db, uint32_t a,
-    const void* b, size_t n) {
+static inline int fl_write(const rdb_tsdb_t* db, uint32_t a, const void* b, size_t n) {
     return db->part->ops->write(db->part->flash_ctx, a, (const uint8_t*)b, n);
 }
 
@@ -170,8 +169,7 @@ static inline uint32_t ts_corrupt_skip(const rdb_tsdb_t* db) {
  *  @return          0 on success, -1 on flash read failure.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int ts_data_crc(const rdb_tsdb_t* db, uint32_t addr,
-    uint16_t dlen, uint16_t* out) {
+static int ts_data_crc(const rdb_tsdb_t* db, uint32_t addr, uint16_t dlen, uint16_t* out) {
     uint16_t crc = rdb_crc16(NULL, 0); /* Initial CRC seed */
     uint32_t rem = dlen, pos = addr;
     uint8_t  buf[RDB_STACK_BUF_SIZE];
@@ -214,23 +212,21 @@ static int ts_data_crc(const rdb_tsdb_t* db, uint32_t addr,
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 typedef enum {
-    TS_EMPTY = 0,  /**< Sector is fully erased                      */
-    TS_ACTIVE = 1, /**< Sector has valid header, not yet sealed     */
-    TS_SEALED = 2, /**< Sector is sealed (finalised, read-only)     */
-    TS_CORRUPT = 3 /**< Sector header is unrecognisable              */
+    TS_EMPTY   = 0, /**< Sector is fully erased                      */
+    TS_ACTIVE  = 1, /**< Sector has valid header, not yet sealed     */
+    TS_SEALED  = 2, /**< Sector is sealed (finalised, read-only)     */
+    TS_CORRUPT = 3  /**< Sector header is unrecognisable              */
 } ts_cls_t;
 
 /* Retry a flash read once before giving up, to tolerate transient bus errors
    that would otherwise permanently classify a sector as CORRUPT. */
-static int ts_read_retry(const rdb_tsdb_t* db, uint32_t addr,
-    void* buf, size_t len) {
+static int ts_read_retry(const rdb_tsdb_t* db, uint32_t addr, void* buf, size_t len) {
     if (fl_read(db, addr, buf, len) == 0)
         return 0;
     return fl_read(db, addr, buf, len);
 }
 
-static ts_cls_t ts_classify(const rdb_tsdb_t* db, uint8_t s,
-    rdb_ts_sector_hdr_t* out) {
+static ts_cls_t ts_classify(const rdb_tsdb_t* db, uint8_t s, rdb_ts_sector_hdr_t* out) {
     uint32_t            addr = ts_sec_addr(db, s);
     rdb_ts_sector_hdr_t h;
     if (ts_read_retry(db, addr, &h, sizeof(h)) != 0)
@@ -294,16 +290,15 @@ static ts_cls_t ts_classify(const rdb_tsdb_t* db, uint8_t s,
  *  @param[out] out_end Receives the byte offset of the write frontier.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void ts_active_info(const rdb_tsdb_t* db, uint8_t s,
-    uint32_t* out_tb, uint32_t* out_end) {
+static void ts_active_info(const rdb_tsdb_t* db, uint8_t s, uint32_t* out_tb, uint32_t* out_end) {
     uint32_t base = ts_sec_addr(db, s);
-    uint32_t off = ts_data_start(db);
-    uint32_t ss = db->sector_size;
+    uint32_t off  = ts_data_start(db);
+    uint32_t ss   = db->sector_size;
 
     /* Read time_base from sector header */
     rdb_ts_sector_hdr_t h;
     if (fl_read(db, base, &h, sizeof(h)) != 0) {
-        *out_tb = RDB_TIME_INVALID;
+        *out_tb  = RDB_TIME_INVALID;
         *out_end = (uint32_t)ts_data_start(db);
         return;
     }
@@ -364,9 +359,9 @@ static uint16_t ts_sector_count(const rdb_tsdb_t* db, uint8_t s) {
 
     /* Scan and count VALID records (read-only, no WRITING repair) */
     uint32_t base = ts_sec_addr(db, s);
-    uint32_t off = ts_data_start(db);
-    uint32_t ss = db->sector_size;
-    uint16_t cnt = 0;
+    uint32_t off  = ts_data_start(db);
+    uint32_t ss   = db->sector_size;
+    uint16_t cnt  = 0;
 
     while (off + TS_REC_SZ <= ss) {
         rdb_ts_record_hdr_t rh;
@@ -414,13 +409,12 @@ static uint16_t ts_sector_count(const rdb_tsdb_t* db, uint8_t s) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int ts_init_sec(rdb_tsdb_t* db, uint8_t s, uint32_t seq) {
-    uint32_t addr = ts_sec_addr(db, s);
+    uint32_t addr   = ts_sec_addr(db, s);
     uint32_t old_ec = db->erase_cnts ? db->erase_cnts[s] : 0;
 
     /* Take max of RAM and flash to prevent ec regression */
     rdb_ts_sector_hdr_t oh;
-    if (fl_read(db, addr, &oh, sizeof(oh)) == 0 &&
-        oh.magic == RDB_TS_SECTOR_MAGIC) {
+    if (fl_read(db, addr, &oh, sizeof(oh)) == 0 && oh.magic == RDB_TS_SECTOR_MAGIC) {
         if (oh.erase_cnt > old_ec)
             old_ec = oh.erase_cnt;
     }
@@ -432,10 +426,10 @@ static int ts_init_sec(rdb_tsdb_t* db, uint8_t s, uint32_t seq) {
     uint32_t            nec = old_ec + 1;
     rdb_ts_sector_hdr_t h;
     memset(&h, 0xFF, sizeof(h)); /* All-0xFF default (unsealed state) */
-    h.magic = RDB_TS_SECTOR_MAGIC;
+    h.magic     = RDB_TS_SECTOR_MAGIC;
     h.erase_cnt = nec;
     h.time_base = RDB_TIME_INVALID; /* Set later on first append */
-    h.seq = (uint16_t)seq;
+    h.seq       = (uint16_t)seq;
     /* h.count, h.end_off, h.hdr_crc remain 0xFFFF (unsealed) */
 
     if (fl_write(db, addr, &h, sizeof(h)) != 0)
@@ -461,8 +455,7 @@ static int ts_init_sec(rdb_tsdb_t* db, uint8_t s, uint32_t seq) {
  *  @return         0 on success, -1 on flash failure.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int ts_seal(rdb_tsdb_t* db, uint8_t s,
-    uint16_t count, uint16_t end_off) {
+static int ts_seal(rdb_tsdb_t* db, uint8_t s, uint16_t count, uint16_t end_off) {
     uint32_t addr = ts_sec_addr(db, s);
 
     /* Write count field (offset 14) */
@@ -513,20 +506,20 @@ static void ts_recover_head(rdb_tsdb_t* db, uint8_t head_s) {
     rdb_ts_sector_hdr_t hh;
     ts_cls_t            cls = ts_classify(db, head_s, &hh);
 
-    db->head_sec = head_s;
-    db->head_seq = hh.seq;
+    db->head_sec  = head_s;
+    db->head_seq  = hh.seq;
     db->last_time = 0;
 
     if (cls == TS_SEALED) {
         /* Head sector is sealed — extract metadata from header */
         db->head_time_base = hh.time_base;
-        db->head_count = hh.count;
-        db->head_off = hh.end_off;
+        db->head_count     = hh.count;
+        db->head_off       = hh.end_off;
 
         /* Find last_time from the sealed head sector's records */
         if (hh.time_base != RDB_TIME_INVALID && hh.count > 0) {
             uint32_t base = ts_sec_addr(db, head_s);
-            uint32_t off = ts_data_start(db);
+            uint32_t off  = ts_data_start(db);
 
             while (off + TS_REC_SZ <= hh.end_off) {
                 rdb_ts_record_hdr_t rh;
@@ -554,11 +547,11 @@ static void ts_recover_head(rdb_tsdb_t* db, uint8_t head_s) {
     } else {
         /* ACTIVE head — scan records, recover WRITING, find frontier */
         db->head_time_base = hh.time_base;
-        db->head_count = 0;
+        db->head_count     = 0;
 
         uint32_t base = ts_sec_addr(db, head_s);
-        uint32_t off = ts_data_start(db);
-        uint32_t ss = db->sector_size;
+        uint32_t off  = ts_data_start(db);
+        uint32_t ss   = db->sector_size;
 
         while (off + TS_REC_SZ <= ss) {
             rdb_ts_record_hdr_t rh;
@@ -583,8 +576,7 @@ static void ts_recover_head(rdb_tsdb_t* db, uint8_t head_s) {
             if (rh.state == RDB_STATE_WRITING) {
                 uint16_t calc;
                 uint32_t da = base + off + TS_REC_SZ;
-                if (ts_data_crc(db, da, rh.data_len, &calc) == 0 &&
-                    calc == rh.data_crc) {
+                if (ts_data_crc(db, da, rh.data_len, &calc) == 0 && calc == rh.data_crc) {
                     /* Data intact → promote to VALID */
                     uint8_t v = RDB_STATE_VALID;
                     if (fl_write(db, base + off + 1, &v, 1) == 0) {
@@ -651,12 +643,11 @@ typedef struct {
 /** @brief Scan callback function type for TSDB record iteration. */
 typedef int (*ts_scan_cb_t)(rdb_tsdb_t* db, const ts_rec_t* r, void* arg);
 
-static uint16_t ts_scan(rdb_tsdb_t* db, uint8_t s,
-    uint32_t time_base, uint32_t max_off,
-    ts_scan_cb_t cb, void* arg, int recover) {
+static uint16_t ts_scan(
+    rdb_tsdb_t* db, uint8_t s, uint32_t time_base, uint32_t max_off, ts_scan_cb_t cb, void* arg, int recover) {
     uint32_t base = ts_sec_addr(db, s);
-    uint32_t off = ts_data_start(db);
-    uint16_t cnt = 0;
+    uint32_t off  = ts_data_start(db);
+    uint16_t cnt  = 0;
 
     while (off + TS_REC_SZ <= max_off) {
         rdb_ts_record_hdr_t rh;
@@ -688,8 +679,7 @@ static uint16_t ts_scan(rdb_tsdb_t* db, uint8_t s,
             }
             uint16_t calc;
             uint32_t da = base + off + TS_REC_SZ;
-            if (ts_data_crc(db, da, rh.data_len, &calc) == 0 &&
-                calc == rh.data_crc) {
+            if (ts_data_crc(db, da, rh.data_len, &calc) == 0 && calc == rh.data_crc) {
                 /* Data intact → promote to VALID */
                 uint8_t v = RDB_STATE_VALID;
                 if (fl_write(db, base + off + 1, &v, 1) == 0)
@@ -708,10 +698,10 @@ static uint16_t ts_scan(rdb_tsdb_t* db, uint8_t s,
             cnt++;
             if (cb) {
                 ts_rec_t r;
-                r.time = (time_base != RDB_TIME_INVALID) ? time_base + rh.time_delta : rh.time_delta;
-                r.addr = base + off;
+                r.time     = (time_base != RDB_TIME_INVALID) ? time_base + rh.time_delta : rh.time_delta;
+                r.addr     = base + off;
                 r.data_len = rh.data_len;
-                r.state = RDB_STATE_VALID;
+                r.state    = RDB_STATE_VALID;
                 if (cb(db, &r, arg) == RDB_ITER_STOP)
                     return cnt;
             }
@@ -759,10 +749,10 @@ static rdb_err_t ts_rotate(rdb_tsdb_t* db) {
            records in the head sector are recovered by init Phase 3;
            rotation is not the right place for recovery. */
         rdb_ts_sector_hdr_t h;
-        uint8_t old_tail = db->tail_sec;
+        uint8_t             old_tail = db->tail_sec;
         if (fl_read(db, ts_sec_addr(db, old_tail), &h, sizeof(h)) == 0) {
             uint32_t max_off = (h.end_off != 0xFFFFu) ? h.end_off : db->sector_size;
-            lost = ts_scan(db, old_tail, h.time_base, max_off, NULL, NULL, RDB_FALSE);
+            lost             = ts_scan(db, old_tail, h.time_base, max_off, NULL, NULL, RDB_FALSE);
         }
 
         if (lost > 0) {
@@ -784,9 +774,9 @@ static rdb_err_t ts_rotate(rdb_tsdb_t* db) {
         return RDB_ERR_FLASH;
     }
 
-    db->head_sec = next;
-    db->head_off = ts_data_start(db);
-    db->head_count = 0;
+    db->head_sec       = next;
+    db->head_off       = ts_data_start(db);
+    db->head_count     = 0;
     db->head_time_base = RDB_TIME_INVALID; /* Set on first append */
 
     db->stats.sector_rotations++;
@@ -840,8 +830,7 @@ static rdb_err_t ts_rotate(rdb_tsdb_t* db) {
  *  @return        RDB_OK on success, or an error code.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
-    uint32_t* ec_buf) {
+rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part, uint32_t* ec_buf) {
     /* ── Parameter validation ── */
     if (!db || !part || !part->ops)
         return RDB_ERR_PARAM;
@@ -862,10 +851,10 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 
     /* ── Zero-initialise the handle ── */
     memset(db, 0, sizeof(*db));
-    db->part = part;
-    db->erase_cnts = ec_buf;
+    db->part        = part;
+    db->erase_cnts  = ec_buf;
     db->sector_size = part->sector_size;
-    db->sector_cnt = (uint8_t)scnt;
+    db->sector_cnt  = (uint8_t)scnt;
 
     /* Guard ts_data_cap() against underflow: sector must hold at least the header */
     if (db->sector_size <= ts_data_start(db))
@@ -881,15 +870,14 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
        one sector.  Respects RDB_MAX_TS_DATA_LEN if configured. */
     {
         uint32_t dcap = ts_data_cap(db);
-        uint32_t mdl = dcap - TS_REC_SZ;
+        uint32_t mdl  = dcap - TS_REC_SZ;
         while (mdl > 0 && ts_rec_size(db, (uint16_t)mdl) > dcap)
             mdl--;
         if (mdl > 0xFFFFu)
             mdl = 0xFFFFu;
 
 #if RDB_MAX_TS_DATA_LEN > 0
-        db->max_data_len = (uint16_t)RDB_MIN(mdl,
-            (uint32_t)RDB_MAX_TS_DATA_LEN);
+        db->max_data_len = (uint16_t)RDB_MIN(mdl, (uint32_t)RDB_MAX_TS_DATA_LEN);
 #else
         db->max_data_len = (uint16_t)mdl;
 #endif
@@ -915,8 +903,8 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
     for (uint8_t s = 0; s < db->sector_cnt; s++) {
         rdb_ts_sector_hdr_t h;
         ts_cls_t            cls = ts_classify(db, s, &h);
-        cls_cache[s] = cls;
-        seq_cache[s] = h.seq;
+        cls_cache[s]            = cls;
+        seq_cache[s]            = h.seq;
 
         if (cls == TS_CORRUPT) {
             if (fl_erase(db, ts_sec_addr(db, s)) != 0)
@@ -932,11 +920,11 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
 
         /* Track head (highest seq) and tail (lowest seq) */
         if (head_s == 0xFF || RDB_SEQ16_GT(h.seq, head_sq)) {
-            head_s = s;
+            head_s  = s;
             head_sq = h.seq;
         }
         if (tail_s == 0xFF || RDB_SEQ16_GT(tail_sq, h.seq)) {
-            tail_s = s;
+            tail_s  = s;
             tail_sq = h.seq;
         }
     }
@@ -955,21 +943,20 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
      *  format, preserving all recoverable data.
      * ══════════════════════════════════════════════════════════════════ */
     {
-        uint8_t  s = tail_s;
+        uint8_t  s        = tail_s;
         uint16_t prev_seq = tail_sq;
-        int      first = 1;
+        int      first    = 1;
 
         for (uint8_t i = 0; i < db->sector_cnt; i++) {
             ts_cls_t cls = cls_cache[s];
 
             if (cls == TS_ACTIVE || cls == TS_SEALED) {
                 uint16_t seq = seq_cache[s];
-                if (!first && !RDB_SEQ16_GT(seq, prev_seq) &&
-                    seq != prev_seq) {
+                if (!first && !RDB_SEQ16_GT(seq, prev_seq) && seq != prev_seq) {
                     db->stats.data_gaps++;
                 }
                 prev_seq = seq;
-                first = 0;
+                first    = 0;
             } else if (cls == TS_EMPTY) {
                 db->stats.data_gaps++;
             }
@@ -1035,7 +1022,7 @@ rdb_err_t rdb_tsdb_init(rdb_tsdb_t* db, const rdb_partition_t* part,
             /* Scan sector for maximum timestamp */
             if (tb != RDB_TIME_INVALID) {
                 uint32_t base = ts_sec_addr(db, s);
-                uint32_t off = ts_data_start(db);
+                uint32_t off  = ts_data_start(db);
                 while (off + TS_REC_SZ <= eo) {
                     rdb_ts_record_hdr_t rh;
                     if (fl_read(db, base + off, &rh, sizeof(rh)) != 0)
@@ -1113,10 +1100,8 @@ rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
          * to verify but magic matched, so their erase_cnt is trusted. */
         rdb_ts_sector_hdr_t h;
         uint32_t            addr = ts_sec_addr(db, s);
-        if (fl_read(db, addr, &h, sizeof(h)) == 0 &&
-            h.magic == RDB_TS_SECTOR_MAGIC) {
-            if (h.hdr_crc != 0xFFFFu &&
-                rdb_crc16(&h, 18) != h.hdr_crc)
+        if (fl_read(db, addr, &h, sizeof(h)) == 0 && h.magic == RDB_TS_SECTOR_MAGIC) {
+            if (h.hdr_crc != 0xFFFFu && rdb_crc16(&h, 18) != h.hdr_crc)
                 continue; /* Sealed sector with bad CRC — unreliable */
             if (h.erase_cnt > saved_ec[s])
                 saved_ec[s] = h.erase_cnt;
@@ -1145,14 +1130,14 @@ rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
     }
 
     /* Reset all runtime state */
-    db->head_sec = 0;
-    db->tail_sec = 0;
-    db->head_off = ts_data_start(db);
-    db->head_count = 0;
+    db->head_sec       = 0;
+    db->tail_sec       = 0;
+    db->head_off       = ts_data_start(db);
+    db->head_count     = 0;
     db->head_time_base = RDB_TIME_INVALID;
-    db->last_time = 0;
-    db->total_count = 0;
-    db->initialized = 1;
+    db->last_time      = 0;
+    db->total_count    = 0;
+    db->initialized    = 1;
     memset(&db->stats, 0, sizeof(db->stats));
 
     fl_unlock(db);
@@ -1191,10 +1176,8 @@ rdb_err_t rdb_tsdb_format(rdb_tsdb_t* db) {
  *  padding in chunks.  On any write failure, marks the record dead and
  *  returns RDB_ERR_FLASH (caller must fl_unlock).
  * ═══════════════════════════════════════════════════════════════════════════ */
-static rdb_err_t ts_write_large_record(rdb_tsdb_t* db,
-    const rdb_ts_record_hdr_t* rh,
-    const void* data, uint16_t len,
-    uint32_t da, uint32_t wa) {
+static rdb_err_t ts_write_large_record(
+    rdb_tsdb_t* db, const rdb_ts_record_hdr_t* rh, const void* data, uint16_t len, uint32_t da, uint32_t wa) {
     /* Write record header */
     if (fl_write(db, wa, rh, sizeof(*rh)) != 0) {
         db->stats.flash_errors++;
@@ -1205,12 +1188,12 @@ static rdb_err_t ts_write_large_record(rdb_tsdb_t* db,
 
     /* Write data payload plus alignment padding in streaming chunks */
     {
-        uint32_t g  = ts_wr_gran(db);
+        uint32_t g         = ts_wr_gran(db);
         uint32_t max_chunk = RDB_STACK_BUF_SIZE;
         max_chunk -= max_chunk % g;
-        uint32_t rem = da;
+        uint32_t rem      = da;
         uint32_t data_pos = 0;
-        uint32_t wpos = wa + TS_REC_SZ;
+        uint32_t wpos     = wa + TS_REC_SZ;
         uint8_t  buf[RDB_STACK_BUF_SIZE];
 
         while (rem > 0) {
@@ -1218,7 +1201,7 @@ static rdb_err_t ts_write_large_record(rdb_tsdb_t* db,
             RDB_PAGE_CLAMP(ch, wpos);
 
             uint32_t data_rem = (len > data_pos) ? (uint32_t)len - data_pos : 0;
-            uint32_t data_ch = RDB_MIN(ch, data_rem);
+            uint32_t data_ch  = RDB_MIN(ch, data_rem);
 
             if (data_ch > 0)
                 memcpy(buf, (const uint8_t*)data + data_pos, data_ch);
@@ -1241,8 +1224,7 @@ static rdb_err_t ts_write_large_record(rdb_tsdb_t* db,
     return RDB_OK;
 }
 
-rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
-    const void* data, uint16_t len) {
+rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time, const void* data, uint16_t len) {
     if (!db || !db->initialized)
         return RDB_ERR_NOT_INIT;
     if (len < 1 || len > db->max_data_len)
@@ -1277,8 +1259,7 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
     /* Case 1: time_base overflow — timestamp cannot be represented
        as a delta from the current sector's time_base */
     if (db->head_time_base != RDB_TIME_INVALID) {
-        if (time < db->head_time_base ||
-            (time - db->head_time_base) > 0xFFFFFFFEu)
+        if (time < db->head_time_base || (time - db->head_time_base) > 0xFFFFFFFEu)
             need_rot = 1;
     }
 
@@ -1310,12 +1291,12 @@ rdb_err_t rdb_tsdb_append(rdb_tsdb_t* db, uint32_t time,
     /* ── Build record header ── */
     uint16_t            dcrc = rdb_crc16(data, len);
     rdb_ts_record_hdr_t rh;
-    rh.magic = RDB_TS_RECORD_MAGIC;
-    rh.state = RDB_STATE_WRITING;
-    rh.data_len = len;
+    rh.magic      = RDB_TS_RECORD_MAGIC;
+    rh.state      = RDB_STATE_WRITING;
+    rh.data_len   = len;
     rh.time_delta = delta;
-    rh.data_crc = dcrc;
-    rh._pad = 0xFFFF;
+    rh.data_crc   = dcrc;
+    rh._pad       = 0xFFFF;
 
     uint32_t wa = ts_sec_addr(db, db->head_sec) + db->head_off;
     uint32_t da = RDB_ALIGN_UP(len, ts_wr_gran(db)); /* Aligned data size */
@@ -1472,7 +1453,7 @@ rdb_err_t rdb_tsdb_reset_epoch(rdb_tsdb_t* db) {
         return rc;
     }
 
-    db->last_time = 0;
+    db->last_time      = 0;
     db->head_time_base = RDB_TIME_INVALID;
 
     fl_unlock(db);
@@ -1537,8 +1518,7 @@ static int ts_query_cb(rdb_tsdb_t* db, const ts_rec_t* r, void* arg) {
     /* Verify data CRC */
     uint16_t calc;
     uint32_t da = r->addr + TS_REC_SZ;
-    if (ts_data_crc(db, da, r->data_len, &calc) != 0 ||
-        calc != rh.data_crc) {
+    if (ts_data_crc(db, da, r->data_len, &calc) != 0 || calc != rh.data_crc) {
         /* CRC mismatch — report record with NULL data */
         db->stats.crc_errors++;
         if (q->cb(r->time, NULL, r->data_len, q->arg) == RDB_ITER_STOP) {
@@ -1578,9 +1558,8 @@ static int ts_query_cb(rdb_tsdb_t* db, const ts_rec_t* r, void* arg) {
  * @brief Internal query implementation shared by rdb_tsdb_query and
  *        rdb_tsdb_query_ex.
  */
-static rdb_err_t ts_query_impl(rdb_tsdb_t* db, uint32_t from, uint32_t to,
-    rdb_ts_cb_t cb, void* arg,
-    void* rbuf, uint16_t rlen) {
+static rdb_err_t ts_query_impl(
+    rdb_tsdb_t* db, uint32_t from, uint32_t to, rdb_ts_cb_t cb, void* arg, void* rbuf, uint16_t rlen) {
     if (!db || !db->initialized)
         return RDB_ERR_NOT_INIT;
     if (!cb)
@@ -1595,8 +1574,7 @@ static rdb_err_t ts_query_impl(rdb_tsdb_t* db, uint32_t from, uint32_t to,
         return RDB_OK;
     }
 
-    ts_qctx_t q = {
-        .db = db, .cb = cb, .arg = arg, .rbuf = rbuf, .rlen = rlen, .from = from, .to = to, .stopped = 0};
+    ts_qctx_t q = {.db = db, .cb = cb, .arg = arg, .rbuf = rbuf, .rlen = rlen, .from = from, .to = to, .stopped = 0};
 
     /* Walk the ring from tail to head */
     uint8_t s = db->tail_sec;
@@ -1608,9 +1586,8 @@ static rdb_err_t ts_query_impl(rdb_tsdb_t* db, uint32_t from, uint32_t to,
             /* Sealed sector with valid time_base — scan normally */
             ts_scan(db, s, h.time_base, h.end_off, ts_query_cb, &q, RDB_FALSE);
 
-        } else if (cls == TS_ACTIVE && s == db->head_sec &&
-                   db->head_time_base != RDB_TIME_INVALID &&
-                   db->head_count > 0) {
+        } else if (cls == TS_ACTIVE && s == db->head_sec && db->head_time_base != RDB_TIME_INVALID
+                   && db->head_count > 0) {
             /* Active head sector with records — scan up to head_off */
             ts_scan(db, s, db->head_time_base, db->head_off, ts_query_cb, &q, RDB_FALSE);
 
@@ -1637,8 +1614,7 @@ static rdb_err_t ts_query_impl(rdb_tsdb_t* db, uint32_t from, uint32_t to,
  *
  * Records larger than RDB_STACK_BUF_SIZE will have NULL data in the callback.
  */
-rdb_err_t rdb_tsdb_query(rdb_tsdb_t* db, uint32_t from, uint32_t to,
-    rdb_ts_cb_t cb, void* arg) {
+rdb_err_t rdb_tsdb_query(rdb_tsdb_t* db, uint32_t from, uint32_t to, rdb_ts_cb_t cb, void* arg) {
     return ts_query_impl(db, from, to, cb, arg, NULL, 0);
 }
 
@@ -1648,9 +1624,8 @@ rdb_err_t rdb_tsdb_query(rdb_tsdb_t* db, uint32_t from, uint32_t to,
  * The read_buf is used for records larger than RDB_STACK_BUF_SIZE,
  * enabling zero-copy reads of large payloads.
  */
-rdb_err_t rdb_tsdb_query_ex(rdb_tsdb_t* db, uint32_t from, uint32_t to,
-    rdb_ts_cb_t cb, void* arg,
-    void* read_buf, uint16_t buf_len) {
+rdb_err_t rdb_tsdb_query_ex(
+    rdb_tsdb_t* db, uint32_t from, uint32_t to, rdb_ts_cb_t cb, void* arg, void* read_buf, uint16_t buf_len) {
     return ts_query_impl(db, from, to, cb, arg, read_buf, buf_len);
 }
 
@@ -1692,11 +1667,9 @@ typedef struct {
  * @param[out] c     Result context — c->found indicates success.
  * @return           1 if found, 0 otherwise.
  */
-static int ts_find_last_valid(rdb_tsdb_t* db, uint8_t s,
-    uint32_t time_base, uint32_t end_off,
-    ts_lt_ctx_t* c) {
+static int ts_find_last_valid(rdb_tsdb_t* db, uint8_t s, uint32_t time_base, uint32_t end_off, ts_lt_ctx_t* c) {
     uint32_t base = ts_sec_addr(db, s);
-    uint32_t off = ts_data_start(db);
+    uint32_t off  = ts_data_start(db);
 
     c->found = 0;
 
@@ -1720,9 +1693,9 @@ static int ts_find_last_valid(rdb_tsdb_t* db, uint8_t s,
             break;
 
         if (rh.state == RDB_STATE_VALID) {
-            c->time = (time_base != RDB_TIME_INVALID) ? time_base + rh.time_delta : rh.time_delta;
-            c->addr = base + off;
-            c->dlen = rh.data_len;
+            c->time  = (time_base != RDB_TIME_INVALID) ? time_base + rh.time_delta : rh.time_delta;
+            c->addr  = base + off;
+            c->dlen  = rh.data_len;
             c->found = 1;
             /* Don't break — keep scanning to find the LAST valid record */
         }
@@ -1731,8 +1704,7 @@ static int ts_find_last_valid(rdb_tsdb_t* db, uint8_t s,
     return c->found;
 }
 
-rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
-    void* buf, uint16_t buf_len, uint16_t* out_len) {
+rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time, void* buf, uint16_t buf_len, uint16_t* out_len) {
     if (!db || !db->initialized)
         return RDB_ERR_NOT_INIT;
     fl_lock(db);
@@ -1746,8 +1718,7 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
 
     /* Try head sector first (most likely to contain the latest record) */
     if (db->head_count > 0 && db->head_time_base != RDB_TIME_INVALID)
-        ts_find_last_valid(db, db->head_sec, db->head_time_base,
-            db->head_off, &c);
+        ts_find_last_valid(db, db->head_sec, db->head_time_base, db->head_off, &c);
 
     /* Walk backwards from head toward tail if not found in head */
     if (!c.found) {
@@ -1757,8 +1728,7 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
             rdb_ts_sector_hdr_t h;
             ts_cls_t            cls = ts_classify(db, prev, &h);
 
-            if (cls == TS_SEALED && h.time_base != RDB_TIME_INVALID &&
-                h.count > 0) {
+            if (cls == TS_SEALED && h.time_base != RDB_TIME_INVALID && h.count > 0) {
                 ts_find_last_valid(db, prev, h.time_base, h.end_off, &c);
             } else if (cls == TS_ACTIVE) {
                 /* Degraded ACTIVE sector */
@@ -1844,15 +1814,14 @@ rdb_err_t rdb_tsdb_get_latest(rdb_tsdb_t* db, uint32_t* time,
 static int ts_oldest_cb(rdb_tsdb_t* db, const ts_rec_t* r, void* arg) {
     (void)db;
     ts_lt_ctx_t* c = (ts_lt_ctx_t*)arg;
-    c->time = r->time;
-    c->addr = r->addr;
-    c->dlen = r->data_len;
-    c->found = 1;
+    c->time        = r->time;
+    c->addr        = r->addr;
+    c->dlen        = r->data_len;
+    c->found       = 1;
     return RDB_ITER_STOP; /* First VALID record is the oldest */
 }
 
-rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time,
-    void* buf, uint16_t buf_len, uint16_t* out_len) {
+rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time, void* buf, uint16_t buf_len, uint16_t* out_len) {
     if (!db || !db->initialized)
         return RDB_ERR_NOT_INIT;
     fl_lock(db);
@@ -1870,17 +1839,14 @@ rdb_err_t rdb_tsdb_get_oldest(rdb_tsdb_t* db, uint32_t* time,
         rdb_ts_sector_hdr_t h;
         ts_cls_t            cls = ts_classify(db, s, &h);
 
-        if (cls == TS_SEALED && h.time_base != RDB_TIME_INVALID &&
-            h.count > 0) {
+        if (cls == TS_SEALED && h.time_base != RDB_TIME_INVALID && h.count > 0) {
             /* Sealed sector with records — scan for first VALID */
             ts_scan(db, s, h.time_base, h.end_off, ts_oldest_cb, &c, RDB_FALSE);
 
-        } else if (cls == TS_ACTIVE && s == db->head_sec &&
-                   db->head_count > 0 &&
-                   db->head_time_base != RDB_TIME_INVALID) {
+        } else if (cls == TS_ACTIVE && s == db->head_sec && db->head_count > 0
+                   && db->head_time_base != RDB_TIME_INVALID) {
             /* Active head sector — scan up to head_off */
-            ts_scan(db, s, db->head_time_base, db->head_off,
-                ts_oldest_cb, &c, RDB_FALSE);
+            ts_scan(db, s, db->head_time_base, db->head_off, ts_oldest_cb, &c, RDB_FALSE);
 
         } else if (cls == TS_ACTIVE && s != db->head_sec) {
             /* Degraded ACTIVE sector — recover and scan */
@@ -1995,7 +1961,7 @@ void rdb_tsdb_time_range(rdb_tsdb_t* db, uint32_t* oldest, uint32_t* newest) {
         *newest = db->last_time;
 
     if (oldest) {
-        *oldest = RDB_TIME_INVALID;
+        *oldest   = RDB_TIME_INVALID;
         uint8_t s = db->tail_sec;
 
         for (uint8_t i = 0; i < db->sector_cnt; i++) {
@@ -2006,7 +1972,7 @@ void rdb_tsdb_time_range(rdb_tsdb_t* db, uint32_t* oldest, uint32_t* newest) {
                 /* Scan for the first VALID record to get its actual
                    timestamp (time_base + delta).  Using time_base alone
                    is inaccurate when the first record is DEAD. */
-                *oldest = h.time_base; /* fallback */
+                *oldest       = h.time_base; /* fallback */
                 uint32_t base = ts_sec_addr(db, s);
                 uint32_t off  = ts_data_start(db);
                 while (off + TS_REC_SZ <= h.end_off) {
@@ -2030,8 +1996,7 @@ void rdb_tsdb_time_range(rdb_tsdb_t* db, uint32_t* oldest, uint32_t* newest) {
                 }
                 break;
             }
-            if (cls == TS_ACTIVE && s == db->head_sec &&
-                db->head_time_base != RDB_TIME_INVALID) {
+            if (cls == TS_ACTIVE && s == db->head_sec && db->head_time_base != RDB_TIME_INVALID) {
                 *oldest = db->head_time_base;
                 break;
             }
@@ -2067,8 +2032,7 @@ void rdb_tsdb_time_range(rdb_tsdb_t* db, uint32_t* oldest, uint32_t* newest) {
  *  @param[out] avg_ec Average erase count across all sectors (may be NULL).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-void rdb_tsdb_wear_info(rdb_tsdb_t* db,
-    uint32_t* min_ec, uint32_t* max_ec, uint32_t* avg_ec) {
+void rdb_tsdb_wear_info(rdb_tsdb_t* db, uint32_t* min_ec, uint32_t* max_ec, uint32_t* avg_ec) {
     if (!db || !db->initialized)
         return;
     fl_lock(db);

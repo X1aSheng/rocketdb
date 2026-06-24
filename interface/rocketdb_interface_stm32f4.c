@@ -35,7 +35,7 @@
  *  in this compilation unit.  The actual struct is only accessed inside
  *  spi_flash.c, which allocates it and owns its layout.
  * ═══════════════════════════════════════════════════════════════════════════ */
-static void *g_flash_ctx = NULL;
+static void* g_flash_ctx = NULL;
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Helper: resolve the effective flash device pointer.
@@ -44,10 +44,9 @@ static void *g_flash_ctx = NULL;
  *  to the globally-registered pointer.  This allows a single ops table
  *  to serve multiple partitions if needed.
  * ═══════════════════════════════════════════════════════════════════════════ */
-static inline spi_flash_device_t *resolve_dev(void *ctx)
-{
-    void *p = ctx ? ctx : g_flash_ctx;
-    return (spi_flash_device_t *)p;
+static inline spi_flash_device_t* resolve_dev(void* ctx) {
+    void* p = ctx ? ctx : g_flash_ctx;
+    return (spi_flash_device_t*)p;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -62,21 +61,21 @@ static inline spi_flash_device_t *resolve_dev(void *ctx)
  *  struct — spi_flash.c is the sole owner of its layout.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int fl_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len)
-{
-    spi_flash_device_t *dev = resolve_dev(ctx);
-    if (dev == NULL) { return -1; }
-#if 1  /* DEBUG: trace first few reads */
+static int fl_read(void* ctx, uint32_t addr, uint8_t* buf, size_t len) {
+    spi_flash_device_t* dev = resolve_dev(ctx);
+    if (dev == NULL) {
+        return -1;
+    }
+#if 1 /* DEBUG: trace first few reads */
     {
         static int trace_cnt = 0;
         if (trace_cnt < 3) {
-            printf("[RDB OPS] fl_read ctx=%p dev=%p addr=0x%lX len=%u\r\n",
-                   ctx, (void*)dev, (unsigned long)addr, (unsigned)len);
+            printf("[RDB OPS] fl_read ctx=%p dev=%p addr=0x%lX len=%u\r\n", ctx, (void*)dev, (unsigned long)addr,
+                (unsigned)len);
             if (trace_cnt == 0) {
-                const spi_flash_info_t *inf = spi_flash_get_info(dev);
-                printf("[RDB OPS]   -> capacity=%lu sector=%lu\r\n",
-                       (unsigned long)(inf ? inf->capacity : 0),
-                       (unsigned long)(inf ? inf->sector_size : 0));
+                const spi_flash_info_t* inf = spi_flash_get_info(dev);
+                printf("[RDB OPS]   -> capacity=%lu sector=%lu\r\n", (unsigned long)(inf ? inf->capacity : 0),
+                    (unsigned long)(inf ? inf->sector_size : 0));
             }
             trace_cnt++;
         }
@@ -85,43 +84,40 @@ static int fl_read(void *ctx, uint32_t addr, uint8_t *buf, size_t len)
     return (int)spi_flash_read(dev, addr, buf, len);
 }
 
-static int fl_write(void *ctx, uint32_t addr, const uint8_t *buf, size_t len)
-{
-    spi_flash_device_t *dev = resolve_dev(ctx);
-    if (dev == NULL) { return -1; }
+static int fl_write(void* ctx, uint32_t addr, const uint8_t* buf, size_t len) {
+    spi_flash_device_t* dev = resolve_dev(ctx);
+    if (dev == NULL) {
+        return -1;
+    }
     return (int)spi_flash_write(dev, addr, buf, len);
 }
 
-static int fl_erase(void *ctx, uint32_t addr)
-{
-    spi_flash_device_t *dev = resolve_dev(ctx);
-    if (dev == NULL) { return -1; }
-    printf("[RDB OPS] fl_erase ctx=%p dev=%p addr=0x%lX\r\n",
-           ctx, (void*)dev, (unsigned long)addr);
+static int fl_erase(void* ctx, uint32_t addr) {
+    spi_flash_device_t* dev = resolve_dev(ctx);
+    if (dev == NULL) {
+        return -1;
+    }
+    printf("[RDB OPS] fl_erase ctx=%p dev=%p addr=0x%lX\r\n", ctx, (void*)dev, (unsigned long)addr);
     {
-        const spi_flash_info_t *inf = spi_flash_get_info(dev);
-        printf("[RDB OPS]   -> capacity=%lu state_ready=%d\r\n",
-               (unsigned long)(inf ? inf->capacity : 0),
-               (int)(dev->state == E_SPI_FLASH_STATE_READY));
+        const spi_flash_info_t* inf = spi_flash_get_info(dev);
+        printf("[RDB OPS]   -> capacity=%lu state_ready=%d\r\n", (unsigned long)(inf ? inf->capacity : 0),
+            (int)(dev->state == E_SPI_FLASH_STATE_READY));
     }
     return (int)spi_flash_erase_sector_by_addr(dev, addr, NULL);
 }
 
-static void fl_lock(void *ctx)
-{
+static void fl_lock(void* ctx) {
     /* spi_flash.c uses SPI_LOCK/SPI_UNLOCK internally around every
        flash operation.  Locking at this level would be redundant
        and risks deadlock. */
     (void)ctx;
 }
 
-static void fl_unlock(void *ctx)
-{
+static void fl_unlock(void* ctx) {
     (void)ctx;
 }
 
-static void fl_yield(void *ctx)
-{
+static void fl_yield(void* ctx) {
     (void)ctx;
     /* Feed watchdog / yield to RTOS if needed in the future. */
 }
@@ -145,18 +141,18 @@ const rdb_flash_ops_t rocketdb_interface_ops = {
  *  Defined directly here (no intermediate wrapper) to save ROM.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-uint16_t rdb_crc16(const void *data, size_t len)
-{
+uint16_t rdb_crc16(const void* data, size_t len) {
     return rdb_crc16_cont(0xFFFFu, data, len);
 }
 
-uint16_t rdb_crc16_cont(uint16_t crc, const void *data, size_t len)
-{
-    const uint8_t *p = (const uint8_t *)data;
-    size_t i;
-    uint8_t bit;
+uint16_t rdb_crc16_cont(uint16_t crc, const void* data, size_t len) {
+    const uint8_t* p = (const uint8_t*)data;
+    size_t         i;
+    uint8_t        bit;
 
-    if (p == NULL && len != 0u) { return crc; }
+    if (p == NULL && len != 0u) {
+        return crc;
+    }
 
     for (i = 0u; i < len; ++i) {
         crc ^= p[i];
@@ -175,13 +171,14 @@ uint16_t rdb_crc16_cont(uint16_t crc, const void *data, size_t len)
  *  Hash — FNV-1a folded to 16 bits
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-uint16_t rdb_hash16(const void *data, size_t len)
-{
-    const uint8_t *p = (const uint8_t *)data;
-    uint32_t h = 2166136261u;
-    size_t i;
+uint16_t rdb_hash16(const void* data, size_t len) {
+    const uint8_t* p = (const uint8_t*)data;
+    uint32_t       h = 2166136261u;
+    size_t         i;
 
-    if (p == NULL && len != 0u) { return 0u; }
+    if (p == NULL && len != 0u) {
+        return 0u;
+    }
 
     for (i = 0u; i < len; ++i) {
         h ^= p[i];
@@ -194,8 +191,7 @@ uint16_t rdb_hash16(const void *data, size_t len)
  *  Debug print — maps to UART printf via retarget
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-void rocketdb_interface_debug_print(const char *const fmt, ...)
-{
+void rocketdb_interface_debug_print(const char* const fmt, ...) {
     va_list args;
     va_start(args, fmt);
     vprintf(fmt, args);
@@ -213,17 +209,14 @@ void rocketdb_interface_debug_print(const char *const fmt, ...)
  * spi_flash_init().  Stores the device pointer so that
  * rocketdb_interface_get_ctx() can return it to test files.
  */
-void rocketdb_interface_init(spi_flash_device_t *dev)
-{
+void rocketdb_interface_init(spi_flash_device_t* dev) {
     g_flash_ctx = dev;
 
     if (dev != NULL) {
-        const spi_flash_info_t *info = spi_flash_get_info(dev);
+        const spi_flash_info_t* info = spi_flash_get_info(dev);
         if (info != NULL) {
-            printf("[RDB] Port init: dev=%s cap=%lu sector=%lu\r\n",
-                   info->name,
-                   (unsigned long)info->capacity,
-                   (unsigned long)info->sector_size);
+            printf("[RDB] Port init: dev=%s cap=%lu sector=%lu\r\n", info->name, (unsigned long)info->capacity,
+                (unsigned long)info->sector_size);
         }
     }
 }
@@ -235,8 +228,7 @@ void rocketdb_interface_init(spi_flash_device_t *dev)
  * callbacks receive the correct pointer through RocketDB's internal
  * fl_read/fl_write/fl_erase wrappers.
  */
-void *rocketdb_interface_get_ctx(void)
-{
+void* rocketdb_interface_get_ctx(void) {
     return g_flash_ctx;
 }
 
@@ -244,14 +236,15 @@ void *rocketdb_interface_get_ctx(void)
  *  Flash probe helper — used by rocketdb_interface.h declaration
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-spi_flash_device_t *rocketdb_interface_flash_probe(const void *port_ops)
-{
-    spi_flash_device_t *dev;
+spi_flash_device_t* rocketdb_interface_flash_probe(const void* port_ops) {
+    spi_flash_device_t* dev;
 
     dev = spi_flash_create("W25Q128");
-    if (dev == NULL) { return NULL; }
+    if (dev == NULL) {
+        return NULL;
+    }
 
-    if (spi_flash_init(dev, (const spi_flash_port_ops_t *)port_ops) != 0) {
+    if (spi_flash_init(dev, (const spi_flash_port_ops_t*)port_ops) != 0) {
         spi_flash_destroy(dev);
         return NULL;
     }

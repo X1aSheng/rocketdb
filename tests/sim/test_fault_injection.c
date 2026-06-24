@@ -13,17 +13,17 @@
  * setup phase.
  */
 
-#include "sim_flash.h"
-#include "sim_fault.h"
-#include "test_framework.h"
 #include "../../src/rocketdb.h"
+#include "sim_fault.h"
+#include "sim_flash.h"
+#include "test_framework.h"
 #include <stdio.h>
 #include <string.h>
 
-#define FLASH_SIZE      (128u * 1024u)
-#define SECTOR_SIZE     4096u
-#define KVDB_PART_SIZE  (64u * 1024u)
-#define KV_SECTOR_CNT   (KVDB_PART_SIZE / SECTOR_SIZE)
+#define FLASH_SIZE     (128u * 1024u)
+#define SECTOR_SIZE    4096u
+#define KVDB_PART_SIZE (64u * 1024u)
+#define KV_SECTOR_CNT  (KVDB_PART_SIZE / SECTOR_SIZE)
 
 /* ── Shared environment ─────────────────────────────────────────────────── */
 
@@ -32,43 +32,57 @@ static sim_flash_t g_flash;
 static fault_ctx_t g_fault;
 static trace_ctx_t g_trace;
 
-static int fl_read(void *ctx, uint32_t a, uint8_t *b, size_t n) { (void)ctx; return sim_flash_read(&g_flash, a, b, n); }
-static int fl_write(void *ctx, uint32_t a, const uint8_t *b, size_t n) { (void)ctx; return sim_flash_write(&g_flash, a, b, n); }
-static int fl_erase(void *ctx, uint32_t a) { (void)ctx; return sim_flash_erase(&g_flash, a); }
-static void fl_lock(void *ctx) { (void)ctx; } static void fl_unlock(void *ctx) { (void)ctx; } static void fl_yield(void *ctx) { (void)ctx; }
+static int fl_read(void* ctx, uint32_t a, uint8_t* b, size_t n) {
+    (void)ctx;
+    return sim_flash_read(&g_flash, a, b, n);
+}
+static int fl_write(void* ctx, uint32_t a, const uint8_t* b, size_t n) {
+    (void)ctx;
+    return sim_flash_write(&g_flash, a, b, n);
+}
+static int fl_erase(void* ctx, uint32_t a) {
+    (void)ctx;
+    return sim_flash_erase(&g_flash, a);
+}
+static void fl_lock(void* ctx) {
+    (void)ctx;
+}
+static void fl_unlock(void* ctx) {
+    (void)ctx;
+}
+static void fl_yield(void* ctx) {
+    (void)ctx;
+}
 
 static rdb_flash_ops_t g_ops = {
-    .read = fl_read, .write = fl_write, .erase = fl_erase,
-    .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield
-};
+    .read = fl_read, .write = fl_write, .erase = fl_erase, .lock = fl_lock, .unlock = fl_unlock, .yield = fl_yield};
 
 /* ── Trace wrapper ─────────────────────────────────────────────────── */
-static rdb_err_t trace_kv_set(rdb_kvdb_t *db, const char *key,
-                               const void *val, uint16_t vlen)
-{
+static rdb_err_t trace_kv_set(rdb_kvdb_t* db, const char* key, const void* val, uint16_t vlen) {
     trace_event(&g_trace, "  [KV-WRITE] key=%s vsz=%u", key, (unsigned)vlen);
-    return rdb_kvdb_set(db, key, (const uint8_t *)val, vlen);
+    return rdb_kvdb_set(db, key, (const uint8_t*)val, vlen);
 }
 
 /* ── Helper: init flash & DB without faults ─────────────────────────────── */
 
-static rdb_err_t db_clean_init(rdb_kvdb_t *db, rdb_partition_t *part,
-                               rdb_kv_sector_meta_t *meta)
-{
+static rdb_err_t db_clean_init(rdb_kvdb_t* db, rdb_partition_t* part, rdb_kv_sector_meta_t* meta) {
     sim_flash_init(&g_flash, g_buf, FLASH_SIZE, SECTOR_SIZE, 256, 0);
     fault_init(&g_fault, 0);
-    sim_flash_set_fault_ctx(&g_flash, NULL);  /* no faults during init */
+    sim_flash_set_fault_ctx(&g_flash, NULL); /* no faults during init */
 
-    *part = (rdb_partition_t) {
-        .name = "test", .base_addr = 0, .total_size = KVDB_PART_SIZE,
-        .sector_size = SECTOR_SIZE, .write_gran = 0, .ops = &g_ops
-    };
-    db->part = part;
-    db->sectors = meta;
+    *part          = (rdb_partition_t) {.name = "test",
+                 .base_addr                   = 0,
+                 .total_size                  = KVDB_PART_SIZE,
+                 .sector_size                 = SECTOR_SIZE,
+                 .write_gran                  = 0,
+                 .ops                         = &g_ops};
+    db->part       = part;
+    db->sectors    = meta;
     db->sector_cnt = KV_SECTOR_CNT;
 
     rdb_err_t r = rdb_kvdb_format(db);
-    if (r != RDB_OK) return r;
+    if (r != RDB_OK)
+        return r;
     return rdb_kvdb_init(db, part, meta);
 }
 
@@ -76,14 +90,13 @@ static rdb_err_t db_clean_init(rdb_kvdb_t *db, rdb_partition_t *part,
  *  Test 1: Nth write fails, pre-fault data survives re-init
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_write_fail_nth, "Fault", "Nth write failure, data survives recovery")
-{
+TEST_CASE(fault_write_fail_nth, "Fault", "Nth write failure, data survives recovery") {
     (void)ctx;
 
-    static rdb_partition_t part;
-    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
-    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
-    static rdb_kvdb_t db;
+    static rdb_partition_t       part;
+    static uint8_t               meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t* meta = (rdb_kv_sector_meta_t*)meta_buf;
+    static rdb_kvdb_t            db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write 3 keys WITHOUT faults */
@@ -97,20 +110,24 @@ TEST_CASE(fault_write_fail_nth, "Fault", "Nth write failure, data survives recov
     sim_flash_set_fault_ctx(&g_flash, &g_fault);
 
     rdb_err_t r = trace_kv_set(&db, "K3", "DDD", 3);
-    TEST_ASSERT_NE(r, RDB_OK);  /* must fail */
+    TEST_ASSERT_NE(r, RDB_OK); /* must fail */
 
     /* Clear faults and re-init — pre-fault data must survive */
     fault_clear_rules(&g_fault);
     sim_flash_set_fault_ctx(&g_flash, NULL);
     TEST_ASSERT_RDB_OK(rdb_kvdb_init(&db, &part, meta));
 
-    uint8_t out[8]; uint16_t ol;
+    uint8_t  out[8];
+    uint16_t ol;
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "K0", out, sizeof(out), &ol));
-    TEST_ASSERT_EQ(ol, 3); TEST_ASSERT_MEM_EQ(out, "AAA", 3);
+    TEST_ASSERT_EQ(ol, 3);
+    TEST_ASSERT_MEM_EQ(out, "AAA", 3);
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "K1", out, sizeof(out), &ol));
-    TEST_ASSERT_EQ(ol, 3); TEST_ASSERT_MEM_EQ(out, "BBB", 3);
+    TEST_ASSERT_EQ(ol, 3);
+    TEST_ASSERT_MEM_EQ(out, "BBB", 3);
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "K2", out, sizeof(out), &ol));
-    TEST_ASSERT_EQ(ol, 3); TEST_ASSERT_MEM_EQ(out, "CCC", 3);
+    TEST_ASSERT_EQ(ol, 3);
+    TEST_ASSERT_MEM_EQ(out, "CCC", 3);
 
     /* K3 was never committed */
     TEST_ASSERT_RDB_ERR(rdb_kvdb_get(&db, "K3", out, sizeof(out), &ol), RDB_ERR_NOT_FOUND);
@@ -129,14 +146,13 @@ TEST_CASE(fault_write_fail_nth, "Fault", "Nth write failure, data survives recov
  *  After clearing faults, DB must be re-initializable.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_write_fail_probability, "Fault", "Probabilistic write failure")
-{
+TEST_CASE(fault_write_fail_probability, "Fault", "Probabilistic write failure") {
     (void)ctx;
 
-    static rdb_partition_t part;
-    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
-    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
-    static rdb_kvdb_t db;
+    static rdb_partition_t       part;
+    static uint8_t               meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t* meta = (rdb_kv_sector_meta_t*)meta_buf;
+    static rdb_kvdb_t            db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Enable 20% write failure probability */
@@ -146,9 +162,11 @@ TEST_CASE(fault_write_fail_probability, "Fault", "Probabilistic write failure")
 
     int ok = 0, fail = 0;
     for (int i = 0; i < 30; i++) {
-        char key[8]; snprintf(key, sizeof(key), "K%d", i);
+        char key[8];
+        snprintf(key, sizeof(key), "K%d", i);
         rdb_err_t r = trace_kv_set(&db, key, "V", 1);
-        if (r == RDB_OK) ok++;
+        if (r == RDB_OK)
+            ok++;
         else {
             fail++;
             /* After a write failure, the DB may be in an inconsistent state.
@@ -178,14 +196,13 @@ TEST_CASE(fault_write_fail_probability, "Fault", "Probabilistic write failure")
  *  Test 3: Erase failure during GC
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_erase_fail, "Fault", "Erase failure during GC is handled gracefully")
-{
+TEST_CASE(fault_erase_fail, "Fault", "Erase failure during GC is handled gracefully") {
     (void)ctx;
 
-    static rdb_partition_t part;
-    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
-    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
-    static rdb_kvdb_t db;
+    static rdb_partition_t       part;
+    static uint8_t               meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t* meta = (rdb_kv_sector_meta_t*)meta_buf;
+    static rdb_kvdb_t            db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Fill all sectors with data to force GC (which needs erase) */
@@ -193,10 +210,13 @@ TEST_CASE(fault_erase_fail, "Fault", "Erase failure during GC is handled gracefu
     memset(val, 0x5A, sizeof(val));
     int wrote = 0;
     for (int i = 0; i < 500; i++) {
-        char key[8]; snprintf(key, sizeof(key), "K%d", i);
+        char key[8];
+        snprintf(key, sizeof(key), "K%d", i);
         rdb_err_t r = trace_kv_set(&db, key, val, sizeof(val));
-        if (r == RDB_ERR_FULL) break;
-        if (r == RDB_OK) wrote++;
+        if (r == RDB_ERR_FULL)
+            break;
+        if (r == RDB_OK)
+            wrote++;
         /* Some sets may fail if sector is full — that's expected */
     }
     TEST_ASSERT_GT(wrote, 0);
@@ -215,7 +235,8 @@ TEST_CASE(fault_erase_fail, "Fault", "Erase failure during GC is handled gracefu
     TEST_ASSERT_RDB_OK(rdb_kvdb_init(&db, &part, meta));
 
     /* Some pre-GC data should survive */
-    uint8_t out[128]; uint16_t ol;
+    uint8_t   out[128];
+    uint16_t  ol;
     rdb_err_t r = rdb_kvdb_get(&db, "K0", out, sizeof(out), &ol);
     /* K0 may have been GC'd — either OK or NOT_FOUND are acceptable */
     TEST_ASSERT(r == RDB_OK || r == RDB_ERR_NOT_FOUND);
@@ -234,14 +255,13 @@ TEST_CASE(fault_erase_fail, "Fault", "Erase failure during GC is handled gracefu
  *  Re-init must recover WRITING records correctly.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_power_loss, "Fault", "Byte-level power loss with partial write recovery")
-{
+TEST_CASE(fault_power_loss, "Fault", "Byte-level power loss with partial write recovery") {
     (void)ctx;
 
-    static rdb_partition_t part;
-    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
-    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
-    static rdb_kvdb_t db;
+    static rdb_partition_t       part;
+    static uint8_t               meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t* meta = (rdb_kv_sector_meta_t*)meta_buf;
+    static rdb_kvdb_t            db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write pre-fault data */
@@ -253,12 +273,12 @@ TEST_CASE(fault_power_loss, "Fault", "Byte-level power loss with partial write r
      * The next set does 2 more writes (data + commit). Trigger at commit
      * byte (the 6th write overall, at byte offset 0). */
     fault_init(&g_fault, 0xAAAAA);
-    uint32_t pl_at = g_fault.write_count + 2u;  /* skip data write, fail commit */
+    uint32_t pl_at = g_fault.write_count + 2u; /* skip data write, fail commit */
     fault_quick_power_loss(&g_fault, pl_at, 0);
     sim_flash_set_fault_ctx(&g_flash, &g_fault);
 
     rdb_err_t r = trace_kv_set(&db, "pl_target", "this_should_be_lost", 18);
-    TEST_ASSERT_NE(r, RDB_OK);  /* power loss must fire */
+    TEST_ASSERT_NE(r, RDB_OK); /* power loss must fire */
 
     /* Clear everything and re-init (simulate reboot) */
     sim_flash_set_fault_ctx(&g_flash, NULL);
@@ -266,7 +286,8 @@ TEST_CASE(fault_power_loss, "Fault", "Byte-level power loss with partial write r
     TEST_ASSERT_RDB_OK(rdb_kvdb_init(&db, &part, meta));
 
     /* Pre-fault data must survive */
-    uint8_t out[32]; uint16_t ol;
+    uint8_t  out[32];
+    uint16_t ol;
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "pre1", out, sizeof(out), &ol));
     TEST_ASSERT_EQ(ol, 16);
     TEST_ASSERT_RDB_OK(rdb_kvdb_get(&db, "pre2", out, sizeof(out), &ol));
@@ -298,62 +319,61 @@ TEST_CASE(fault_power_loss, "Fault", "Byte-level power loss with partial write r
  *  then verify that get returns RDB_ERR_CRC and the DB remains usable.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_data_corruption, "Fault", "CRC error detected on corrupted value data")
-{
+TEST_CASE(fault_data_corruption, "Fault", "CRC error detected on corrupted value data") {
     (void)ctx;
 
-    static rdb_partition_t part;
-    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
-    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
-    static rdb_kvdb_t db;
+    static rdb_partition_t       part;
+    static uint8_t               meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t* meta = (rdb_kv_sector_meta_t*)meta_buf;
+    static rdb_kvdb_t            db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write target record */
-    const char *key = "crc_target";
+    const char*   key   = "crc_target";
     const uint8_t val[] = "verify_crc_integrity_1234567890!";
-    uint16_t vlen = (uint16_t)strlen((const char *)val);
+    uint16_t      vlen  = (uint16_t)strlen((const char*)val);
     TEST_ASSERT_RDB_OK(trace_kv_set(&db, key, val, vlen));
 
     /* Find the record on flash and locate its value payload */
     uint32_t ds = RDB_ALIGN_UP((uint32_t)sizeof(rdb_kv_sector_hdr_t), 1u);
     uint32_t ss = part.sector_size, base = part.base_addr;
-    uint32_t val_addr = 0xFFFFFFFFu;
+    uint32_t val_addr   = 0xFFFFFFFFu;
     uint16_t found_vlen = 0;
 
-    for (uint32_t off = ds; off + sizeof(rdb_kv_record_hdr_t) <= ss; ) {
+    for (uint32_t off = ds; off + sizeof(rdb_kv_record_hdr_t) <= ss;) {
         rdb_kv_record_hdr_t rh;
-        sim_flash_read(&g_flash, base + off, (uint8_t *)&rh, sizeof(rh));
-        if (rh.magic == 0xFF && rh.state == 0xFF) break;
-        if (rh.magic == RDB_KV_RECORD_MAGIC && rh.key_len > 0 &&
-            rh.key_len <= RDB_MAX_KEY_LEN && rh.val_len <= RDB_MAX_VAL_LEN) {
+        sim_flash_read(&g_flash, base + off, (uint8_t*)&rh, sizeof(rh));
+        if (rh.magic == 0xFF && rh.state == 0xFF)
+            break;
+        if (rh.magic == RDB_KV_RECORD_MAGIC && rh.key_len > 0 && rh.key_len <= RDB_MAX_KEY_LEN
+            && rh.val_len <= RDB_MAX_VAL_LEN) {
             /* Key is stored right after header */
             uint32_t key_addr = base + off + (uint32_t)sizeof(rdb_kv_record_hdr_t);
-            char kb[64];
+            char     kb[64];
             if (rh.key_len < sizeof(kb)) {
-                sim_flash_read(&g_flash, key_addr, (uint8_t *)kb, rh.key_len);
+                sim_flash_read(&g_flash, key_addr, (uint8_t*)kb, rh.key_len);
                 kb[rh.key_len] = '\0';
                 if (strcmp(kb, key) == 0) {
-                    val_addr = key_addr + rh.key_len;
+                    val_addr   = key_addr + rh.key_len;
                     found_vlen = rh.val_len;
                     break;
                 }
             }
         }
-        off += RDB_ALIGN_UP(sizeof(rdb_kv_record_hdr_t) +
-                           RDB_ALIGN_UP(rh.key_len, 1u) +
-                           RDB_ALIGN_UP(rh.val_len, 1u), 1u);
+        off +=
+            RDB_ALIGN_UP(sizeof(rdb_kv_record_hdr_t) + RDB_ALIGN_UP(rh.key_len, 1u) + RDB_ALIGN_UP(rh.val_len, 1u), 1u);
     }
     TEST_ASSERT_NE(val_addr, 0xFFFFFFFFu);
     TEST_ASSERT_EQ(found_vlen, vlen);
-    trace_event(&g_trace, "Target record '%s': value at 0x%08X len=%u",
-                key, val_addr, found_vlen);
+    trace_event(&g_trace, "Target record '%s': value at 0x%08X len=%u", key, val_addr, found_vlen);
 
     /* Corrupt the first byte of value data (not the key) */
     g_flash.mem[val_addr] ^= 0xFFu;
 
     /* get should return CRC error */
-    uint8_t out[64]; uint16_t ol = 0;
-    rdb_err_t r = rdb_kvdb_get(&db, key, out, sizeof(out), &ol);
+    uint8_t   out[64];
+    uint16_t  ol = 0;
+    rdb_err_t r  = rdb_kvdb_get(&db, key, out, sizeof(out), &ol);
     TEST_ASSERT(r == RDB_ERR_CRC || r == RDB_ERR_NOT_FOUND);
     /* NOT_FOUND is also valid: CRC may cause the record to be skipped
      * during scan, depending on implementation */
@@ -374,14 +394,13 @@ TEST_CASE(fault_data_corruption, "Fault", "CRC error detected on corrupted value
  *  recovers fully once faults are cleared.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_read_fail, "Fault", "Read failure injection and recovery")
-{
+TEST_CASE(fault_read_fail, "Fault", "Read failure injection and recovery") {
     (void)ctx;
 
-    static rdb_partition_t part;
-    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
-    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
-    static rdb_kvdb_t db;
+    static rdb_partition_t       part;
+    static uint8_t               meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t* meta = (rdb_kv_sector_meta_t*)meta_buf;
+    static rdb_kvdb_t            db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write data without faults */
@@ -392,22 +411,24 @@ TEST_CASE(fault_read_fail, "Fault", "Read failure injection and recovery")
      * during the two set() calls above, each of which reads during
      * find_latest). */
     fault_init(&g_fault, 0x31415);
-    fault_rule_t rule = {
-        .type = FAULT_TYPE_READ_FAIL,
-        .trigger_mode = FAULT_TRIGGER_COUNT,
-        .trigger_count = g_fault.read_count + 3u,
-        .probability_pct = 0, .addr_start = 0, .addr_end = 0, .seed = 0, .enabled = 1
-    };
+    fault_rule_t rule = {.type = FAULT_TYPE_READ_FAIL,
+        .trigger_mode          = FAULT_TRIGGER_COUNT,
+        .trigger_count         = g_fault.read_count + 3u,
+        .probability_pct       = 0,
+        .addr_start            = 0,
+        .addr_end              = 0,
+        .seed                  = 0,
+        .enabled               = 1};
     fault_add_rule(&g_fault, &rule);
     sim_flash_set_fault_ctx(&g_flash, &g_fault);
 
     /* Some reads may fail */
-    uint8_t out[32]; uint16_t ol;
+    uint8_t   out[32];
+    uint16_t  ol;
     rdb_err_t r0 = rdb_kvdb_get(&db, "r0", out, sizeof(out), &ol);
     rdb_err_t r1 = rdb_kvdb_get(&db, "r1", out, sizeof(out), &ol);
     /* At least one may have failed if the fault triggered */
-    trace_event(&g_trace, "Read fail test: r0=%d r1=%d faults=%u",
-                r0, r1, g_fault.fault_injected);
+    trace_event(&g_trace, "Read fail test: r0=%d r1=%d faults=%u", r0, r1, g_fault.fault_injected);
 
     /* Clear faults — DB must be fully usable */
     sim_flash_set_fault_ctx(&g_flash, NULL);
@@ -429,20 +450,19 @@ TEST_CASE(fault_read_fail, "Fault", "Read failure injection and recovery")
  *  here only one bit is flipped, verifying single-bit error detection.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC")
-{
+TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC") {
     (void)ctx;
 
-    static rdb_partition_t part;
-    static uint8_t meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
-    static rdb_kv_sector_meta_t *meta = (rdb_kv_sector_meta_t *)meta_buf;
-    static rdb_kvdb_t db;
+    static rdb_partition_t       part;
+    static uint8_t               meta_buf[KV_SECTOR_CNT * (sizeof(rdb_kv_sector_meta_t) + RDB_BLOOM_BYTES)];
+    static rdb_kv_sector_meta_t* meta = (rdb_kv_sector_meta_t*)meta_buf;
+    static rdb_kvdb_t            db;
     TEST_ASSERT_RDB_OK(db_clean_init(&db, &part, meta));
 
     /* Write target record */
-    const char *key = "bf_target";
+    const char*   key   = "bf_target";
     const uint8_t val[] = "bit_flip_crc_test_1234567890!";
-    uint16_t vlen = (uint16_t)strlen((const char *)val);
+    uint16_t      vlen  = (uint16_t)strlen((const char*)val);
     TEST_ASSERT_RDB_OK(trace_kv_set(&db, key, val, vlen));
 
     /* Locate value data on flash */
@@ -450,16 +470,16 @@ TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC")
     uint32_t ss = part.sector_size, base = part.base_addr;
     uint32_t val_addr = 0xFFFFFFFFu;
 
-    for (uint32_t off = ds; off + sizeof(rdb_kv_record_hdr_t) <= ss; ) {
+    for (uint32_t off = ds; off + sizeof(rdb_kv_record_hdr_t) <= ss;) {
         rdb_kv_record_hdr_t rh;
-        sim_flash_read(&g_flash, base + off, (uint8_t *)&rh, sizeof(rh));
-        if (rh.magic == 0xFF && rh.state == 0xFF) break;
-        if (rh.magic == RDB_KV_RECORD_MAGIC && rh.key_len > 0 &&
-            rh.key_len <= RDB_MAX_KEY_LEN) {
+        sim_flash_read(&g_flash, base + off, (uint8_t*)&rh, sizeof(rh));
+        if (rh.magic == 0xFF && rh.state == 0xFF)
+            break;
+        if (rh.magic == RDB_KV_RECORD_MAGIC && rh.key_len > 0 && rh.key_len <= RDB_MAX_KEY_LEN) {
             uint32_t key_addr = base + off + sizeof(rdb_kv_record_hdr_t);
-            char kb[64];
+            char     kb[64];
             if (rh.key_len < sizeof(kb)) {
-                sim_flash_read(&g_flash, key_addr, (uint8_t *)kb, rh.key_len);
+                sim_flash_read(&g_flash, key_addr, (uint8_t*)kb, rh.key_len);
                 kb[rh.key_len] = '\0';
                 if (strcmp(kb, key) == 0) {
                     val_addr = key_addr + rh.key_len;
@@ -467,9 +487,8 @@ TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC")
                 }
             }
         }
-        off += RDB_ALIGN_UP(sizeof(rdb_kv_record_hdr_t) +
-                           RDB_ALIGN_UP(rh.key_len, 1u) +
-                           RDB_ALIGN_UP(rh.val_len, 1u), 1u);
+        off +=
+            RDB_ALIGN_UP(sizeof(rdb_kv_record_hdr_t) + RDB_ALIGN_UP(rh.key_len, 1u) + RDB_ALIGN_UP(rh.val_len, 1u), 1u);
     }
     TEST_ASSERT_NE(val_addr, 0xFFFFFFFFu);
 
@@ -478,8 +497,9 @@ TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC")
     trace_event(&g_trace, "Bit flip at addr 0x%08X: byte was flipped (single bit)", val_addr);
 
     /* CRC must detect the corruption */
-    uint8_t out[64]; uint16_t ol = 0;
-    rdb_err_t r = rdb_kvdb_get(&db, key, out, sizeof(out), &ol);
+    uint8_t   out[64];
+    uint16_t  ol = 0;
+    rdb_err_t r  = rdb_kvdb_get(&db, key, out, sizeof(out), &ol);
     TEST_ASSERT(r == RDB_ERR_CRC || r == RDB_ERR_NOT_FOUND);
 
     /* DB remains usable */
@@ -496,27 +516,24 @@ TEST_CASE(fault_bit_flip, "Fault", "Single-bit flip detected by CRC")
  *  the first rule whose insertion index is zero.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-TEST_CASE(fault_rule_import_roundtrip, "Fault", "Fault rule export/import round-trip")
-{
+TEST_CASE(fault_rule_import_roundtrip, "Fault", "Fault rule export/import round-trip") {
     (void)ctx;
 
     fault_ctx_t src;
     fault_ctx_t dst;
-    char buf[256];
+    char        buf[256];
 
     fault_init(&src, 0x1234u);
     fault_quick_write_fail(&src, 3u);
 
-    fault_rule_t read_rule = {
-        .type = FAULT_TYPE_READ_FAIL,
-        .trigger_mode = FAULT_TRIGGER_COUNT,
-        .trigger_count = 5u,
-        .probability_pct = 0u,
-        .addr_start = 0u,
-        .addr_end = 0u,
-        .seed = 0u,
-        .enabled = 1
-    };
+    fault_rule_t read_rule = {.type = FAULT_TYPE_READ_FAIL,
+        .trigger_mode               = FAULT_TRIGGER_COUNT,
+        .trigger_count              = 5u,
+        .probability_pct            = 0u,
+        .addr_start                 = 0u,
+        .addr_end                   = 0u,
+        .seed                       = 0u,
+        .enabled                    = 1};
     TEST_ASSERT_GE(fault_add_rule(&src, &read_rule), 0);
 
     int exported = fault_export_rules(&src, buf, sizeof(buf));
@@ -538,20 +555,20 @@ TEST_CASE(fault_rule_import_roundtrip, "Fault", "Fault rule export/import round-
  *  Entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-int main(void)
-{
-    test_config_t config = {
-        .log_file = fopen(test_make_log_path("fault_injection"), "w"),
-        .verbose = 1, .stop_on_fail = 0, .filter = NULL,
-        .post_test_hook = NULL, .hook_ctx = NULL
-    };
+int main(void) {
+    test_config_t config = {.log_file = fopen(test_make_log_path("fault_injection"), "w"),
+        .verbose                      = 1,
+        .stop_on_fail                 = 0,
+        .filter                       = NULL,
+        .post_test_hook               = NULL,
+        .hook_ctx                     = NULL};
     test_framework_init(&config);
 
     trace_init(&g_trace, config.log_file, config.verbose);
     sim_flash_set_trace(&g_flash, &g_trace);
     trace_event(&g_trace, "=== Fault Injection Test Suite Start ===");
 
-    test_suite_t *suite = test_get_default_suite();
+    test_suite_t* suite = test_get_default_suite();
     test_register_case(suite, &test_case_fault_write_fail_nth);
     test_register_case(suite, &test_case_fault_write_fail_probability);
     test_register_case(suite, &test_case_fault_erase_fail);
@@ -566,8 +583,10 @@ int main(void)
     trace_event(&g_trace, "=== Fault Injection Test Suite End ===\n");
     test_print_report();
 
-    if (config.log_file) fclose(config.log_file);
+    if (config.log_file)
+        fclose(config.log_file);
 
-    test_stats_t stats; test_get_stats(&stats);
+    test_stats_t stats;
+    test_get_stats(&stats);
     return (stats.failed_cases == 0) ? 0 : 1;
 }
