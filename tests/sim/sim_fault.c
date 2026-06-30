@@ -54,7 +54,7 @@ int fault_add_rule(fault_ctx_t* ctx, const fault_rule_t* rule) {
     }
 
     ctx->rules[ctx->rule_count] = *rule;
-    return ctx->rule_count++;
+    return (int)(ctx->rule_count++);
 }
 
 void fault_remove_rule(fault_ctx_t* ctx, uint32_t rule_id) {
@@ -355,18 +355,25 @@ int fault_export_rules(fault_ctx_t* ctx, char* buf, size_t len) {
     if (!ctx || !buf || len == 0)
         return 0;
 
-    int offset = 0;
-    offset += snprintf(buf + offset, len - offset, "# Fault rules (count=%u)\n", ctx->rule_count);
+    size_t offset = 0;
+    int n = snprintf(buf + offset, len - offset, "# Fault rules (count=%u)\n", ctx->rule_count);
+    if (n > 0)
+        offset = (size_t)n;
+    if (offset >= len - 1)
+        return (int)offset;
 
     for (uint32_t i = 0; i < ctx->rule_count; i++) {
         fault_rule_t* r = &ctx->rules[i];
-        offset += snprintf(buf + offset, len - offset, "%d,%d,%u,%u,%u,%u,%u,%d\n", r->type, r->trigger_mode,
+        n = snprintf(buf + offset, len - offset, "%d,%d,%u,%u,%u,%u,%u,%d\n", r->type, r->trigger_mode,
             r->trigger_count, r->probability_pct, r->addr_start, r->addr_end, r->seed, r->enabled);
-        if ((size_t)offset >= len - 1)
+        if (n <= 0)
+            break;
+        offset += (size_t)n;
+        if (offset >= len - 1)
             break;
     }
 
-    return offset;
+    return (int)offset;
 }
 
 int fault_import_rules(fault_ctx_t* ctx, const char* str) {

@@ -198,7 +198,7 @@ int test_run_suite(test_suite_t* suite, void* ctx) {
         tc = tc->next;
     }
 
-    return g_stats.failed_cases;
+    return (int)g_stats.failed_cases;
 }
 
 int test_run_all(void* ctx) {
@@ -289,7 +289,7 @@ int test_run_parameterized(
         log_output("  [FAIL] %u out of %u parameter sets failed\n", failed, count);
     }
 
-    return failed;
+    return (int)failed;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
