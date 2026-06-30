@@ -48,7 +48,8 @@ static inline uint64_t perf_get_ns(void) {
     // Linux/Mac: Use clock_gettime
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+    uint64_t sec = (uint64_t)(unsigned long)ts.tv_sec;
+    return sec * 1000000000u + (uint64_t)ts.tv_nsec;
 #endif
 }
 
