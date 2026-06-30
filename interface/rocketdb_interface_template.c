@@ -149,16 +149,16 @@ void rocketdb_interface_flash_yield(void* ctx) {
  *            rdb_crc16(NULL, 0) must return the initial seed 0xFFFF.
  */
 uint16_t rocketdb_interface_crc16(const void* data, size_t len) {
-    /* TODO: Implement CRC-16/MODBUS for your hardware */
+    /* CRC-16/MODBUS (poly 0x8005 reflected = 0xA001, init 0xFFFF) */
     if (data == NULL && len == 0)
-        return 0xFFFF;
+        return 0xFFFFu; /* Initial seed */
 
-    uint16_t       crc = 0xFFFF;
+    uint16_t       crc = 0xFFFFu;
     const uint8_t* p   = (const uint8_t*)data;
     for (size_t i = 0; i < len; i++) {
         crc ^= p[i];
         for (int j = 0; j < 8; j++)
-            crc = (crc >> 1) ^ ((crc & 1) ? 0xA001 : 0);
+            crc = (uint16_t)((crc >> 1) ^ ((crc & 1u) ? 0xA001u : 0));
     }
     return crc;
 }
@@ -172,12 +172,15 @@ uint16_t rocketdb_interface_crc16(const void* data, size_t len) {
  * @note      Implement CRC-16/MODBUS continuation for your hardware here.
  */
 uint16_t rocketdb_interface_crc16_cont(uint16_t crc, const void* data, size_t len) {
-    /* TODO: Implement CRC-16/MODBUS continuation for your hardware */
+    /* CRC-16/MODBUS continuation (streaming) */
     const uint8_t* p = (const uint8_t*)data;
+    if (p == NULL && len != 0u)
+        return crc; /* No data to process */
+
     for (size_t i = 0; i < len; i++) {
         crc ^= p[i];
         for (int j = 0; j < 8; j++)
-            crc = (crc >> 1) ^ ((crc & 1) ? 0xA001 : 0);
+            crc = (uint16_t)((crc >> 1) ^ ((crc & 1u) ? 0xA001u : 0));
     }
     return crc;
 }
