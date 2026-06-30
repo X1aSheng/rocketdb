@@ -7,38 +7,29 @@ network-accessible server.  Cloud deployment options focus on CI/CD
 pipeline integration, cross-platform build validation, and containerised
 test execution.
 
-## Docker
+## Docker / Container
 
-A multi-stage Dockerfile is provided at the repository root:
+Docker support was removed in v1.6.0 because RocketDB is an embedded library,
+not a network service.  For CI pipeline validation, use the CMake build system
+directly (see [Build And Test](../../README.md#build-and-test)).
 
-```bash
-# Build the image
-docker build -t rocketdb:latest .
-
-# Run the full CTest suite
-docker run --rm rocketdb:latest
-
-# Or use docker-compose
-docker-compose up
+If containerised test execution is required, create a minimal Dockerfile:
+```dockerfile
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y cmake ninja-build clang python3
+COPY . /rocketdb
+WORKDIR /rocketdb
+RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON && \
+    cmake --build build && \
+    ctest --test-dir build --output-on-failure
 ```
-
-The Dockerfile:
-1. **Stage 1 (builder)**: Ubuntu 24.04 with build-essential, CMake, Ninja.
-   Builds all libraries, examples, and tests in Release mode.
-2. **Stage 2 (runtime)**: Minimal Ubuntu 24.04 with CMake + Python3.
-   Copies the build artifacts and `tools/rdbdump` scripts.
-   Default CMD runs `ctest --output-on-failure`.
 
 ## Kubernetes
 
-Kubernetes manifests are not yet provided.  For K8s deployment, the
-standard approach would be:
-
-1. Build the Docker image and push to a registry.
-2. Create a `Job` or `CronJob` manifest that runs the test suite
-   as a post-deployment validation step.
-3. For embedded targets, use a K8s node with attached SPI NOR flash
-   hardware (e.g. via a USB-SPI adapter or QEMU emulation).
+Kubernetes manifests are not provided.  For containerised CI validation
+on K8s, use a `Job` resource that builds and runs the test suite as
+described above.
 
 ## Cloud Server Validation
 
