@@ -533,7 +533,7 @@ TEST_CASE(wear_heatmap, "WEAR", "Wear-leveling heatmap") {
     uint32_t kv_loops = 0, kv_gets = 0, kv_dels = 0;
     uint8_t  readback[64];
     while (g_kv_db.stats.gc_runs < WEAR_KV_GC_TGT && kv_loops < WEAR_MAX_LOOPS) {
-        for (int i = 0; i < 30; i++) {
+        for (unsigned int i = 0; i < 30u; i++) {
             key[1] = (char)('0' + (i / 10));
             key[2] = (char)('0' + (i % 10));
             TEST_ASSERT_RDB_OK(trace_kv_set(&g_kv_db, key, val, (uint16_t)sizeof(val)));

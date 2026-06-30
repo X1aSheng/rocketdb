@@ -360,7 +360,7 @@ TEST_CASE(kv_corrupt_header_skip, "KVDB", "Corrupt header skip during iteration"
 
     /* Insert initial records and identify the first record offset */
     for (unsigned int i = 0; i < (unsigned int)CORRUPT_KEY_CNT; i++) {
-        build_key_2d(keys[i], i);
+        build_key_2d(keys[i], (int)i);
         uint8_t v = (uint8_t)(0x10u + i);
         TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, keys[i], &v, 1));
     }
