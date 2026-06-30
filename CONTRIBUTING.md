@@ -2,21 +2,17 @@
 
 Thanks for your interest in contributing! Here's how to get started.
 
-## Code of Conduct
-
-Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
-
 ## How to Contribute
 
 ### Reporting Bugs
 
-1. Check the [Troubleshooting Guide](docs/TROUBLESHOOTING.md) first
+1. Check the [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for design overview
 2. Search existing issues to avoid duplicates
 3. Include: RocketDB version, compiler version, target platform, minimal reproduction steps
 
 ### Feature Requests
 
-1. Check the [design manual](docs/rocketdb%20design.md) to understand existing architecture
+1. Check the [design manual](docs/architecture/ARCHITECTURE.md) to understand existing architecture
 2. Open an issue with: use case, proposed API, impact on existing features
 
 ### Pull Requests
@@ -49,17 +45,20 @@ rocketdb/
 ├── src/           ← Core engine source
 ├── interface/     ← HAL porting template
 ├── examples/      ← Usage examples
-├── test/          ← Test suites
-│   ├── sim/       ← Flash simulator + test cases
-│   └── perf/      ← Performance benchmarks
-├── docs/          ← Documentation
-└── project/       ← Platform-specific builds
+├── tests/         ← Test suites & benchmarks
+│   ├── sim/       ← Flash simulator + test cases (8 suites)
+│   ├── perf/      ← Performance benchmarks
+│   └── out/       ← Build/test output (generated)
+├── docs/          ← Documentation (architecture, guides, reports)
+├── build/         ← Windows build/test scripts
+├── tools/rdbdump/ ← Offline Flash dump inspector
+└── zephyr/        ← Zephyr OS port layer
 ```
 
 ## Getting Help
 
 - Read the [README](README.md) for quick start
-- Review [rocketdb design.md](docs/rocketdb%20design.md) for architecture details
+- Review [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for architecture details
 - See [docs/architecture/TEST_PLAN.md](docs/architecture/TEST_PLAN.md) for test coverage
 
 ## License
