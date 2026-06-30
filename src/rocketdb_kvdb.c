@@ -317,7 +317,7 @@ static int kv_validate_sector_hdr(const rdb_kv_sector_hdr_t* sh) {
     return (calc == sh->hdr_crc);
 }
 
-/** @brief Sort sector indices by create_seq descending (newest first).
+/** @brief Sort sector indices by create_seq ascending (oldest first).
  *  Uses insertion sort — optimal for N ≤ 255. */
 static void kv_sort_sectors_by_seq(const rdb_kvdb_t* db, uint8_t* order, uint8_t cnt) {
     for (uint8_t i = 1; i < cnt; i++) {
@@ -1528,8 +1528,8 @@ static void gc_post_cleanup(rdb_kvdb_t* db, uint8_t victim) {
     gc_cleanup_ctx_t gx;
     memset(&gx, 0, sizeof(gx));
     dedup_init(&gx.ds);
-    for (uint8_t s = 0; s < cnt; s++)
-        scan_sector(db, order[s], gc_cleanup_cb, &gx, RDB_FALSE);
+    for (uint8_t s = cnt; s > 0; s--)
+        scan_sector(db, order[s - 1], gc_cleanup_cb, &gx, RDB_FALSE);
 
     db->live_bytes = gx.live;
 }
