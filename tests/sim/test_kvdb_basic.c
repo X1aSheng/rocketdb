@@ -359,7 +359,7 @@ TEST_CASE(kv_corrupt_header_skip, "KVDB", "Corrupt header skip during iteration"
     uint32_t ds = kv_data_start(DEFAULT_WG);
 
     /* Insert initial records and identify the first record offset */
-    for (int i = 0; i < CORRUPT_KEY_CNT; i++) {
+    for (unsigned int i = 0; i < (unsigned int)CORRUPT_KEY_CNT; i++) {
         build_key_2d(keys[i], i);
         uint8_t v = (uint8_t)(0x10u + i);
         TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, keys[i], &v, 1));
@@ -387,7 +387,7 @@ TEST_CASE(kv_corrupt_header_skip, "KVDB", "Corrupt header skip during iteration"
     }
 
     /* Write new data, force GC, then iterate and verify all keys present */
-    for (int i = 0; i < CORRUPT_KEY_CNT; i++) {
+    for (unsigned int i = 0; i < (unsigned int)CORRUPT_KEY_CNT; i++) {
         latest_val[i][0] = (uint8_t)(0x80u + i);
         latest_val[i][1] = (uint8_t)(0x90u + i);
         latest_val[i][2] = (uint8_t)(0xA0u + i);

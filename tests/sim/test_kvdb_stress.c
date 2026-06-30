@@ -223,12 +223,12 @@ TEST_CASE(kv_iter_after_gc, "KVDB", "Iterator returns latest values after GC") {
 
     for (int round = 0; round < 8; round++) {
         trace_event(&g_trace, "  [KV-ITER] round=%d updating K00..K%02d", round, ITER_KEY_COUNT - 1);
-        for (int i = 0; i < ITER_KEY_COUNT; i++) {
+        for (unsigned int i = 0; i < (unsigned int)ITER_KEY_COUNT; i++) {
             char key[4];
-            build_key(key, i);
-            expected[i][0]  = (uint8_t)(round + 10);
+            build_key(key, (int)i);
+            expected[i][0]  = (uint8_t)(unsigned int)(round + 10);
             expected[i][1]  = (uint8_t)i;
-            expected[i][2]  = (uint8_t)(round ^ i);
+            expected[i][2]  = (uint8_t)((unsigned int)round ^ i);
             expected[i][3]  = (uint8_t)(0xA5u ^ i);
             expected_len[i] = 4;
             TEST_ASSERT_RDB_OK(trace_kv_set(&g_db, key, expected[i], expected_len[i]));
@@ -237,9 +237,9 @@ TEST_CASE(kv_iter_after_gc, "KVDB", "Iterator returns latest values after GC") {
 
     uint32_t loops = 0;
     while (g_db.stats.gc_runs < ITER_GC_TARGET && loops < ITER_MAX_LOOPS) {
-        for (int i = 0; i < ITER_KEY_COUNT; i++) {
+        for (unsigned int i = 0; i < (unsigned int)ITER_KEY_COUNT; i++) {
             char key[4];
-            build_key(key, i);
+            build_key(key, (int)i);
             expected[i][0]  = (uint8_t)(0x55u + i);
             expected[i][1]  = (uint8_t)(0xAAu - i);
             expected[i][2]  = (uint8_t)i;
