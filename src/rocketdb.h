@@ -568,7 +568,11 @@ typedef struct {
     uint32_t    total_size;           /**< Total partition size (bytes)  */
     uint32_t    sector_size;          /**< Erase block size (bytes)     */
     uint8_t     write_gran;           /**< Write granularity exponent:
-                                           0→1B, 1→2B, 2→4B, 3→8B      */
+                                           0→1B, 1→2B, 2→4B, 3→8B
+                                           Note: TSDB only supports
+                                           write_gran = 0 (1B) or
+                                           write_gran = 1 (2B).  KVDB
+                                           supports all values.           */
     const rdb_flash_ops_t* ops;       /**< Flash operation callbacks     */
     void*                  flash_ctx; /**< Opaque pointer passed to every
                                            ops callback (NULL = no ctx)  */

@@ -138,8 +138,8 @@ function(rocketdb_apply_warnings target_name)
                 -Wmissing-prototypes
                 -Wstrict-prototypes
                 -Wold-style-definition
-                $<$<C_COMPILER_ID:Clang>:-Wconversion
-                    -Wdouble-promotion
+                -Wconversion
+                $<$<C_COMPILER_ID:Clang>:-Wdouble-promotion
                     -Wno-sign-conversion>
             )
         endif()
@@ -213,6 +213,9 @@ rocketdb_configure_target(rocketdb)
 # Bloom filter sizing (PUBLIC so all consumers agree on rdb_kvdb_t layout).
 # KV cache defaults to disabled (RDB_KV_CACHE_SIZE=0 in header); enable
 # with -DRDB_KV_CACHE_SIZE=64 for write-heavy workloads.
+# Note: RDB_BLOOM_BITS=256 is set here as PUBLIC, overriding the header default
+# of 0 (disabled).  This enables bloom-filter key skipping by default in CMake
+# builds.  To disable, pass -DRDB_BLOOM_BITS=0 to cmake.
 target_compile_definitions(rocketdb PUBLIC
     RDB_BLOOM_BITS=256
 )
