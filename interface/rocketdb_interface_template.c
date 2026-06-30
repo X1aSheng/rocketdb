@@ -23,7 +23,7 @@
  *
  * @file      rocketdb_interface_template.c
  * @brief     RocketDB interface template source file
- * @version   1.2.0
+ * @version   1.6.0
  * @author    XiaSheng
  * @date      2015-05-04
  *

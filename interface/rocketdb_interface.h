@@ -23,7 +23,7 @@
  *
  * @file      rocketdb_interface.h
  * @brief     RocketDB hardware abstraction layer (HAL) interface
- * @version   1.2.0
+ * @version   1.6.0
  * @author    XiaSheng
  * @date      2015-05-04
  *

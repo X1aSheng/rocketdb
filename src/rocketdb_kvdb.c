@@ -25,7 +25,7 @@
  * Copyright (c) 2015 XiaSheng(info@zhis.net)
  * SPDX-License-Identifier: MIT
  * @date    2015-05-04
- * @version 1.2.0
+ * @version 1.6.0
  *
  *****************************************************************************/
 
@@ -272,9 +272,9 @@ static inline int fl_erase(const rdb_kvdb_t* db, uint32_t a) {
  *  engine-independent.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** @brief Return the library version as a packed 24-bit integer (0x010200 = v1.2.0). */
+/** @brief Return the library version as a packed 24-bit integer (0x010600 = v1.6.0). */
 uint32_t rdb_version(void) {
-    return 0x010200u;
+    return 0x010600u;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
