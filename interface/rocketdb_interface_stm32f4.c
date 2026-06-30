@@ -66,7 +66,7 @@ static int fl_read(void* ctx, uint32_t addr, uint8_t* buf, size_t len) {
     if (dev == NULL) {
         return -1;
     }
-#if 1 /* DEBUG: trace first few reads */
+#ifdef RDB_DEBUG_LOG
     {
         static int trace_cnt = 0;
         if (trace_cnt < 3) {
@@ -97,12 +97,13 @@ static int fl_erase(void* ctx, uint32_t addr) {
     if (dev == NULL) {
         return -1;
     }
+#ifdef RDB_DEBUG_LOG
     printf("[RDB OPS] fl_erase ctx=%p dev=%p addr=0x%lX\r\n", ctx, (void*)dev, (unsigned long)addr);
     {
         const spi_flash_info_t* inf = spi_flash_get_info(dev);
-        printf("[RDB OPS]   -> capacity=%lu state_ready=%d\r\n", (unsigned long)(inf ? inf->capacity : 0),
-            (int)(dev->state == E_SPI_FLASH_STATE_READY));
+        printf("[RDB OPS]   -> capacity=%lu\r\n", (unsigned long)(inf ? inf->capacity : 0));
     }
+#endif
     return (int)spi_flash_erase_sector_by_addr(dev, addr, NULL);
 }
 
