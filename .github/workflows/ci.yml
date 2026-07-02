@@ -109,6 +109,28 @@ jobs:
       - name: Test
         run: ctest --test-dir cmake-build-asan --output-on-failure
 
+  calendar-module:
+    name: Calendar module (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Clang (if missing)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
+            choco install llvm -y --no-progress
+          }
+          clang --version
+
+      - name: Run calendar module tests
+        shell: pwsh
+        run: |
+          Set-Location 'c-module/tank_calendar'
+          .\build.bat test
+
   windows-batch:
     name: Windows batch runner
     runs-on: windows-latest
